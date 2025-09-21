@@ -29,13 +29,13 @@ struct ContentView: View {
                 }
             }
 
-            // Custom tab bar card in safe area
+            // Custom tab bar card at bottom
             VStack {
                 Spacer()
                 CustomTabBarCard(selectedTab: $selectedTab)
             }
         }
-        .edgesIgnoringSafeArea(.bottom)
+        .ignoresSafeArea(.all)
         .onAppear {
             calendarManager.requestCalendarAccess()
         }
@@ -80,6 +80,7 @@ struct CustomTabBarCard: View {
                 }
             }
             .frame(maxWidth: .infinity)
+            .padding(.bottom, 34) // Home indicator safe area
             .background(
                 Rectangle()
                     .fill(.ultraThinMaterial)
@@ -131,7 +132,7 @@ struct CustomTabBarCard: View {
                             .clipShape(Circle())
                             .shadow(radius: 4)
                     }
-                    .padding(.bottom, 40)
+                    .padding(.bottom, 80)
                 }
             }
         )
