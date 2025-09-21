@@ -21,7 +21,7 @@ struct YearCalendarView: View {
         }
     }
 
-    // Group months into sets of 6 (2 rows of 3)
+    // Group months into sets of 4 (2 rows of 2)
     private var monthGroups: [(Int, [Date])] {
         let yearStart = calendar.dateInterval(of: .year, for: selectedDate)?.start ?? selectedDate
         let allMonths = (0..<12).compactMap { monthOffset in
@@ -29,10 +29,10 @@ struct YearCalendarView: View {
         }
 
         var groups: [(Int, [Date])] = []
-        for i in stride(from: 0, to: allMonths.count, by: 6) {
-            let endIndex = min(i + 6, allMonths.count)
+        for i in stride(from: 0, to: allMonths.count, by: 4) {
+            let endIndex = min(i + 4, allMonths.count)
             let monthsInGroup = Array(allMonths[i..<endIndex])
-            groups.append((i / 6, monthsInGroup))
+            groups.append((i / 4, monthsInGroup))
         }
 
         return groups
@@ -44,7 +44,7 @@ struct YearMonthGroupView: View {
     @Binding var selectedDate: Date
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: 3), spacing: 20) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: 2), spacing: 20) {
             ForEach(months, id: \.self) { month in
                 YearMonthView(
                     month: month,

@@ -25,17 +25,33 @@ struct MonthCalendarView: View {
             .padding(.vertical, 8)
             .background(Color(.systemGray6))
 
-            // Calendar grid
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
-                ForEach(calendarDays, id: \.self) { date in
-                    MonthDayCell(
-                        date: date,
-                        selectedDate: $selectedDate,
-                        isCurrentMonth: calendar.isDate(date, equalTo: selectedDate, toGranularity: .month)
-                    )
-                    .aspectRatio(1, contentMode: .fit)
-                    .onTapGesture {
-                        selectedDate = date
+            // Calendar grid - Two column layout
+            HStack(spacing: 0) {
+                // First column (weeks 1-3)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
+                    ForEach(firstColumnDays, id: \.self) { date in
+                        Text("\(calendar.component(.day, from: date))")
+                            .font(.system(size: 16))
+                            .foregroundColor(.primary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .aspectRatio(1, contentMode: .fit)
+                            .onTapGesture {
+                                selectedDate = date
+                            }
+                    }
+                }
+
+                // Second column (weeks 4-6)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
+                    ForEach(secondColumnDays, id: \.self) { date in
+                        Text("\(calendar.component(.day, from: date))")
+                            .font(.system(size: 16))
+                            .foregroundColor(.primary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .aspectRatio(1, contentMode: .fit)
+                            .onTapGesture {
+                                selectedDate = date
+                            }
                     }
                 }
             }
@@ -66,71 +82,20 @@ struct MonthCalendarView: View {
 
         return days
     }
-}
 
-struct MonthDayCell: View {
-    let date: Date
-    @Binding var selectedDate: Date
-    let isCurrentMonth: Bool
-
-    private let calendar = Calendar.current
-
-    var body: some View {
-        VStack {
-            Text("\(calendar.component(.day, from: date))")
-                .font(.system(size: 16, weight: isToday ? .bold : .regular))
-                .foregroundColor(textColor)
-                .frame(width: 28, height: 28)
-                .background(backgroundColor)
-                .clipShape(Circle())
-
-            // Dot indicator for events would go here in full implementation
-            Circle()
-                .fill(Color.clear)
-                .frame(width: 4, height: 4)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            Rectangle()
-                .fill(isSelected ? Color.blue.opacity(0.1) : Color.clear)
-        )
-        .overlay(
-            Rectangle()
-                .fill(Color(.systemGray4))
-                .frame(height: 1),
-            alignment: .bottom
-        )
-        .overlay(
-            Rectangle()
-                .fill(Color(.systemGray4))
-                .frame(width: 1),
-            alignment: .trailing
-        )
+    private var firstColumnDays: [Date] {
+        let days = calendarDays
+        let weeksInFirstColumn = 3
+        let daysPerWeek = 7
+        return Array(days.prefix(weeksInFirstColumn * daysPerWeek))
     }
 
-    private var isToday: Bool {
-        calendar.isDateInToday(date)
-    }
-
-    private var isSelected: Bool {
-        calendar.isDate(date, inSameDayAs: selectedDate)
-    }
-
-    private var textColor: Color {
-        if isToday {
-            return .white
-        } else if !isCurrentMonth {
-            return .secondary
-        } else {
-            return .primary
-        }
-    }
-
-    private var backgroundColor: Color {
-        if isToday {
-            return .blue
-        } else {
-            return .clear
-        }
+    private var secondColumnDays: [Date] {
+        let days = calendarDays
+        let weeksInFirstColumn = 3
+        let daysPerWeek = 7
+        return Array(days.dropFirst(weeksInFirstColumn * daysPerWeek))
     }
 }
+
+// MonthDayCell moved to CalendarTabView.swift to match exact design requirements

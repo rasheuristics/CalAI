@@ -19,12 +19,24 @@ class VoiceManager: NSObject, ObservableObject {
     }
 
     private func requestPermissions() {
+        print("🎤 Requesting speech recognition permissions...")
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             DispatchQueue.main.async {
                 switch status {
                 case .authorized:
+                    print("✅ Speech recognition authorized")
                     self?.requestRecordingPermission()
-                default:
+                case .denied:
+                    print("❌ Speech recognition denied")
+                    self?.hasRecordingPermission = false
+                case .restricted:
+                    print("❌ Speech recognition restricted")
+                    self?.hasRecordingPermission = false
+                case .notDetermined:
+                    print("❌ Speech recognition not determined")
+                    self?.hasRecordingPermission = false
+                @unknown default:
+                    print("❌ Speech recognition unknown status")
                     self?.hasRecordingPermission = false
                 }
             }
@@ -32,68 +44,101 @@ class VoiceManager: NSObject, ObservableObject {
     }
 
     private func requestRecordingPermission() {
+        print("🎤 Requesting microphone permissions...")
         AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
             DispatchQueue.main.async {
-                self?.hasRecordingPermission = granted
+                if granted {
+                    print("✅ Microphone permission granted")
+                    self?.hasRecordingPermission = true
+                } else {
+                    print("❌ Microphone permission denied")
+                    self?.hasRecordingPermission = false
+                }
             }
         }
     }
 
     func startListening(completion: @escaping (String) -> Void) {
-        guard hasRecordingPermission,
-              let speechRecognizer = speechRecognizer,
-              speechRecognizer.isAvailable else {
-            print("Speech recognition not available")
+        print("🎙️ Starting listening process...")
+        print("📋 Checking permissions - hasRecordingPermission: \(hasRecordingPermission)")
+
+        guard hasRecordingPermission else {
+            print("❌ Recording permission not granted")
             return
         }
 
+        guard let speechRecognizer = speechRecognizer else {
+            print("❌ Speech recognizer is nil")
+            return
+        }
+
+        guard speechRecognizer.isAvailable else {
+            print("❌ Speech recognizer is not available")
+            return
+        }
+
+        print("✅ All permissions and requirements met")
         completionHandler = completion
 
         // Cancel previous task
+        print("🔄 Canceling previous recognition task...")
         recognitionTask?.cancel()
         recognitionTask = nil
 
         // Configure audio session
+        print("🔧 Configuring audio session...")
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            print("✅ Audio session configured successfully")
         } catch {
-            print("Audio session setup failed: \(error)")
+            print("❌ Audio session setup failed: \(error)")
             return
         }
 
         // Create recognition request
+        print("📝 Creating recognition request...")
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         guard let recognitionRequest = recognitionRequest else {
-            print("Unable to create recognition request")
+            print("❌ Unable to create recognition request")
             return
         }
         recognitionRequest.shouldReportPartialResults = true
+        print("✅ Recognition request created")
 
         // Configure audio engine
+        print("🎛️ Configuring audio engine...")
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
+        print("📊 Recording format: \(recordingFormat)")
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
             recognitionRequest.append(buffer)
         }
 
         audioEngine.prepare()
+        print("🎛️ Audio engine prepared")
 
         do {
             try audioEngine.start()
-            isListening = true
+            print("✅ Audio engine started successfully")
+            DispatchQueue.main.async {
+                self.isListening = true
+            }
         } catch {
-            print("Audio engine failed to start: \(error)")
+            print("❌ Audio engine failed to start: \(error)")
             return
         }
 
         // Start recognition
+        print("🎯 Starting speech recognition task...")
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             if let result = result {
                 let transcript = result.bestTranscription.formattedString
+                print("🎤 Transcript received: \(transcript)")
                 if result.isFinal {
+                    print("✅ Final transcript: \(transcript)")
                     DispatchQueue.main.async {
                         self?.completionHandler?(transcript)
                         self?.stopListening()
@@ -101,15 +146,22 @@ class VoiceManager: NSObject, ObservableObject {
                 }
             }
 
-            if error != nil || result?.isFinal == true {
+            if let error = error {
+                print("❌ Recognition error: \(error)")
+                DispatchQueue.main.async {
+                    self?.stopListening()
+                }
+            } else if result?.isFinal == true {
                 DispatchQueue.main.async {
                     self?.stopListening()
                 }
             }
         }
+        print("🚀 Speech recognition task started")
     }
 
     func stopListening() {
+        print("🛑 Stopping listening...")
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
@@ -118,5 +170,6 @@ class VoiceManager: NSObject, ObservableObject {
         isListening = false
         recognitionRequest = nil
         recognitionTask = nil
+        print("✅ Listening stopped successfully")
     }
 }

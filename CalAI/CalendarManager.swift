@@ -46,7 +46,11 @@ class CalendarManager: ObservableObject {
     }
 
     func createEvent(title: String, startDate: Date, endDate: Date? = nil) {
-        guard hasCalendarAccess else { return }
+        print("📝 Creating calendar event: \(title)")
+        guard hasCalendarAccess else {
+            print("❌ No calendar access for event creation")
+            return
+        }
 
         let event = EKEvent(eventStore: eventStore)
         event.title = title
@@ -54,25 +58,34 @@ class CalendarManager: ObservableObject {
         event.endDate = endDate ?? Calendar.current.date(byAdding: .hour, value: 1, to: startDate) ?? startDate
         event.calendar = eventStore.defaultCalendarForNewEvents
 
+        print("📅 Event details: \(title) from \(startDate) to \(event.endDate)")
+
         do {
             try eventStore.save(event, span: .thisEvent)
+            print("✅ Event saved successfully")
             loadEvents()
         } catch {
-            print("Error creating event: \(error)")
+            print("❌ Error creating event: \(error)")
         }
     }
 
     func handleAIResponse(_ response: AIResponse) {
+        print("📅 CalendarManager handling AI response: action=\(response.action), title=\(response.eventTitle ?? "nil")")
+
         switch response.action {
         case .createEvent:
             if let title = response.eventTitle,
                let startDate = response.startDate {
+                print("✅ Creating event: \(title) at \(startDate)")
                 createEvent(title: title, startDate: startDate, endDate: response.endDate)
+            } else {
+                print("❌ Missing title or start date for event creation")
             }
         case .queryEvents:
+            print("📋 Loading events")
             loadEvents()
         case .unknown:
-            print("Unknown AI response")
+            print("❓ Unknown AI response: \(response.message)")
         }
     }
 }
