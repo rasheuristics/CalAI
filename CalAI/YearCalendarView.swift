@@ -147,6 +147,10 @@ struct YearDayCell: View {
 
     var body: some View {
         ZStack {
+            Rectangle()
+                .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
             if isToday {
                 Circle()
                     .fill(Color.blue)
