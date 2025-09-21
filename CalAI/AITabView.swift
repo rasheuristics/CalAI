@@ -9,47 +9,47 @@ struct AITabView: View {
     @State private var isProcessing = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            if conversationHistory.isEmpty {
-                VStack {
-                    Image(systemName: "brain.head.profile")
-                        .font(.system(size: 60))
-                        .foregroundColor(.blue)
-                        .padding(.top, 16)
-                        .padding(.bottom, 8)
+        ZStack {
+            VStack(spacing: 0) {
+                if conversationHistory.isEmpty {
+                    VStack {
+                        Image(systemName: "brain.head.profile")
+                            .font(.system(size: 60))
+                            .foregroundColor(.blue)
+                            .padding(.top, 16)
+                            .padding(.bottom, 8)
 
-                    Text("AI Assistant")
-                        .dynamicFont(size: 28, weight: .bold, fontManager: fontManager)
+                        Text("AI Assistant")
+                            .dynamicFont(size: 28, weight: .bold, fontManager: fontManager)
 
-                    Text("Try saying something like:")
-                        .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+                        Text("Try saying something like:")
+                            .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+                            .padding(.top, 8)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            ExampleCommand(text: "Create meeting tomorrow at 2pm", fontManager: fontManager)
+                            ExampleCommand(text: "Schedule lunch with John on Friday", fontManager: fontManager)
+                            ExampleCommand(text: "Show my events for this week", fontManager: fontManager)
+                            ExampleCommand(text: "What do I have today?", fontManager: fontManager)
+                        }
+                        .padding(.horizontal)
                         .padding(.top, 8)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        ExampleCommand(text: "Create meeting tomorrow at 2pm", fontManager: fontManager)
-                        ExampleCommand(text: "Schedule lunch with John on Friday", fontManager: fontManager)
-                        ExampleCommand(text: "Show my events for this week", fontManager: fontManager)
-                        ExampleCommand(text: "What do I have today?", fontManager: fontManager)
+                        Spacer()
                     }
                     .padding(.horizontal)
-                    .padding(.top, 8)
-
-                    Spacer()
-                }
-                .padding(.horizontal)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 12) {
-                        ForEach(conversationHistory, id: \.id) { item in
-                            ConversationBubble(item: item, fontManager: fontManager)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(conversationHistory, id: \.id) { item in
+                                ConversationBubble(item: item, fontManager: fontManager)
+                            }
                         }
+                        .padding(.top, 8)
+                        .padding(.horizontal)
                     }
-                    .padding(.top, 8)
-                    .padding(.horizontal)
                 }
-            }
 
-            VStack {
                 if isProcessing {
                     HStack {
                         ProgressView()
@@ -60,23 +60,38 @@ struct AITabView: View {
                     }
                     .padding(.bottom, 8)
                 }
-
-                VoiceInputButton(
-                    voiceManager: voiceManager,
-                    aiManager: aiManager,
-                    calendarManager: calendarManager,
-                    fontManager: fontManager,
-                    onTranscript: { transcript in
-                        print("🗣️ Transcript received in AITabView: \(transcript)")
-                        addUserMessage(transcript)
-                    },
-                    onResponse: { response in
-                        print("🤖 AI response received in AITabView: \(response.message)")
-                        addAIResponse(response)
-                    }
-                )
             }
-            .padding()
+
+            // Floating mic button in bottom right corner
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    VoiceInputButton(
+                        voiceManager: voiceManager,
+                        aiManager: aiManager,
+                        calendarManager: calendarManager,
+                        fontManager: fontManager,
+                        onTranscript: { transcript in
+                            print("🗣️ Transcript received in AITabView: '\(transcript)'")
+                            print("📝 Adding user message to conversation")
+                            addUserMessage(transcript)
+                        },
+                        onResponse: { response in
+                            print("🤖 AI response received in AITabView: \(response.message)")
+                            print("🎯 Response action: \(response.action)")
+                            print("📅 Event title: \(response.eventTitle ?? "nil")")
+                            print("⏰ Start date: \(response.startDate?.description ?? "nil")")
+                            addAIResponse(response)
+                        }
+                    )
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 120)
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 100)
         }
     }
 

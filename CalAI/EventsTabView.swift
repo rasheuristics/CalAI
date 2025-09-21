@@ -39,6 +39,14 @@ struct EventsTabView: View {
                             ForEach(groupedEvents[date] ?? [], id: \.eventIdentifier) { event in
                                 EventDetailRow(event: event, fontManager: fontManager)
                             }
+                            .onDelete { indexSet in
+                                let eventsForDate = groupedEvents[date] ?? []
+                                for index in indexSet {
+                                    if index < eventsForDate.count {
+                                        calendarManager.deleteEvent(eventsForDate[index])
+                                    }
+                                }
+                            }
                         }
                     }
                 }

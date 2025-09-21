@@ -30,9 +30,9 @@ struct SettingsTabView: View {
 
     var body: some View {
         Form {
-                Section("Permissions") {
+                Section("Calendar Connections") {
                     PermissionRow(
-                        title: "Calendar Access",
+                        title: "iOS Calendar",
                         systemImage: "calendar",
                         status: calendarManager.hasCalendarAccess ? .granted : .notGranted,
                         action: {
@@ -40,6 +40,26 @@ struct SettingsTabView: View {
                         }
                     )
 
+                    PermissionRow(
+                        title: "Google Calendar",
+                        systemImage: "globe",
+                        status: .notGranted,
+                        action: {
+                            // TODO: Implement Google Calendar connection
+                        }
+                    )
+
+                    PermissionRow(
+                        title: "Outlook Calendar",
+                        systemImage: "envelope",
+                        status: .notGranted,
+                        action: {
+                            // TODO: Implement Outlook Calendar connection
+                        }
+                    )
+                }
+
+                Section("App Permissions") {
                     PermissionRow(
                         title: "Microphone Access",
                         systemImage: "mic",

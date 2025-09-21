@@ -12,6 +12,7 @@ class VoiceManager: NSObject, ObservableObject {
     private var recognitionTask: SFSpeechRecognitionTask?
 
     private var completionHandler: ((String) -> Void)?
+    private var latestTranscript = ""
 
     override init() {
         super.init()
@@ -134,25 +135,32 @@ class VoiceManager: NSObject, ObservableObject {
         // Start recognition
         print("🎯 Starting speech recognition task...")
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+
             if let result = result {
-                let transcript = result.bestTranscription.formattedString
-                print("🎤 Transcript received: \(transcript)")
+                self?.latestTranscript = result.bestTranscription.formattedString
+                print("🎤 Transcript received: \(self?.latestTranscript ?? "")")
+
                 if result.isFinal {
-                    print("✅ Final transcript: \(transcript)")
+                    print("✅ Final transcript: \(self?.latestTranscript ?? "")")
                     DispatchQueue.main.async {
-                        self?.completionHandler?(transcript)
+                        if let transcript = self?.latestTranscript, !transcript.isEmpty {
+                            self?.completionHandler?(transcript)
+                        }
                         self?.stopListening()
                     }
+                    return
                 }
             }
 
             if let error = error {
                 print("❌ Recognition error: \(error)")
-                DispatchQueue.main.async {
-                    self?.stopListening()
-                }
-            } else if result?.isFinal == true {
-                DispatchQueue.main.async {
+                print("📝 Current stored transcript: '\(self?.latestTranscript ?? "")'")
+                // Use stored transcript after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    if let transcript = self?.latestTranscript, !transcript.isEmpty {
+                        print("🔄 Using stored transcript after delay: \(transcript)")
+                        self?.completionHandler?(transcript)
+                    }
                     self?.stopListening()
                 }
             }
@@ -162,6 +170,12 @@ class VoiceManager: NSObject, ObservableObject {
 
     func stopListening() {
         print("🛑 Stopping listening...")
+
+        guard isListening else {
+            print("⚠️ Already stopped listening")
+            return
+        }
+
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
@@ -170,6 +184,12 @@ class VoiceManager: NSObject, ObservableObject {
         isListening = false
         recognitionRequest = nil
         recognitionTask = nil
+
+        // Don't clear transcript immediately, let delayed processing use it
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.latestTranscript = ""
+        }
+
         print("✅ Listening stopped successfully")
     }
 }

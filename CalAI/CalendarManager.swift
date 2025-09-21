@@ -69,6 +69,22 @@ class CalendarManager: ObservableObject {
         }
     }
 
+    func deleteEvent(_ event: EKEvent) {
+        print("🗑️ Deleting event: \(event.title ?? "Untitled")")
+        guard hasCalendarAccess else {
+            print("❌ No calendar access for event deletion")
+            return
+        }
+
+        do {
+            try eventStore.remove(event, span: .thisEvent)
+            print("✅ Event deleted successfully")
+            loadEvents()
+        } catch {
+            print("❌ Error deleting event: \(error)")
+        }
+    }
+
     func handleAIResponse(_ response: AIResponse) {
         print("📅 CalendarManager handling AI response: action=\(response.action), title=\(response.eventTitle ?? "nil")")
 

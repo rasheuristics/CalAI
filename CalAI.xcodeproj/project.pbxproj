@@ -23,6 +23,7 @@
 		50745CB62E7CA959004D0243 /* MonthCalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50745CB72E7CA959004D0243 /* MonthCalendarView.swift */; };
 		50745CB82E7CA969004D0243 /* YearCalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50745CB92E7CA969004D0243 /* YearCalendarView.swift */; };
 		50745CC12E7CAA10004D0243 /* SwiftAnthropic in Frameworks */ = {isa = PBXBuildFile; productRef = 50745CC22E7CAA20004D0243 /* SwiftAnthropic */; };
+		50745D002E8080E1004D0243 /* Algorithms in Frameworks */ = {isa = PBXBuildFile; productRef = 50745CFF2E8080E1004D0243 /* Algorithms */; };
 		A3C716AA7BB6447C9111E20F94EF3540 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10BD161D6CF45B0BA0CCDD94BE4C7A1 /* Config.swift */; };
 		E19B7AB0C1854764084F7BC1CDE1E0F37 /* FontManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF423B70491E4DA49A127ADF0748A67E /* FontManager.swift */; };
 /* End PBXBuildFile section */
@@ -54,6 +55,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				50745D002E8080E1004D0243 /* Algorithms in Frameworks */,
 				50745CC12E7CAA10004D0243 /* SwiftAnthropic in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -128,6 +130,7 @@
 			name = CalAI;
 			packageProductDependencies = (
 				50745CC22E7CAA20004D0243 /* SwiftAnthropic */,
+				50745CFF2E8080E1004D0243 /* Algorithms */,
 			);
 			productName = CalAI;
 			productReference = 50745C922E7CA7C9004D0243 /* CalAI.app */;
@@ -159,6 +162,7 @@
 			mainGroup = 50745C892E7CA7C8004D0243;
 			packageReferences = (
 				50745CC02E7CAA00004D0243 /* XCRemoteSwiftPackageReference "SwiftAnthropic" */,
+				50745CFE2E8080E1004D0243 /* XCRemoteSwiftPackageReference "swift-algorithms" */,
 			);
 			productRefGroup = 50745C932E7CA7C9004D0243 /* Products */;
 			projectDirPath = "";
@@ -348,7 +352,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.calai.CalAI";
+				PRODUCT_BUNDLE_IDENTIFIER = com.calai.CalAI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -378,7 +382,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.calai.CalAI";
+				PRODUCT_BUNDLE_IDENTIFIER = com.calai.CalAI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -418,6 +422,14 @@
 				minimumVersion = 1.0.0;
 			};
 		};
+		50745CFE2E8080E1004D0243 /* XCRemoteSwiftPackageReference "swift-algorithms" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-algorithms.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -425,6 +437,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 50745CC02E7CAA00004D0243 /* XCRemoteSwiftPackageReference "SwiftAnthropic" */;
 			productName = SwiftAnthropic;
+		};
+		50745CFF2E8080E1004D0243 /* Algorithms */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 50745CFE2E8080E1004D0243 /* XCRemoteSwiftPackageReference "swift-algorithms" */;
+			productName = Algorithms;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
