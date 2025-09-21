@@ -10,6 +10,10 @@ struct AITabView: View {
 
     var body: some View {
         ZStack {
+            // Background that extends to all edges
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea(.all)
+
             VStack(spacing: 0) {
                 if conversationHistory.isEmpty {
                     VStack {
@@ -86,12 +90,9 @@ struct AITabView: View {
                         }
                     )
                     .padding(.trailing, 20)
-                    .padding(.bottom, 120)
+                    .padding(.bottom, 20)
                 }
             }
-        }
-        .safeAreaInset(edge: .bottom) {
-            Color.clear.frame(height: 100)
         }
     }
 

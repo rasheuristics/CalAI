@@ -9,152 +9,93 @@ struct ContentView: View {
     @State private var selectedTab: Int = 0
 
     var body: some View {
-        ZStack {
-            // Background color
-            Color(.systemBackground)
-                .ignoresSafeArea(.all)
-
-            // Tab content
-            Group {
-                switch selectedTab {
-                case 0:
-                    CalendarTabView(calendarManager: calendarManager, fontManager: fontManager)
-                case 1:
-                    EventsTabView(calendarManager: calendarManager, fontManager: fontManager)
-                case 2:
-                    AITabView(voiceManager: voiceManager, aiManager: aiManager, calendarManager: calendarManager, fontManager: fontManager)
-                case 3:
-                    SettingsTabView(calendarManager: calendarManager, voiceManager: voiceManager, fontManager: fontManager)
-                default:
-                    CalendarTabView(calendarManager: calendarManager, fontManager: fontManager)
+        TabView(selection: $selectedTab) {
+            CalendarTabView(calendarManager: calendarManager, fontManager: fontManager)
+                .tabItem {
+                    Image(systemName: "calendar")
+                    Text("Calendar")
                 }
-            }
+                .tag(0)
 
-            // Custom tab bar card at bottom
-            VStack {
-                Spacer()
-                CustomTabBarCard(selectedTab: $selectedTab)
-            }
+            EventsTabView(calendarManager: calendarManager, fontManager: fontManager)
+                .tabItem {
+                    Image(systemName: "list.bullet")
+                    Text("Events")
+                }
+                .tag(1)
+
+            AITabView(voiceManager: voiceManager, aiManager: aiManager, calendarManager: calendarManager, fontManager: fontManager)
+                .tabItem {
+                    Image(systemName: "brain.head.profile")
+                    Text("AI")
+                }
+                .tag(2)
+
+            SettingsTabView(calendarManager: calendarManager, voiceManager: voiceManager, fontManager: fontManager)
+                .tabItem {
+                    Image(systemName: "gearshape")
+                    Text("Settings")
+                }
+                .tag(3)
         }
         .onAppear {
             calendarManager.requestCalendarAccess()
+            setupGlassmorphismTabBar()
         }
     }
 
-}
+    private func setupGlassmorphismTabBar() {
+        // Configure modern iOS glassmorphism tab bar (dock-style)
+        let appearance = UITabBarAppearance()
 
-struct CustomTabBarCard: View {
-    @Binding var selectedTab: Int
-    @State private var tabBarOffset: CGFloat = 0
-    @State private var isTabBarHidden: Bool = false
+        // Start with transparent base
+        appearance.configureWithTransparentBackground()
 
-    private let tabItems = [
-        "calendar",
-        "list.bullet",
-        "brain.head.profile",
-        "gearshape"
-    ]
+        // Advanced glassmorphism effect matching iOS dock
+        appearance.backgroundColor = UIColor.white.withAlphaComponent(0.1)
 
-    var body: some View {
-        VStack(spacing: 0) {
-            // Pull indicator
-            if !isTabBarHidden {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 40, height: 4)
-                    .cornerRadius(2)
-            }
+        // Multi-layered blur system like iOS dock
+        let primaryBlur = UIBlurEffect(style: .systemThinMaterial)
+        appearance.backgroundEffect = primaryBlur
 
-            // Tab bar card
-            HStack(spacing: 0) {
-                ForEach(0..<tabItems.count, id: \.self) { index in
-                    TabBarButton(
-                        icon: tabItems[index],
-                        isSelected: selectedTab == index,
-                        action: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                selectedTab = index
-                            }
-                        }
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.bottom, 34) // Home indicator safe area
-            .background(
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: -1)
-            )
+        // Enhanced shadow system for modern depth
+        appearance.shadowColor = UIColor.black.withAlphaComponent(0.12)
+
+        // Modern icon styling with refined colors
+        appearance.stackedLayoutAppearance.normal.iconColor = UIColor.secondaryLabel
+        appearance.stackedLayoutAppearance.normal.titleTextAttributes = [
+            .foregroundColor: UIColor.secondaryLabel,
+            .font: UIFont.systemFont(ofSize: 10, weight: .medium)
+        ]
+
+        // Vibrant selected state matching iOS system colors
+        appearance.stackedLayoutAppearance.selected.iconColor = UIColor.label
+        appearance.stackedLayoutAppearance.selected.titleTextAttributes = [
+            .foregroundColor: UIColor.label,
+            .font: UIFont.systemFont(ofSize: 10, weight: .semibold)
+        ]
+
+        // Apply sophisticated appearance settings
+        UITabBar.appearance().standardAppearance = appearance
+        UITabBar.appearance().scrollEdgeAppearance = appearance
+
+        // Modern translucency settings
+        UITabBar.appearance().isTranslucent = true
+        UITabBar.appearance().backgroundColor = UIColor.clear
+
+        // Advanced visual effects for iOS dock-like behavior
+        if #available(iOS 15.0, *) {
+            // Ensure consistent appearance across scroll states
+            UITabBar.appearance().scrollEdgeAppearance = appearance
         }
-        .offset(y: tabBarOffset)
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    let translation = value.translation.height
-                    if translation > 0 && !isTabBarHidden {
-                        tabBarOffset = min(translation, 120)
-                    } else if translation < 0 && isTabBarHidden {
-                        tabBarOffset = max(120 + translation, 0)
-                    }
-                }
-                .onEnded { value in
-                    let translation = value.translation.height
-                    let velocity = value.predictedEndLocation.y - value.location.y
 
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                        if translation > 60 || velocity > 100 {
-                            tabBarOffset = 120
-                            isTabBarHidden = true
-                        } else {
-                            tabBarOffset = 0
-                            isTabBarHidden = false
-                        }
-                    }
-                }
-        )
-        .overlay(
-            // Show button when hidden
-            VStack {
-                Spacer()
-                if isTabBarHidden {
-                    Button(action: {
-                        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                            tabBarOffset = 0
-                            isTabBarHidden = false
-                        }
-                    }) {
-                        Image(systemName: "chevron.up")
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                            .padding(8)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Circle())
-                            .shadow(radius: 4)
-                    }
-                    .padding(.bottom, 80)
-                }
-            }
-        )
+        // Additional refinements for glassmorphism
+        UITabBar.appearance().barTintColor = UIColor.clear
+        UITabBar.appearance().backgroundImage = UIImage()
+        UITabBar.appearance().shadowImage = UIImage()
     }
-}
 
-struct TabBarButton: View {
-    let icon: String
-    let isSelected: Bool
-    let action: () -> Void
 
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 24, weight: .medium))
-                .foregroundColor(isSelected ? .blue : .gray)
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
 }
 
 struct VoiceInputButton: View {

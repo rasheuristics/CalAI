@@ -8,7 +8,12 @@ struct EventsTabView: View {
     @State private var selectedTimeRange: TimeRange = .week
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack {
+            // Background that extends to all edges
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea(.all)
+
+            VStack(spacing: 0) {
             Picker("Time Range", selection: $selectedTimeRange) {
                 Text("Today").tag(TimeRange.all)
                 Text("This Week").tag(TimeRange.week)
@@ -53,12 +58,10 @@ struct EventsTabView: View {
                 .listStyle(PlainListStyle())
             }
             }
-            .safeAreaInset(edge: .bottom) {
-                Color.clear.frame(height: 100)
-            }
             .onAppear {
                 calendarManager.loadEvents()
             }
+        }
     }
 
     private var filteredEvents: [EKEvent] {

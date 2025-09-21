@@ -25,6 +25,12 @@
         <key>UIApplicationSupportsMultipleScenes</key>
         <false/>
     </dict>
+    <key>UILaunchScreen</key>
+    <dict/>
+    <key>UIStatusBarHidden</key>
+    <false/>
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <false/>
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
     <key>UIRequiredDeviceCapabilities</key>

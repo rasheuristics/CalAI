@@ -16,32 +16,34 @@ struct CalendarTabView: View {
     @State private var showingDatePicker = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Native iOS Calendar Header
-            iOSCalendarHeader(
-                selectedDate: $selectedDate,
-                currentViewType: $currentViewType,
-                showingDatePicker: $showingDatePicker,
-                fontManager: fontManager
-            )
+        ZStack {
+            // Background that extends to all edges
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea(.all)
 
-            // Main calendar content
-            Group {
-                switch currentViewType {
-                case .day:
-                    iOSDayView(selectedDate: $selectedDate, events: calendarManager.events, fontManager: fontManager)
-                case .week:
-                    iOSWeekView(selectedDate: $selectedDate, events: calendarManager.events, fontManager: fontManager)
-                case .month:
-                    iOSMonthView(selectedDate: $selectedDate, events: calendarManager.events, fontManager: fontManager)
-                case .year:
-                    iOSYearView(selectedDate: $selectedDate, fontManager: fontManager)
+            VStack(spacing: 0) {
+                // Native iOS Calendar Header
+                iOSCalendarHeader(
+                    selectedDate: $selectedDate,
+                    currentViewType: $currentViewType,
+                    showingDatePicker: $showingDatePicker,
+                    fontManager: fontManager
+                )
+
+                // Main calendar content
+                Group {
+                    switch currentViewType {
+                    case .day:
+                        iOSDayView(selectedDate: $selectedDate, events: calendarManager.events, fontManager: fontManager)
+                    case .week:
+                        iOSWeekView(selectedDate: $selectedDate, events: calendarManager.events, fontManager: fontManager)
+                    case .month:
+                        iOSMonthView(selectedDate: $selectedDate, events: calendarManager.events, fontManager: fontManager)
+                    case .year:
+                        iOSYearView(selectedDate: $selectedDate, fontManager: fontManager)
+                    }
                 }
             }
-        }
-        .background(Color(.systemGroupedBackground))
-        .safeAreaInset(edge: .bottom) {
-            Color.clear.frame(height: 100)
         }
     }
 }

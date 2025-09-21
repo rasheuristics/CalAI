@@ -29,7 +29,12 @@ struct SettingsTabView: View {
     }
 
     var body: some View {
-        Form {
+        ZStack {
+            // Background that extends to all edges
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea(.all)
+
+            Form {
                 Section("Calendar Connections") {
                     PermissionRow(
                         title: "iOS Calendar",
@@ -350,10 +355,8 @@ struct SettingsTabView: View {
                 }
             }
             .environment(\.sizeCategory, sizeCategory)
-            .safeAreaInset(edge: .bottom) {
-                Color.clear.frame(height: 100)
-            }
-            .alert("Get \(selectedAIProvider.displayName) API Key", isPresented: $showingAPIKeyAlert) {
+        }
+        .alert("Get \(selectedAIProvider.displayName) API Key", isPresented: $showingAPIKeyAlert) {
                 Button("Open Console", action: {
                     let url: String
                     switch selectedAIProvider {
