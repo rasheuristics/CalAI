@@ -12,6 +12,7 @@ struct ContentView: View {
         ZStack {
             // Background color
             Color(.systemBackground)
+                .ignoresSafeArea(.all)
 
             // Tab content
             Group {
@@ -35,7 +36,6 @@ struct ContentView: View {
                 CustomTabBarCard(selectedTab: $selectedTab)
             }
         }
-        .ignoresSafeArea(.all)
         .onAppear {
             calendarManager.requestCalendarAccess()
         }
@@ -169,11 +169,15 @@ struct VoiceInputButton: View {
         VStack {
             Button(action: {
                 if voiceManager.isListening {
+                    print("🔴 Voice button pressed - stopping listening")
                     voiceManager.stopListening()
                 } else {
+                    print("🟢 Voice button pressed - starting listening")
                     voiceManager.startListening { transcript in
+                        print("📝 Transcript received in VoiceInputButton: \(transcript)")
                         onTranscript?(transcript)
                         aiManager.processVoiceCommand(transcript) { result in
+                            print("🎯 AI processing completed with result: \(result.message)")
                             calendarManager.handleAIResponse(result)
                             onResponse?(result)
                         }

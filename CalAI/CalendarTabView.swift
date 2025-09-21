@@ -40,6 +40,9 @@ struct CalendarTabView: View {
             }
         }
         .background(Color(.systemGroupedBackground))
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 100)
+        }
     }
 }
 
@@ -161,67 +164,44 @@ struct iOSCalendarHeader: View {
     }
 }
 
-// MARK: - iOS Month View (Exact Replica)
+// MARK: - iOS Month View (Exact Design Match)
 struct iOSMonthView: View {
     @Binding var selectedDate: Date
     let events: [EKEvent]
     @ObservedObject var fontManager: FontManager
-    @State private var dragOffset: CGSize = .zero
 
     private let calendar = Calendar.current
 
     var body: some View {
         VStack(spacing: 0) {
-            // Week day headers - exact iOS style
-            HStack {
-                ForEach(calendar.shortWeekdaySymbols, id: \.self) { day in
+            // Week day headers
+            HStack(spacing: 0) {
+                ForEach(weekdaySymbols, id: \.self) { day in
                     Text(day)
-                        .scaledFont(.caption, fontManager: fontManager)
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.gray)
+                        .frame(maxWidth: .infinity, minHeight: 40)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(Color(.systemBackground))
+            .background(Color.gray.opacity(0.1))
 
-            // Calendar grid - exact iOS layout
+            // Calendar grid
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
                 ForEach(monthDates, id: \.self) { date in
-                    iOSDateCell(
+                    MonthDayCell(
                         date: date,
                         selectedDate: $selectedDate,
-                        currentMonth: calendar.component(.month, from: selectedDate),
-                        events: eventsForDate(date),
-                        fontManager: fontManager
+                        isCurrentMonth: calendar.isDate(date, equalTo: selectedDate, toGranularity: .month),
+                        events: eventsForDate(date)
                     )
                 }
             }
-            .padding(.horizontal, 16)
-            .offset(dragOffset)
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        dragOffset = value.translation
-                    }
-                    .onEnded { value in
-                        let threshold: CGFloat = 50
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            if value.translation.width > threshold {
-                                // Swipe right - previous month
-                                selectedDate = calendar.date(byAdding: .month, value: -1, to: selectedDate) ?? selectedDate
-                            } else if value.translation.width < -threshold {
-                                // Swipe left - next month
-                                selectedDate = calendar.date(byAdding: .month, value: 1, to: selectedDate) ?? selectedDate
-                            }
-                            dragOffset = .zero
-                        }
-                    }
-            )
-
-            Spacer()
         }
-        .background(Color(.systemBackground))
+        .background(Color.white)
+    }
+
+    private var weekdaySymbols: [String] {
+        return ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
     }
 
     private var monthDates: [Date] {
@@ -246,6 +226,75 @@ struct iOSMonthView: View {
         return events.filter { event in
             calendar.isDate(event.startDate, inSameDayAs: date)
         }
+    }
+}
+
+struct MonthDayCell: View {
+    let date: Date
+    @Binding var selectedDate: Date
+    let isCurrentMonth: Bool
+    let events: [EKEvent]
+
+    private let calendar = Calendar.current
+
+    var body: some View {
+        Button(action: {
+            selectedDate = date
+        }) {
+            VStack(spacing: 2) {
+                Text("\(calendar.component(.day, from: date))")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(textColor)
+
+                // Event indicator dots
+                if !events.isEmpty {
+                    HStack(spacing: 2) {
+                        ForEach(0..<min(events.count, 3), id: \.self) { _ in
+                            Circle()
+                                .fill(Color.blue)
+                                .frame(width: 4, height: 4)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(backgroundColor)
+            .overlay(
+                Rectangle()
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    private var textColor: Color {
+        if isSelected {
+            return .white
+        } else if isToday {
+            return .blue
+        } else if isCurrentMonth {
+            return .black
+        } else {
+            return .gray.opacity(0.4)
+        }
+    }
+
+    private var backgroundColor: Color {
+        if isSelected {
+            return .blue
+        } else if isToday {
+            return .blue.opacity(0.1)
+        } else {
+            return .clear
+        }
+    }
+
+    private var isSelected: Bool {
+        calendar.isDate(date, inSameDayAs: selectedDate)
+    }
+
+    private var isToday: Bool {
+        calendar.isDate(date, inSameDayAs: Date())
     }
 }
 
@@ -343,94 +392,47 @@ struct iOSWeekView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Week header with dates
+            // Week day headers - exactly like month view
             HStack(spacing: 0) {
-                // Time column spacer
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(width: 50)
-
-                // Week days
                 ForEach(weekDates, id: \.self) { date in
-                    VStack(spacing: 4) {
-                        Text(dayOfWeekSymbol(for: date))
-                            .scaledFont(.caption2, fontManager: fontManager)
-                            .foregroundColor(.secondary)
-
-                        Text("\(calendar.component(.day, from: date))")
-                            .scaledFont(.callout, fontManager: fontManager)
-                            .foregroundColor(isToday(date) ? .red : .primary)
-                            .frame(width: 28, height: 28)
-                            .background(
-                                Circle()
-                                    .fill(isSelected(date) ? .blue : .clear)
-                            )
-                            .foregroundColor(isSelected(date) ? .white : (isToday(date) ? .red : .primary))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .onTapGesture {
-                        selectedDate = date
-                    }
+                    Text(dayOfWeekSymbol(for: date))
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.gray)
+                        .frame(maxWidth: .infinity, minHeight: 40)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            .background(Color.gray.opacity(0.1))
 
-            Divider()
+            // Week calendar row - exactly like one row from month view
+            HStack(spacing: 0) {
+                ForEach(weekDates, id: \.self) { date in
+                    WeekDayCell(
+                        date: date,
+                        selectedDate: $selectedDate,
+                        events: eventsForDate(date)
+                    )
+                }
+            }
 
-            // Time grid
+            // Selected day events display
             ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(0..<24, id: \.self) { hour in
-                        HStack(alignment: .top, spacing: 0) {
-                            // Hour label
-                            VStack {
-                                if hour == 0 {
-                                    Text("12 AM")
-                                        .scaledFont(.caption2, fontManager: fontManager)
-                                        .foregroundColor(.secondary)
-                                } else if hour < 12 {
-                                    Text("\(hour) AM")
-                                        .scaledFont(.caption2, fontManager: fontManager)
-                                        .foregroundColor(.secondary)
-                                } else if hour == 12 {
-                                    Text("12 PM")
-                                        .scaledFont(.caption2, fontManager: fontManager)
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("\(hour - 12) PM")
-                                        .scaledFont(.caption2, fontManager: fontManager)
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                            }
-                            .frame(width: 50, height: hourHeight)
+                LazyVStack(spacing: 8) {
+                    ForEach(selectedDayEvents, id: \.eventIdentifier) { event in
+                        DayEventCard(event: event)
+                    }
 
-                            // Days columns
-                            ForEach(weekDates, id: \.self) { date in
-                                VStack {
-                                    Divider()
-                                        .opacity(0.3)
-                                    Spacer()
-                                }
-                                .frame(maxWidth: .infinity, minHeight: hourHeight)
-                                .overlay(
-                                    VStack(spacing: 1) {
-                                        ForEach(eventsForDateAndHour(date, hour), id: \.eventIdentifier) { event in
-                                            iOSWeekEventView(event: event, fontManager: fontManager)
-                                        }
-                                    }
-                                    .padding(.horizontal, 2)
-                                    , alignment: .topLeading
-                                )
-                            }
-                        }
+                    if selectedDayEvents.isEmpty {
+                        Text("No events on this day")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(.gray)
+                            .padding(.top, 40)
                     }
                 }
                 .padding(.horizontal, 16)
+                .padding(.top, 16)
             }
         }
-        .background(Color(.systemBackground))
+        .background(Color.white)
     }
 
     private var weekDates: [Date] {
@@ -455,103 +457,127 @@ struct iOSWeekView: View {
         return formatter.string(from: date).uppercased()
     }
 
-    private func isToday(_ date: Date) -> Bool {
-        calendar.isDate(date, inSameDayAs: Date())
-    }
-
-    private func isSelected(_ date: Date) -> Bool {
-        calendar.isDate(date, inSameDayAs: selectedDate)
-    }
-
-    private func eventsForDateAndHour(_ date: Date, _ hour: Int) -> [EKEvent] {
+    private func eventsForDate(_ date: Date) -> [EKEvent] {
         return events.filter { event in
-            let eventHour = calendar.component(.hour, from: event.startDate)
-            return calendar.isDate(event.startDate, inSameDayAs: date) && eventHour == hour
+            calendar.isDate(event.startDate, inSameDayAs: date)
+        }
+    }
+
+    private var selectedDayEvents: [EKEvent] {
+        return events.filter { event in
+            calendar.isDate(event.startDate, inSameDayAs: selectedDate)
         }
     }
 }
 
-// MARK: - iOS Day View (Exact Replica)
+struct WeekDayCell: View {
+    let date: Date
+    @Binding var selectedDate: Date
+    let events: [EKEvent]
+
+    private let calendar = Calendar.current
+
+    var body: some View {
+        Button(action: {
+            selectedDate = date
+        }) {
+            VStack(spacing: 2) {
+                Text("\(calendar.component(.day, from: date))")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(textColor)
+
+                // Event indicator dots
+                if !events.isEmpty {
+                    HStack(spacing: 2) {
+                        ForEach(0..<min(events.count, 3), id: \.self) { _ in
+                            Circle()
+                                .fill(Color.blue)
+                                .frame(width: 4, height: 4)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(backgroundColor)
+            .overlay(
+                Rectangle()
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    private var textColor: Color {
+        if isSelected {
+            return .white
+        } else if isToday {
+            return .blue
+        } else {
+            return .black
+        }
+    }
+
+    private var backgroundColor: Color {
+        if isSelected {
+            return .blue
+        } else if isToday {
+            return .blue.opacity(0.1)
+        } else {
+            return .clear
+        }
+    }
+
+    private var isSelected: Bool {
+        calendar.isDate(date, inSameDayAs: selectedDate)
+    }
+
+    private var isToday: Bool {
+        calendar.isDate(date, inSameDayAs: Date())
+    }
+}
+
+// MARK: - iOS Day View (Exact Design Match)
 struct iOSDayView: View {
     @Binding var selectedDate: Date
     let events: [EKEvent]
     @ObservedObject var fontManager: FontManager
 
     private let calendar = Calendar.current
-    private let hourHeight: CGFloat = 60
 
     var body: some View {
-        ScrollViewReader { proxy in
+        VStack(spacing: 24) {
+            // Date display
+            VStack(spacing: 8) {
+                Text(dayOfWeekText)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.gray)
+
+                Text(dayNumberText)
+                    .font(.system(size: 72, weight: .light))
+                    .foregroundColor(.black)
+            }
+            .padding(.top, 40)
+
+            // Events list
             ScrollView {
-                VStack(spacing: 0) {
-                    // Date header
-                    VStack(spacing: 4) {
-                        Text(dayOfWeekText)
-                            .scaledFont(.caption, fontManager: fontManager)
-                            .foregroundColor(.secondary)
-
-                        Text(dayNumberText)
-                            .scaledFont(.largeTitle, fontManager: fontManager)
-                            .foregroundColor(isToday ? .red : .primary)
+                LazyVStack(spacing: 8) {
+                    ForEach(todayEvents, id: \.eventIdentifier) { event in
+                        DayEventCard(event: event)
                     }
-                    .padding(.vertical, 16)
 
-                    // Hour grid
-                    LazyVStack(spacing: 0) {
-                        ForEach(0..<24, id: \.self) { hour in
-                            HStack(alignment: .top, spacing: 0) {
-                                // Hour label
-                                VStack {
-                                    if hour == 0 {
-                                        Text("12 AM")
-                                            .scaledFont(.caption, fontManager: fontManager)
-                                            .foregroundColor(.secondary)
-                                    } else if hour < 12 {
-                                        Text("\(hour) AM")
-                                            .scaledFont(.caption, fontManager: fontManager)
-                                            .foregroundColor(.secondary)
-                                    } else if hour == 12 {
-                                        Text("12 PM")
-                                            .scaledFont(.caption, fontManager: fontManager)
-                                            .foregroundColor(.secondary)
-                                    } else {
-                                        Text("\(hour - 12) PM")
-                                            .scaledFont(.caption, fontManager: fontManager)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Spacer()
-                                }
-                                .frame(width: 50, height: hourHeight)
-
-                                // Hour content area
-                                VStack {
-                                    Divider()
-                                    Spacer()
-                                }
-                                .frame(height: hourHeight)
-                                .overlay(
-                                    // Events for this hour
-                                    VStack(spacing: 2) {
-                                        ForEach(eventsForHour(hour), id: \.eventIdentifier) { event in
-                                            iOSDayEventView(event: event, fontManager: fontManager)
-                                        }
-                                    }
-                                    .padding(.horizontal, 4)
-                                    , alignment: .topLeading
-                                )
-                            }
-                        }
+                    if todayEvents.isEmpty {
+                        Text("No events today")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(.gray)
+                            .padding(.top, 40)
                     }
                 }
                 .padding(.horizontal, 16)
             }
-            .onAppear {
-                // Scroll to current time
-                let currentHour = calendar.component(.hour, from: Date())
-                proxy.scrollTo(currentHour, anchor: .top)
-            }
+
+            Spacer()
         }
-        .background(Color(.systemBackground))
+        .background(Color.white)
     }
 
     private var dayOfWeekText: String {
@@ -566,31 +592,86 @@ struct iOSDayView: View {
         return formatter.string(from: selectedDate)
     }
 
-    private var isToday: Bool {
-        calendar.isDate(selectedDate, inSameDayAs: Date())
-    }
-
-    private func eventsForHour(_ hour: Int) -> [EKEvent] {
+    private var todayEvents: [EKEvent] {
         return events.filter { event in
-            let eventHour = calendar.component(.hour, from: event.startDate)
-            return calendar.isDate(event.startDate, inSameDayAs: selectedDate) && eventHour == hour
+            calendar.isDate(event.startDate, inSameDayAs: selectedDate)
         }
     }
 }
 
-// MARK: - iOS Year View (Exact Replica)
+struct DayEventCard: View {
+    let event: EKEvent
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            // Time
+            VStack(alignment: .leading, spacing: 2) {
+                Text(startTime)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.black)
+
+                if !isAllDay {
+                    Text(endTime)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.gray)
+                }
+            }
+            .frame(width: 60, alignment: .leading)
+
+            // Event details
+            VStack(alignment: .leading, spacing: 4) {
+                Text(event.title)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.black)
+
+                if let location = event.location, !location.isEmpty {
+                    Text(location)
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(.gray)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(16)
+        .background(Color.gray.opacity(0.05))
+        .cornerRadius(8)
+    }
+
+    private var startTime: String {
+        if event.isAllDay {
+            return "All Day"
+        } else {
+            let formatter = DateFormatter()
+            formatter.timeStyle = .short
+            return formatter.string(from: event.startDate)
+        }
+    }
+
+    private var endTime: String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: event.endDate)
+    }
+
+    private var isAllDay: Bool {
+        return event.isAllDay
+    }
+}
+
+// MARK: - iOS Year View (Exact Design Match)
 struct iOSYearView: View {
     @Binding var selectedDate: Date
     @ObservedObject var fontManager: FontManager
 
     private let calendar = Calendar.current
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: 3)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 2)
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 20) {
+            LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(monthsInYear, id: \.self) { month in
-                    iOSYearMonthView(
+                    YearMonthCard(
                         month: month,
                         selectedDate: $selectedDate,
                         fontManager: fontManager
@@ -598,9 +679,9 @@ struct iOSYearView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 20)
+            .padding(.vertical, 16)
         }
-        .background(Color(.systemBackground))
+        .background(Color.white)
     }
 
     private var monthsInYear: [Date] {
@@ -672,7 +753,7 @@ struct iOSDayEventView: View {
     }
 }
 
-struct iOSYearMonthView: View {
+struct YearMonthCard: View {
     let month: Date
     @Binding var selectedDate: Date
     @ObservedObject var fontManager: FontManager
@@ -680,36 +761,37 @@ struct iOSYearMonthView: View {
     private let calendar = Calendar.current
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 2) {
             // Month name
             Text(monthName)
-                .scaledFont(.caption, fontManager: fontManager)
-                .foregroundColor(.primary)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.black)
+                .padding(.bottom, 4)
 
             // Mini calendar grid
-            VStack(spacing: 2) {
+            VStack(spacing: 1) {
                 // Week day headers
                 HStack(spacing: 0) {
-                    ForEach(calendar.veryShortWeekdaySymbols, id: \.self) { day in
+                    ForEach(weekdaySymbols, id: \.self) { day in
                         Text(day)
-                            .scaledFont(.caption2, fontManager: fontManager)
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity)
+                            .font(.system(size: 8, weight: .regular))
+                            .foregroundColor(.gray)
+                            .frame(width: 14, height: 12)
                     }
                 }
 
                 // Calendar days
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 2) {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(14), spacing: 0), count: 7), spacing: 1) {
                     ForEach(monthDates, id: \.self) { date in
                         Button(action: {
                             selectedDate = date
                         }) {
-                            Text("\(calendar.component(.day, from: date))")
-                                .scaledFont(.caption2, fontManager: fontManager)
+                            Text(dayText(for: date))
+                                .font(.system(size: 8, weight: .regular))
                                 .foregroundColor(textColor(for: date))
-                                .frame(width: 20, height: 20)
+                                .frame(width: 14, height: 14)
                                 .background(
-                                    Circle()
+                                    Rectangle()
                                         .fill(backgroundFill(for: date))
                                 )
                         }
@@ -719,45 +801,79 @@ struct iOSYearMonthView: View {
             }
         }
         .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(.systemGray6))
+        .background(Color.white)
+        .cornerRadius(4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 0.5)
         )
     }
 
     private var monthName: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM"
-        return formatter.string(from: month)
+        return formatter.string(from: month).uppercased()
+    }
+
+    private var weekdaySymbols: [String] {
+        return ["S", "M", "T", "W", "T", "F", "S"]
     }
 
     private var monthDates: [Date] {
-        guard let monthInterval = calendar.dateInterval(of: .month, for: month),
-              let monthFirstWeek = calendar.dateInterval(of: .weekOfYear, for: monthInterval.start),
-              let monthLastWeek = calendar.dateInterval(of: .weekOfYear, for: monthInterval.end - 1)
-        else { return [] }
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else { return [] }
 
         var dates: [Date] = []
-        var date = monthFirstWeek.start
+        let startOfMonth = monthInterval.start
+        let endOfMonth = monthInterval.end
 
-        while date <= monthLastWeek.end {
+        // Get the first day of the week for the month start
+        let weekday = calendar.component(.weekday, from: startOfMonth)
+        let daysFromStartOfWeek = (weekday - calendar.firstWeekday + 7) % 7
+
+        // Add empty slots for days before the month starts (from previous month)
+        for i in 0..<daysFromStartOfWeek {
+            if let emptyDate = calendar.date(byAdding: .day, value: -(daysFromStartOfWeek - i), to: startOfMonth) {
+                dates.append(emptyDate)
+            }
+        }
+
+        // Add all days of the current month only
+        var date = startOfMonth
+        while date < endOfMonth {
             dates.append(date)
             guard let nextDate = calendar.date(byAdding: .day, value: 1, to: date) else { break }
             date = nextDate
         }
 
+        // Pad to complete the grid (6 rows x 7 days = 42 total) with next month days
+        while dates.count < 42 {
+            if let nextDate = calendar.date(byAdding: .day, value: 1, to: dates.last ?? endOfMonth) {
+                dates.append(nextDate)
+            } else {
+                break
+            }
+        }
+
         return dates
+    }
+
+    private func dayText(for date: Date) -> String {
+        if isCurrentMonth(date) {
+            return "\(calendar.component(.day, from: date))"
+        } else {
+            return ""
+        }
     }
 
     private func textColor(for date: Date) -> Color {
         if isSelected(date) {
             return .white
         } else if isToday(date) {
-            return .red
+            return .blue
         } else if isCurrentMonth(date) {
-            return .primary
+            return .black
         } else {
-            return .secondary
+            return .clear // Hide non-current month days
         }
     }
 
@@ -765,18 +881,18 @@ struct iOSYearMonthView: View {
         if isSelected(date) {
             return .blue
         } else if isToday(date) {
-            return Color(.systemGray5)
+            return .blue.opacity(0.1)
         } else {
             return .clear
         }
     }
 
-    private func isToday(_ date: Date) -> Bool {
-        calendar.isDate(date, inSameDayAs: Date())
-    }
-
     private func isSelected(_ date: Date) -> Bool {
         calendar.isDate(date, inSameDayAs: selectedDate)
+    }
+
+    private func isToday(_ date: Date) -> Bool {
+        calendar.isDate(date, inSameDayAs: Date())
     }
 
     private func isCurrentMonth(_ date: Date) -> Bool {

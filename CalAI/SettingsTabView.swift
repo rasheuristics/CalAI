@@ -8,9 +8,12 @@ struct SettingsTabView: View {
     @State private var notificationsEnabled = true
     @State private var autoSyncEnabled = true
     @State private var voiceActivationEnabled = true
-    @State private var apiKey = Config.anthropicAPIKey
+    @State private var anthropicAPIKey = Config.anthropicAPIKey
+    @State private var openaiAPIKey = Config.openaiAPIKey
+    @State private var selectedAIProvider = Config.aiProvider
     @State private var showingAPIKeyAlert = false
-    @State private var isAPIKeyVisible = false
+    @State private var isAnthropicKeyVisible = false
+    @State private var isOpenAIKeyVisible = false
 
     private var sizeCategory: ContentSizeCategory {
         switch fontManager.currentFontSize {
@@ -75,56 +78,129 @@ struct SettingsTabView: View {
                 }
 
                 Section("AI Integration") {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        // AI Provider Selection
                         HStack {
                             Image(systemName: "brain.head.profile")
                                 .foregroundColor(.blue)
-                            Text("Anthropic API Key")
+                            Text("AI Provider")
                                 .dynamicFont(size: 16, fontManager: fontManager)
                             Spacer()
-                            Image(systemName: Config.hasValidAPIKey ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                                .foregroundColor(Config.hasValidAPIKey ? .green : .orange)
-                        }
-
-                        HStack {
-                            if isAPIKeyVisible {
-                                TextField("Enter your Anthropic API key", text: $apiKey)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .autocapitalization(.none)
-                                    .disableAutocorrection(true)
-                                    .onChange(of: apiKey) { newValue in
-                                        Config.anthropicAPIKey = newValue
-                                    }
-                            } else {
-                                SecureField("Enter your Anthropic API key", text: $apiKey)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .autocapitalization(.none)
-                                    .disableAutocorrection(true)
-                                    .onChange(of: apiKey) { newValue in
-                                        Config.anthropicAPIKey = newValue
-                                    }
+                            Picker("AI Provider", selection: $selectedAIProvider) {
+                                ForEach(AIProvider.allCases, id: \.self) { provider in
+                                    Text(provider.displayName).tag(provider)
+                                }
                             }
-
-                            Button(action: {
-                                isAPIKeyVisible.toggle()
-                            }) {
-                                Image(systemName: isAPIKeyVisible ? "eye.slash" : "eye")
-                                    .foregroundColor(.blue)
+                            .pickerStyle(SegmentedPickerStyle())
+                            .frame(width: 150)
+                            .onChange(of: selectedAIProvider) { newValue in
+                                Config.aiProvider = newValue
                             }
                         }
 
-                        if !Config.hasValidAPIKey && !apiKey.isEmpty {
-                            Text("Invalid API key format. Should start with 'sk-ant-'")
-                                .font(.caption)
-                                .foregroundColor(.red)
+                        // Anthropic API Key Section
+                        if selectedAIProvider == .anthropic {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Image(systemName: "brain.head.profile")
+                                        .foregroundColor(.blue)
+                                    Text("Anthropic API Key")
+                                        .dynamicFont(size: 16, fontManager: fontManager)
+                                    Spacer()
+                                    Image(systemName: Config.hasValidAPIKey ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                        .foregroundColor(Config.hasValidAPIKey ? .green : .orange)
+                                }
+
+                                HStack {
+                                    if isAnthropicKeyVisible {
+                                        TextField("Enter your Anthropic API key", text: $anthropicAPIKey)
+                                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                                            .autocapitalization(.none)
+                                            .disableAutocorrection(true)
+                                            .onChange(of: anthropicAPIKey) { newValue in
+                                                Config.anthropicAPIKey = newValue
+                                            }
+                                    } else {
+                                        SecureField("Enter your Anthropic API key", text: $anthropicAPIKey)
+                                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                                            .autocapitalization(.none)
+                                            .disableAutocorrection(true)
+                                            .onChange(of: anthropicAPIKey) { newValue in
+                                                Config.anthropicAPIKey = newValue
+                                            }
+                                    }
+
+                                    Button(action: {
+                                        isAnthropicKeyVisible.toggle()
+                                    }) {
+                                        Image(systemName: isAnthropicKeyVisible ? "eye.slash" : "eye")
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+
+                                if !Config.hasValidAPIKey && !anthropicAPIKey.isEmpty && selectedAIProvider == .anthropic {
+                                    Text("Invalid API key format. Should start with 'sk-ant-'")
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                }
+                            }
                         }
 
+                        // OpenAI API Key Section
+                        if selectedAIProvider == .openai {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Image(systemName: "brain.head.profile")
+                                        .foregroundColor(.blue)
+                                    Text("OpenAI API Key")
+                                        .dynamicFont(size: 16, fontManager: fontManager)
+                                    Spacer()
+                                    Image(systemName: Config.hasValidAPIKey ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                        .foregroundColor(Config.hasValidAPIKey ? .green : .orange)
+                                }
+
+                                HStack {
+                                    if isOpenAIKeyVisible {
+                                        TextField("Enter your OpenAI API key", text: $openaiAPIKey)
+                                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                                            .autocapitalization(.none)
+                                            .disableAutocorrection(true)
+                                            .onChange(of: openaiAPIKey) { newValue in
+                                                Config.openaiAPIKey = newValue
+                                            }
+                                    } else {
+                                        SecureField("Enter your OpenAI API key", text: $openaiAPIKey)
+                                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                                            .autocapitalization(.none)
+                                            .disableAutocorrection(true)
+                                            .onChange(of: openaiAPIKey) { newValue in
+                                                Config.openaiAPIKey = newValue
+                                            }
+                                    }
+
+                                    Button(action: {
+                                        isOpenAIKeyVisible.toggle()
+                                    }) {
+                                        Image(systemName: isOpenAIKeyVisible ? "eye.slash" : "eye")
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+
+                                if !Config.hasValidAPIKey && !openaiAPIKey.isEmpty && selectedAIProvider == .openai {
+                                    Text("Invalid API key format. Should start with 'sk-'")
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                }
+                            }
+                        }
+
+                        // Status and Help
                         if Config.hasValidAPIKey {
                             Text("✓ API key configured - AI features enabled")
                                 .font(.caption)
                                 .foregroundColor(.green)
                         } else {
-                            Text("Add your Anthropic API key to enable AI-powered calendar features")
+                            Text("Add your \(selectedAIProvider.displayName) API key to enable AI-powered calendar features")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -135,7 +211,7 @@ struct SettingsTabView: View {
                             HStack {
                                 Image(systemName: "questionmark.circle")
                                     .foregroundColor(.blue)
-                                Text("How to get API key")
+                                Text("How to get \(selectedAIProvider.displayName) API key")
                                     .foregroundColor(.blue)
                                     .dynamicFont(size: 14, fontManager: fontManager)
                             }
@@ -254,15 +330,30 @@ struct SettingsTabView: View {
                 }
             }
             .environment(\.sizeCategory, sizeCategory)
-            .alert("Get Anthropic API Key", isPresented: $showingAPIKeyAlert) {
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: 100)
+            }
+            .alert("Get \(selectedAIProvider.displayName) API Key", isPresented: $showingAPIKeyAlert) {
                 Button("Open Console", action: {
-                    if let url = URL(string: "https://console.anthropic.com/settings/keys") {
-                        UIApplication.shared.open(url)
+                    let url: String
+                    switch selectedAIProvider {
+                    case .anthropic:
+                        url = "https://console.anthropic.com/settings/keys"
+                    case .openai:
+                        url = "https://platform.openai.com/api-keys"
+                    }
+                    if let consoleURL = URL(string: url) {
+                        UIApplication.shared.open(consoleURL)
                     }
                 })
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("1. Go to console.anthropic.com\n2. Sign up or log in\n3. Navigate to 'API Keys'\n4. Create a new API key\n5. Copy and paste it here")
+                switch selectedAIProvider {
+                case .anthropic:
+                    Text("1. Go to console.anthropic.com\n2. Sign up or log in\n3. Navigate to 'API Keys'\n4. Create a new API key\n5. Copy and paste it here")
+                case .openai:
+                    Text("1. Go to platform.openai.com\n2. Sign up or log in\n3. Navigate to 'API Keys'\n4. Create a new API key\n5. Copy and paste it here")
+                }
             }
     }
 }

@@ -19,7 +19,7 @@ struct DayCalendarView: View {
                     // Header spacer
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(height: 44)
+                        .frame(height: 22)
 
                     // Hour labels
                     ForEach(hours, id: \.self) { hour in
@@ -42,7 +42,7 @@ struct DayCalendarView: View {
                         VStack(spacing: 0) {
                             // Header with day name and date
                             DayHeaderCell(date: selectedDate)
-                                .frame(height: 44)
+                                .frame(height: 22)
                                 .background(Color(.systemGray6))
 
                             // Hour grid lines
@@ -60,7 +60,7 @@ struct DayCalendarView: View {
                             // Header spacer
                             Rectangle()
                                 .fill(Color.clear)
-                                .frame(height: 44)
+                                .frame(height: 22)
 
                             // Events positioned by time
                             ZStack(alignment: .topLeading) {
@@ -118,16 +118,16 @@ struct DayHeaderCell: View {
     let date: Date
 
     var body: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 1) {
             Text(dayText)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundColor(.secondary)
 
             Text(dateText)
-                .font(.title3)
+                .font(.caption)
                 .fontWeight(isToday ? .bold : .medium)
                 .foregroundColor(isToday ? .white : .primary)
-                .frame(width: 30, height: 30)
+                .frame(width: 15, height: 15)
                 .background(isToday ? Color.blue : Color.clear)
                 .clipShape(Circle())
         }

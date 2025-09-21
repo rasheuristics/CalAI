@@ -10,9 +10,9 @@ struct EventsTabView: View {
     var body: some View {
         VStack(spacing: 0) {
             Picker("Time Range", selection: $selectedTimeRange) {
+                Text("Today").tag(TimeRange.all)
                 Text("This Week").tag(TimeRange.week)
                 Text("This Month").tag(TimeRange.month)
-                Text("All Events").tag(TimeRange.all)
             }
             .pickerStyle(SegmentedPickerStyle())
             .padding(.top, 8)
@@ -45,6 +45,9 @@ struct EventsTabView: View {
                 .listStyle(PlainListStyle())
             }
             }
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: 100)
+            }
             .onAppear {
                 calendarManager.loadEvents()
             }
@@ -66,7 +69,9 @@ struct EventsTabView: View {
                 event.startDate >= now && event.startDate <= monthFromNow
             }
         case .all:
-            return calendarManager.events.sorted { $0.startDate < $1.startDate }
+            return calendarManager.events.filter { event in
+                calendar.isDate(event.startDate, inSameDayAs: now)
+            }
         }
     }
 

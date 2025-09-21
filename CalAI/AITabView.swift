@@ -67,9 +67,11 @@ struct AITabView: View {
                     calendarManager: calendarManager,
                     fontManager: fontManager,
                     onTranscript: { transcript in
+                        print("🗣️ Transcript received in AITabView: \(transcript)")
                         addUserMessage(transcript)
                     },
                     onResponse: { response in
+                        print("🤖 AI response received in AITabView: \(response.message)")
                         addAIResponse(response)
                     }
                 )
