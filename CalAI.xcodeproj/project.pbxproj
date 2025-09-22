@@ -24,6 +24,13 @@
 		50745CB82E7CA969004D0243 /* YearCalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50745CB92E7CA969004D0243 /* YearCalendarView.swift */; };
 		50745CC12E7CAA10004D0243 /* SwiftAnthropic in Frameworks */ = {isa = PBXBuildFile; productRef = 50745CC22E7CAA20004D0243 /* SwiftAnthropic */; };
 		50745D002E8080E1004D0243 /* Algorithms in Frameworks */ = {isa = PBXBuildFile; productRef = 50745CFF2E8080E1004D0243 /* Algorithms */; };
+		50745D022E80B15C004D0243 /* AddEventView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50745D012E80B15C004D0243 /* AddEventView.swift */; };
+		50745D042E80D80A004D0243 /* client_43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo.apps.googleusercontent.com.plist in Resources */ = {isa = PBXBuildFile; fileRef = 50745D032E80D80A004D0243 /* client_43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo.apps.googleusercontent.com.plist */; };
+		50745D072E80D877004D0243 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 50745D062E80D877004D0243 /* GoogleSignIn */; };
+		50745D092E80D877004D0243 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 50745D082E80D877004D0243 /* GoogleSignInSwift */; };
+		50745D0C2E80D8D5004D0243 /* Discovery in Frameworks */ = {isa = PBXBuildFile; productRef = 50745D0B2E80D8D5004D0243 /* Discovery */; };
+		50745D0E2E80D8D5004D0243 /* GoogleAPIRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 50745D0D2E80D8D5004D0243 /* GoogleAPIRuntime */; };
+		50745D102E80DAB3004D0243 /* GoogleCalendarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50745D0F2E80DAB3004D0243 /* GoogleCalendarManager.swift */; };
 		A3C716AA7BB6447C9111E20F94EF3540 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10BD161D6CF45B0BA0CCDD94BE4C7A1 /* Config.swift */; };
 		E19B7AB0C1854764084F7BC1CDE1E0F37 /* FontManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF423B70491E4DA49A127ADF0748A67E /* FontManager.swift */; };
 /* End PBXBuildFile section */
@@ -46,6 +53,9 @@
 		50745CB52E7CA949004D0243 /* WeekCalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekCalendarView.swift; sourceTree = "<group>"; };
 		50745CB72E7CA959004D0243 /* MonthCalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthCalendarView.swift; sourceTree = "<group>"; };
 		50745CB92E7CA969004D0243 /* YearCalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YearCalendarView.swift; sourceTree = "<group>"; };
+		50745D012E80B15C004D0243 /* AddEventView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddEventView.swift; sourceTree = "<group>"; };
+		50745D032E80D80A004D0243 /* client_43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo.apps.googleusercontent.com.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "client_43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo.apps.googleusercontent.com.plist"; sourceTree = "<group>"; };
+		50745D0F2E80DAB3004D0243 /* GoogleCalendarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleCalendarManager.swift; sourceTree = "<group>"; };
 		BF423B70491E4DA49A127ADF0748A67E /* FontManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FontManager.swift; sourceTree = "<group>"; };
 		E10BD161D6CF45B0BA0CCDD94BE4C7A1 /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -56,7 +66,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				50745D002E8080E1004D0243 /* Algorithms in Frameworks */,
+				50745D0C2E80D8D5004D0243 /* Discovery in Frameworks */,
 				50745CC12E7CAA10004D0243 /* SwiftAnthropic in Frameworks */,
+				50745D0E2E80D8D5004D0243 /* GoogleAPIRuntime in Frameworks */,
+				50745D072E80D877004D0243 /* GoogleSignIn in Frameworks */,
+				50745D092E80D877004D0243 /* GoogleSignInSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -66,8 +80,11 @@
 		50745C892E7CA7C8004D0243 = {
 			isa = PBXGroup;
 			children = (
+				50745D0F2E80DAB3004D0243 /* GoogleCalendarManager.swift */,
 				50745C942E7CA7C9004D0243 /* CalAI */,
 				50745C932E7CA7C9004D0243 /* Products */,
+				50745D012E80B15C004D0243 /* AddEventView.swift */,
+				50745D032E80D80A004D0243 /* client_43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo.apps.googleusercontent.com.plist */,
 			);
 			sourceTree = "<group>";
 		};
@@ -131,6 +148,10 @@
 			packageProductDependencies = (
 				50745CC22E7CAA20004D0243 /* SwiftAnthropic */,
 				50745CFF2E8080E1004D0243 /* Algorithms */,
+				50745D062E80D877004D0243 /* GoogleSignIn */,
+				50745D082E80D877004D0243 /* GoogleSignInSwift */,
+				50745D0B2E80D8D5004D0243 /* Discovery */,
+				50745D0D2E80D8D5004D0243 /* GoogleAPIRuntime */,
 			);
 			productName = CalAI;
 			productReference = 50745C922E7CA7C9004D0243 /* CalAI.app */;
@@ -163,6 +184,8 @@
 			packageReferences = (
 				50745CC02E7CAA00004D0243 /* XCRemoteSwiftPackageReference "SwiftAnthropic" */,
 				50745CFE2E8080E1004D0243 /* XCRemoteSwiftPackageReference "swift-algorithms" */,
+				50745D052E80D877004D0243 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				50745D0A2E80D8D5004D0243 /* XCRemoteSwiftPackageReference "google-api-swift-client" */,
 			);
 			productRefGroup = 50745C932E7CA7C9004D0243 /* Products */;
 			projectDirPath = "";
@@ -179,6 +202,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				50745C9D2E7CA7CA004D0243 /* Preview Assets.xcassets in Resources */,
+				50745D042E80D80A004D0243 /* client_43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo.apps.googleusercontent.com.plist in Resources */,
 				50745C9A2E7CA7CA004D0243 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -191,8 +215,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				50745C982E7CA7C9004D0243 /* ContentView.swift in Sources */,
+				50745D102E80DAB3004D0243 /* GoogleCalendarManager.swift in Sources */,
 				50745CAA2E7CA8F9004D0243 /* CalendarTabView.swift in Sources */,
 				50745CAC2E7CA909004D0243 /* EventsTabView.swift in Sources */,
+				50745D022E80B15C004D0243 /* AddEventView.swift in Sources */,
 				50745CAE2E7CA919004D0243 /* AITabView.swift in Sources */,
 				50745CB02E7CA929004D0243 /* SettingsTabView.swift in Sources */,
 				50745CB22E7CA939004D0243 /* DayCalendarView.swift in Sources */,
@@ -430,6 +456,22 @@
 				minimumVersion = 1.2.1;
 			};
 		};
+		50745D052E80D877004D0243 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
+			};
+		};
+		50745D0A2E80D8D5004D0243 /* XCRemoteSwiftPackageReference "google-api-swift-client" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googleapis/google-api-swift-client";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -442,6 +484,26 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 50745CFE2E8080E1004D0243 /* XCRemoteSwiftPackageReference "swift-algorithms" */;
 			productName = Algorithms;
+		};
+		50745D062E80D877004D0243 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 50745D052E80D877004D0243 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		50745D082E80D877004D0243 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 50745D052E80D877004D0243 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+		50745D0B2E80D8D5004D0243 /* Discovery */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 50745D0A2E80D8D5004D0243 /* XCRemoteSwiftPackageReference "google-api-swift-client" */;
+			productName = Discovery;
+		};
+		50745D0D2E80D8D5004D0243 /* GoogleAPIRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 50745D0A2E80D8D5004D0243 /* XCRemoteSwiftPackageReference "google-api-swift-client" */;
+			productName = GoogleAPIRuntime;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

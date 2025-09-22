@@ -8,7 +8,7 @@ struct YearCalendarView: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: true) {
-            LazyVStack(spacing: 30) {
+            LazyVStack(spacing: 15) {
                 ForEach(monthGroups, id: \.0) { group in
                     YearMonthGroupView(
                         months: group.1,
@@ -16,8 +16,8 @@ struct YearCalendarView: View {
                     )
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
         }
     }
 
@@ -44,13 +44,13 @@ struct YearMonthGroupView: View {
     @Binding var selectedDate: Date
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 15), count: 2), spacing: 20) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2), spacing: 8) {
             ForEach(months, id: \.self) { month in
                 YearMonthView(
                     month: month,
                     selectedDate: $selectedDate
                 )
-                .aspectRatio(1.2, contentMode: .fit)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onTapGesture {
                     selectedDate = month
                 }
@@ -66,11 +66,10 @@ struct YearMonthView: View {
     private let calendar = Calendar.current
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 2) {
             // Month name
             Text(monthName)
-                .font(.caption)
-                .fontWeight(.semibold)
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(.primary)
 
             // Mini calendar grid
@@ -78,9 +77,9 @@ struct YearMonthView: View {
                 // Weekday headers (abbreviated)
                 ForEach(weekdayHeaders, id: \.self) { weekday in
                     Text(weekday)
-                        .font(.system(size: 8))
+                        .font(.system(size: 10))
                         .foregroundColor(.secondary)
-                        .frame(height: 12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
 
                 // Calendar days
@@ -90,11 +89,12 @@ struct YearMonthView: View {
                         selectedDate: $selectedDate,
                         month: month
                     )
-                    .frame(height: 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
         .padding(8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isCurrentMonth ? Color.blue.opacity(0.1) : Color(.systemGray6))
@@ -162,7 +162,7 @@ struct YearDayCell: View {
             }
 
             Text("\(calendar.component(.day, from: date))")
-                .font(.system(size: 7, weight: isToday ? .bold : .regular))
+                .font(.system(size: 12, weight: isToday ? .bold : .regular))
                 .foregroundColor(textColor)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

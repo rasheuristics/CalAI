@@ -1,41 +1,49 @@
 {
   "images" : [
     {
+      "filename" : "Chronos 1.PNG",
       "idiom" : "iphone",
       "scale" : "2x",
       "size" : "20x20"
     },
     {
+      "filename" : "Chronos 2.PNG",
       "idiom" : "iphone",
       "scale" : "3x",
       "size" : "20x20"
     },
     {
+      "filename" : "Chronos 3.PNG",
       "idiom" : "iphone",
       "scale" : "2x",
       "size" : "29x29"
     },
     {
+      "filename" : "Chronos 4.PNG",
       "idiom" : "iphone",
       "scale" : "3x",
       "size" : "29x29"
     },
     {
+      "filename" : "Chronos 5.PNG",
       "idiom" : "iphone",
       "scale" : "2x",
       "size" : "40x40"
     },
     {
+      "filename" : "Chronos 6.PNG",
       "idiom" : "iphone",
       "scale" : "3x",
       "size" : "40x40"
     },
     {
+      "filename" : "Chronos 7.PNG",
       "idiom" : "iphone",
       "scale" : "2x",
       "size" : "60x60"
     },
     {
+      "filename" : "Chronos 8.PNG",
       "idiom" : "iphone",
       "scale" : "3x",
       "size" : "60x60"
@@ -81,6 +89,7 @@
       "size" : "83.5x83.5"
     },
     {
+      "filename" : "Chronos.PNG",
       "idiom" : "ios-marketing",
       "scale" : "1x",
       "size" : "1024x1024"

@@ -4,6 +4,7 @@ struct SettingsTabView: View {
     @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var voiceManager: VoiceManager
     @ObservedObject var fontManager: FontManager
+    @StateObject private var googleCalendarManager = GoogleCalendarManager()
     @State private var selectedLanguage = "en-US"
     @State private var notificationsEnabled = true
     @State private var autoSyncEnabled = true
@@ -48,9 +49,13 @@ struct SettingsTabView: View {
                     PermissionRow(
                         title: "Google Calendar",
                         systemImage: "globe",
-                        status: .notGranted,
+                        status: googleCalendarManager.isSignedIn ? .granted : .notGranted,
                         action: {
-                            // TODO: Implement Google Calendar connection
+                            if googleCalendarManager.isSignedIn {
+                                googleCalendarManager.signOut()
+                            } else {
+                                googleCalendarManager.signIn()
+                            }
                         }
                     )
 

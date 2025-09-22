@@ -37,6 +37,51 @@ class AIManager: ObservableObject {
         self.anthropicService = AnthropicServiceFactory.service(apiKey: apiKey, betaHeaders: nil)
     }
 
+    func validateAPIKey(completion: @escaping (Bool, String) -> Void) {
+        guard Config.hasValidAPIKey else {
+            completion(false, "No API key configured")
+            return
+        }
+
+        print("🔑 Testing API key validity...")
+        Task {
+            do {
+                let testMessage = MessageParameter.Message(role: .user, content: .text("Test"))
+                let parameters = MessageParameter(
+                    model: .claude35Sonnet,
+                    messages: [testMessage],
+                    maxTokens: 10
+                )
+
+                _ = try await anthropicService.createMessage(parameters)
+                await MainActor.run {
+                    completion(true, "API key is valid with proper permissions")
+                }
+            } catch {
+                await MainActor.run {
+                    let errorMessage = self.parseAPIError(error)
+                    completion(false, errorMessage)
+                }
+            }
+        }
+    }
+
+    private func parseAPIError(_ error: Error) -> String {
+        let errorString = error.localizedDescription
+
+        if errorString.contains("401") || errorString.contains("authentication") {
+            return "Invalid API key - authentication failed"
+        } else if errorString.contains("403") || errorString.contains("forbidden") {
+            return "API key lacks required permissions"
+        } else if errorString.contains("429") || errorString.contains("rate limit") {
+            return "API rate limit exceeded or quota depleted"
+        } else if errorString.contains("402") || errorString.contains("payment") {
+            return "Payment required - check billing status"
+        } else {
+            return "API error: \(errorString)"
+        }
+    }
+
     func processVoiceCommand(_ transcript: String, completion: @escaping (AIResponse) -> Void) {
         print("🧠 AI Manager processing transcript: \(transcript)")
         isProcessing = true
@@ -169,7 +214,7 @@ class AIManager: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let requestBody: [String: Any] = [
-            "model": "gpt-4",
+            "model": "gpt-3.5-turbo",
             "messages": [
                 [
                     "role": "system",

@@ -145,8 +145,8 @@ class VoiceManager: NSObject, ObservableObject {
                     DispatchQueue.main.async {
                         if let transcript = self?.latestTranscript, !transcript.isEmpty {
                             self?.completionHandler?(transcript)
+                            self?.stopListening()
                         }
-                        self?.stopListening()
                     }
                     return
                 }
@@ -155,13 +155,27 @@ class VoiceManager: NSObject, ObservableObject {
             if let error = error {
                 print("❌ Recognition error: \(error)")
                 print("📝 Current stored transcript: '\(self?.latestTranscript ?? "")'")
-                // Use stored transcript after delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    if let transcript = self?.latestTranscript, !transcript.isEmpty {
-                        print("🔄 Using stored transcript after delay: \(transcript)")
-                        self?.completionHandler?(transcript)
+
+                // Don't process on cancellation errors - these happen during normal stop
+                let nsError = error as NSError
+                if nsError.domain == "kLSRErrorDomain" && nsError.code == 301 {
+                    print("🔄 Recognition canceled - using stored transcript if available")
+                    DispatchQueue.main.async {
+                        if let transcript = self?.latestTranscript, !transcript.isEmpty {
+                            print("✅ Processing stored transcript: \(transcript)")
+                            self?.completionHandler?(transcript)
+                        }
+                        self?.stopListening()
                     }
-                    self?.stopListening()
+                } else {
+                    // Other errors - use delayed processing
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        if let transcript = self?.latestTranscript, !transcript.isEmpty {
+                            print("🔄 Using stored transcript after delay: \(transcript)")
+                            self?.completionHandler?(transcript)
+                        }
+                        self?.stopListening()
+                    }
                 }
             }
         }

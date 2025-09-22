@@ -6,6 +6,7 @@ struct EventsTabView: View {
     @ObservedObject var fontManager: FontManager
     @State private var showingUpcoming = true
     @State private var selectedTimeRange: TimeRange = .week
+    @State private var showingAddEvent = false
 
     var body: some View {
         ZStack {
@@ -14,14 +15,25 @@ struct EventsTabView: View {
                 .ignoresSafeArea(.all)
 
             VStack(spacing: 0) {
-            Picker("Time Range", selection: $selectedTimeRange) {
-                Text("Today").tag(TimeRange.all)
-                Text("This Week").tag(TimeRange.week)
-                Text("This Month").tag(TimeRange.month)
-            }
-            .pickerStyle(SegmentedPickerStyle())
-            .padding(.top, 8)
-            .padding(.horizontal)
+                HStack {
+                    Picker("Time Range", selection: $selectedTimeRange) {
+                        Text("Today").tag(TimeRange.all)
+                        Text("This Week").tag(TimeRange.week)
+                        Text("This Month").tag(TimeRange.month)
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
+
+                    Button(action: {
+                        showingAddEvent = true
+                    }) {
+                        Image(systemName: "plus")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                    .padding(.leading, 8)
+                }
+                .padding(.top, 8)
+                .padding(.horizontal)
 
             if filteredEvents.isEmpty {
                 VStack {
@@ -60,6 +72,9 @@ struct EventsTabView: View {
             }
             .onAppear {
                 calendarManager.loadEvents()
+            }
+            .sheet(isPresented: $showingAddEvent) {
+                AddEventView(calendarManager: calendarManager, fontManager: fontManager)
             }
         }
     }
