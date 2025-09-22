@@ -44,7 +44,7 @@ struct YearMonthGroupView: View {
     @Binding var selectedDate: Date
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2), spacing: 8) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 2), spacing: 0) {
             ForEach(months, id: \.self) { month in
                 YearMonthView(
                     month: month,
@@ -66,43 +66,51 @@ struct YearMonthView: View {
     private let calendar = Calendar.current
 
     var body: some View {
-        VStack(spacing: 2) {
-            // Month name
-            Text(monthName)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.primary)
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                // Month name - 15% of height
+                Text(monthName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .frame(width: geometry.size.width, height: geometry.size.height * 0.15)
 
-            // Mini calendar grid
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 7), spacing: 1) {
-                // Weekday headers (abbreviated)
-                ForEach(weekdayHeaders, id: \.self) { weekday in
-                    Text(weekday)
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Weekday headers - 10% of height
+                HStack(spacing: 0) {
+                    ForEach(weekdayHeaders, id: \.self) { weekday in
+                        Text(weekday)
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                            .frame(width: geometry.size.width / 7, height: geometry.size.height * 0.10)
+                    }
                 }
 
-                // Calendar days
-                ForEach(monthDays, id: \.self) { date in
-                    YearDayCell(
-                        date: date,
-                        selectedDate: $selectedDate,
-                        month: month
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Calendar grid - 75% of height
+                let calendarHeight = geometry.size.height * 0.75
+                let rowCount = CGFloat((monthDays.count + 6) / 7) // Calculate number of rows
+                let cellHeight = calendarHeight / rowCount
+
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
+                    ForEach(monthDays, id: \.self) { date in
+                        YearDayCell(
+                            date: date,
+                            selectedDate: $selectedDate,
+                            month: month
+                        )
+                        .frame(width: geometry.size.width / 7, height: cellHeight)
+                    }
                 }
+                .frame(width: geometry.size.width, height: calendarHeight)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isCurrentMonth ? Color.blue.opacity(0.1) : Color(.systemGray6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(isCurrentMonth ? Color.blue : Color.clear, lineWidth: 1)
+                    )
+            )
         }
-        .padding(8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isCurrentMonth ? Color.blue.opacity(0.1) : Color(.systemGray6))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(isCurrentMonth ? Color.blue : Color.clear, lineWidth: 1)
-                )
-        )
     }
 
     private var monthName: String {
@@ -147,22 +155,18 @@ struct YearDayCell: View {
 
     var body: some View {
         ZStack {
-            Rectangle()
-                .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
             if isToday {
                 Circle()
                     .fill(Color.blue)
-                    .frame(width: 10, height: 10)
+                    .frame(width: 6, height: 6)
             } else if isSelected {
                 Circle()
-                    .stroke(Color.blue, lineWidth: 1)
-                    .frame(width: 10, height: 10)
+                    .stroke(Color.blue, lineWidth: 0.5)
+                    .frame(width: 6, height: 6)
             }
 
             Text("\(calendar.component(.day, from: date))")
-                .font(.system(size: 12, weight: isToday ? .bold : .regular))
+                .font(.system(size: 8, weight: isToday ? .bold : .regular))
                 .foregroundColor(textColor)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

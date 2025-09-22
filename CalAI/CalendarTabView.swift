@@ -38,11 +38,13 @@ struct CalendarTabView: View {
                     case .week:
                         iOSWeekView(selectedDate: $selectedDate, events: calendarManager.events, fontManager: fontManager)
                     case .month:
-                        iOSMonthView(selectedDate: $selectedDate, events: calendarManager.events, fontManager: fontManager)
+                        MonthCalendarView(selectedDate: $selectedDate)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     case .year:
                         iOSYearView(selectedDate: $selectedDate, fontManager: fontManager)
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
