@@ -2,11 +2,47 @@ import Foundation
 import EventKit
 import Combine
 
+enum CalendarSource {
+    case ios
+    case google
+    case outlook
+}
+
+struct UnifiedEvent: Identifiable {
+    let id: String
+    let title: String
+    let startDate: Date
+    let endDate: Date
+    let location: String?
+    let description: String?
+    let source: CalendarSource
+    let originalEvent: Any
+
+    var sourceLabel: String {
+        switch source {
+        case .ios: return "📱 iOS"
+        case .google: return "🟢 Google"
+        case .outlook: return "🔵 Outlook"
+        }
+    }
+
+    var duration: String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return "\(formatter.string(from: startDate)) - \(formatter.string(from: endDate))"
+    }
+}
+
 class CalendarManager: ObservableObject {
     @Published var events: [EKEvent] = []
+    @Published var unifiedEvents: [UnifiedEvent] = []
     @Published var hasCalendarAccess = false
 
     private let eventStore = EKEventStore()
+
+    // External calendar managers will be injected
+    var googleCalendarManager: GoogleCalendarManager?
+    var outlookCalendarManager: OutlookCalendarManager?
 
     func requestCalendarAccess() {
         if #available(iOS 17.0, *) {
@@ -42,6 +78,86 @@ class CalendarManager: ObservableObject {
 
         DispatchQueue.main.async {
             self.events = fetchedEvents.sorted { $0.startDate < $1.startDate }
+            self.loadAllUnifiedEvents()
+        }
+    }
+
+    func loadAllUnifiedEvents() {
+        var allEvents: [UnifiedEvent] = []
+
+        // Add iOS events
+        let iosEvents = events.map { event in
+            UnifiedEvent(
+                id: event.eventIdentifier ?? UUID().uuidString,
+                title: event.title ?? "Untitled",
+                startDate: event.startDate,
+                endDate: event.endDate,
+                location: event.location,
+                description: event.notes,
+                source: .ios,
+                originalEvent: event
+            )
+        }
+        allEvents.append(contentsOf: iosEvents)
+
+        // Add Google events
+        if let googleManager = googleCalendarManager {
+            let googleEvents = googleManager.googleEvents.map { event in
+                UnifiedEvent(
+                    id: event.id,
+                    title: event.title,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    location: event.location,
+                    description: event.description,
+                    source: .google,
+                    originalEvent: event
+                )
+            }
+            allEvents.append(contentsOf: googleEvents)
+        }
+
+        // Add Outlook events
+        if let outlookManager = outlookCalendarManager {
+            let outlookEvents = outlookManager.outlookEvents.map { event in
+                UnifiedEvent(
+                    id: event.id,
+                    title: event.title,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    location: event.location,
+                    description: event.description,
+                    source: .outlook,
+                    originalEvent: event
+                )
+            }
+            allEvents.append(contentsOf: outlookEvents)
+        }
+
+        // Sort all events by start date
+        unifiedEvents = allEvents.sorted { $0.startDate < $1.startDate }
+        print("✅ Loaded \(unifiedEvents.count) unified events from all sources")
+    }
+
+    func refreshAllCalendars() {
+        print("🔄 Refreshing all calendar sources...")
+
+        // Refresh iOS events
+        loadEvents()
+
+        // Refresh Google events
+        if let googleManager = googleCalendarManager, googleManager.isSignedIn {
+            googleManager.fetchEvents()
+        }
+
+        // Refresh Outlook events
+        if let outlookManager = outlookCalendarManager, outlookManager.isSignedIn, outlookManager.selectedCalendar != nil {
+            outlookManager.fetchEvents()
+        }
+
+        // Update unified events after a delay to allow external fetches to complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.loadAllUnifiedEvents()
         }
     }
 

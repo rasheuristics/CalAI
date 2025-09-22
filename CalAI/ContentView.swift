@@ -3,6 +3,8 @@ import EventKit
 
 struct ContentView: View {
     @StateObject private var calendarManager = CalendarManager()
+    @StateObject private var googleCalendarManager = GoogleCalendarManager()
+    @StateObject private var outlookCalendarManager = OutlookCalendarManager()
     @StateObject private var voiceManager = VoiceManager()
     @StateObject private var aiManager = AIManager()
     @StateObject private var fontManager = FontManager()
@@ -31,7 +33,7 @@ struct ContentView: View {
                 }
                 .tag(2)
 
-            SettingsTabView(calendarManager: calendarManager, voiceManager: voiceManager, fontManager: fontManager)
+            SettingsTabView(calendarManager: calendarManager, voiceManager: voiceManager, fontManager: fontManager, googleCalendarManager: googleCalendarManager, outlookCalendarManager: outlookCalendarManager)
                 .tabItem {
                     Image(systemName: "gearshape")
                     Text("Settings")
@@ -39,6 +41,10 @@ struct ContentView: View {
                 .tag(3)
         }
         .onAppear {
+            // Inject external calendar managers into the main calendar manager
+            calendarManager.googleCalendarManager = googleCalendarManager
+            calendarManager.outlookCalendarManager = outlookCalendarManager
+
             calendarManager.requestCalendarAccess()
             setupGlassmorphismTabBar()
         }

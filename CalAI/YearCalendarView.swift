@@ -72,7 +72,7 @@ struct YearMonthView: View {
                 Text(monthName)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.primary)
-                    .frame(width: geometry.size.width, height: geometry.size.height * 0.15)
+                    .frame(maxWidth: .infinity, maxHeight: geometry.size.height * 0.15)
 
                 // Weekday headers - 10% of height
                 HStack(spacing: 0) {
@@ -80,7 +80,7 @@ struct YearMonthView: View {
                         Text(weekday)
                             .font(.system(size: 8))
                             .foregroundColor(.secondary)
-                            .frame(width: geometry.size.width / 7, height: geometry.size.height * 0.10)
+                            .frame(maxWidth: .infinity, maxHeight: geometry.size.height * 0.10)
                     }
                 }
 
@@ -96,10 +96,10 @@ struct YearMonthView: View {
                             selectedDate: $selectedDate,
                             month: month
                         )
-                        .frame(width: geometry.size.width / 7, height: cellHeight)
+                        .frame(maxWidth: .infinity, maxHeight: cellHeight)
                     }
                 }
-                .frame(width: geometry.size.width, height: calendarHeight)
+                .frame(maxWidth: .infinity, maxHeight: calendarHeight)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(

@@ -68,6 +68,16 @@
                 <string>com.googleusercontent.apps.43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo</string>
             </array>
         </dict>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>MSALRedirect</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>msauth.com.calai.CalAI</string>
+            </array>
+        </dict>
     </array>
+    <key>MSALClientID</key>
+    <string>1caae4b2-4f30-49d9-b486-5229dc148c3f</string>
 </dict>
 </plist>

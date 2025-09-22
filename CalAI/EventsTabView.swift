@@ -7,6 +7,7 @@ struct EventsTabView: View {
     @State private var showingUpcoming = true
     @State private var selectedTimeRange: TimeRange = .week
     @State private var showingAddEvent = false
+    @State private var showUnifiedEvents = true
 
     var body: some View {
         ZStack {
@@ -15,27 +16,42 @@ struct EventsTabView: View {
                 .ignoresSafeArea(.all)
 
             VStack(spacing: 0) {
-                HStack {
-                    Picker("Time Range", selection: $selectedTimeRange) {
-                        Text("Today").tag(TimeRange.all)
-                        Text("This Week").tag(TimeRange.week)
-                        Text("This Month").tag(TimeRange.month)
-                    }
-                    .pickerStyle(SegmentedPickerStyle())
+                VStack(spacing: 8) {
+                    HStack {
+                        Picker("Time Range", selection: $selectedTimeRange) {
+                            Text("Today").tag(TimeRange.all)
+                            Text("This Week").tag(TimeRange.week)
+                            Text("This Month").tag(TimeRange.month)
+                        }
+                        .pickerStyle(SegmentedPickerStyle())
 
-                    Button(action: {
-                        showingAddEvent = true
-                    }) {
-                        Image(systemName: "plus")
-                            .font(.title2)
-                            .foregroundColor(.blue)
+                        Button(action: {
+                            showingAddEvent = true
+                        }) {
+                            Image(systemName: "plus")
+                                .font(.title2)
+                                .foregroundColor(.blue)
+                        }
+                        .padding(.leading, 8)
                     }
-                    .padding(.leading, 8)
+
+                    HStack {
+                        Toggle("Show All Calendars", isOn: $showUnifiedEvents)
+                            .dynamicFont(size: 14, fontManager: fontManager)
+
+                        Spacer()
+
+                        Button("Refresh All") {
+                            calendarManager.refreshAllCalendars()
+                        }
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                    }
                 }
                 .padding(.top, 8)
                 .padding(.horizontal)
 
-            if filteredEvents.isEmpty {
+            if showUnifiedEvents ? filteredUnifiedEvents.isEmpty : filteredEvents.isEmpty {
                 VStack {
                     Image(systemName: "calendar.badge.exclamationmark")
                         .font(.system(size: 50))
@@ -50,28 +66,41 @@ struct EventsTabView: View {
                 .padding()
                 Spacer()
             } else {
-                List {
-                    ForEach(groupedEvents.keys.sorted(), id: \.self) { date in
-                        Section(header: Text(formatSectionHeader(date))) {
-                            ForEach(groupedEvents[date] ?? [], id: \.eventIdentifier) { event in
-                                EventDetailRow(event: event, fontManager: fontManager)
+                if showUnifiedEvents {
+                    List {
+                        ForEach(groupedUnifiedEvents.keys.sorted(), id: \.self) { date in
+                            Section(header: Text(formatSectionHeader(date))) {
+                                ForEach(groupedUnifiedEvents[date] ?? [], id: \.id) { event in
+                                    UnifiedEventDetailRow(event: event, fontManager: fontManager)
+                                }
                             }
-                            .onDelete { indexSet in
-                                let eventsForDate = groupedEvents[date] ?? []
-                                for index in indexSet {
-                                    if index < eventsForDate.count {
-                                        calendarManager.deleteEvent(eventsForDate[index])
+                        }
+                    }
+                    .listStyle(PlainListStyle())
+                } else {
+                    List {
+                        ForEach(groupedEvents.keys.sorted(), id: \.self) { date in
+                            Section(header: Text(formatSectionHeader(date))) {
+                                ForEach(groupedEvents[date] ?? [], id: \.eventIdentifier) { event in
+                                    EventDetailRow(event: event, fontManager: fontManager)
+                                }
+                                .onDelete { indexSet in
+                                    let eventsForDate = groupedEvents[date] ?? []
+                                    for index in indexSet {
+                                        if index < eventsForDate.count {
+                                            calendarManager.deleteEvent(eventsForDate[index])
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                    .listStyle(PlainListStyle())
                 }
-                .listStyle(PlainListStyle())
             }
             }
             .onAppear {
-                calendarManager.loadEvents()
+                calendarManager.refreshAllCalendars()
             }
             .sheet(isPresented: $showingAddEvent) {
                 AddEventView(calendarManager: calendarManager, fontManager: fontManager)
@@ -101,9 +130,38 @@ struct EventsTabView: View {
         }
     }
 
+    private var filteredUnifiedEvents: [UnifiedEvent] {
+        let calendar = Calendar.current
+        let now = Date()
+
+        switch selectedTimeRange {
+        case .week:
+            let weekFromNow = calendar.date(byAdding: .weekOfYear, value: 1, to: now) ?? now
+            return calendarManager.unifiedEvents.filter { event in
+                event.startDate >= now && event.startDate <= weekFromNow
+            }
+        case .month:
+            let monthFromNow = calendar.date(byAdding: .month, value: 1, to: now) ?? now
+            return calendarManager.unifiedEvents.filter { event in
+                event.startDate >= now && event.startDate <= monthFromNow
+            }
+        case .all:
+            return calendarManager.unifiedEvents.filter { event in
+                calendar.isDate(event.startDate, inSameDayAs: now)
+            }
+        }
+    }
+
     private var groupedEvents: [Date: [EKEvent]] {
         let calendar = Calendar.current
         return Dictionary(grouping: filteredEvents) { event in
+            calendar.startOfDay(for: event.startDate)
+        }
+    }
+
+    private var groupedUnifiedEvents: [Date: [UnifiedEvent]] {
+        let calendar = Calendar.current
+        return Dictionary(grouping: filteredUnifiedEvents) { event in
             calendar.startOfDay(for: event.startDate)
         }
     }
@@ -172,5 +230,74 @@ struct EventDetailRow: View {
     private func colorForCalendar(_ calendar: EKCalendar?) -> Color {
         guard let calendar = calendar else { return .blue }
         return Color(calendar.cgColor)
+    }
+}
+
+struct UnifiedEventDetailRow: View {
+    let event: UnifiedEvent
+    let fontManager: FontManager
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(event.title)
+                        .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+
+                    Spacer()
+
+                    Text(event.sourceLabel)
+                        .dynamicFont(size: 10, weight: .medium, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(.systemGray5))
+                        .cornerRadius(4)
+                }
+
+                HStack {
+                    Image(systemName: "clock")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                    Text(formatTime(event.startDate))
+                    Text("-")
+                    Text(formatTime(event.endDate))
+                }
+                .dynamicFont(size: 12, fontManager: fontManager)
+                .foregroundColor(.secondary)
+
+                if let location = event.location, !location.isEmpty {
+                    HStack {
+                        Image(systemName: "location")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                        Text(location)
+                            .dynamicFont(size: 12, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            Circle()
+                .fill(colorForSource(event.source))
+                .frame(width: 10, height: 10)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func colorForSource(_ source: CalendarSource) -> Color {
+        switch source {
+        case .ios: return .blue
+        case .google: return .green
+        case .outlook: return .orange
+        }
     }
 }

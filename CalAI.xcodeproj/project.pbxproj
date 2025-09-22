@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		505F673D2E81C6B900C188F0 /* MSAL in Frameworks */ = {isa = PBXBuildFile; productRef = 505F673C2E81C6B900C188F0 /* MSAL */; };
+		505F673F2E81C75F00C188F0 /* OutlookCalendarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505F673E2E81C75F00C188F0 /* OutlookCalendarManager.swift */; };
 		50745C962E7CA7C9004D0243 /* CalAIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50745C952E7CA7C9004D0243 /* CalAIApp.swift */; };
 		50745C982E7CA7C9004D0243 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50745C972E7CA7C9004D0243 /* ContentView.swift */; };
 		50745C9A2E7CA7CA004D0243 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 50745C992E7CA7CA004D0243 /* Assets.xcassets */; };
@@ -36,6 +38,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		505F673E2E81C75F00C188F0 /* OutlookCalendarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlookCalendarManager.swift; sourceTree = "<group>"; };
 		50745C922E7CA7C9004D0243 /* CalAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CalAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		50745C952E7CA7C9004D0243 /* CalAIApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalAIApp.swift; sourceTree = "<group>"; };
 		50745C972E7CA7C9004D0243 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -70,6 +73,7 @@
 				50745CC12E7CAA10004D0243 /* SwiftAnthropic in Frameworks */,
 				50745D0E2E80D8D5004D0243 /* GoogleAPIRuntime in Frameworks */,
 				50745D072E80D877004D0243 /* GoogleSignIn in Frameworks */,
+				505F673D2E81C6B900C188F0 /* MSAL in Frameworks */,
 				50745D092E80D877004D0243 /* GoogleSignInSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -80,6 +84,7 @@
 		50745C892E7CA7C8004D0243 = {
 			isa = PBXGroup;
 			children = (
+				505F673E2E81C75F00C188F0 /* OutlookCalendarManager.swift */,
 				50745D0F2E80DAB3004D0243 /* GoogleCalendarManager.swift */,
 				50745C942E7CA7C9004D0243 /* CalAI */,
 				50745C932E7CA7C9004D0243 /* Products */,
@@ -152,6 +157,7 @@
 				50745D082E80D877004D0243 /* GoogleSignInSwift */,
 				50745D0B2E80D8D5004D0243 /* Discovery */,
 				50745D0D2E80D8D5004D0243 /* GoogleAPIRuntime */,
+				505F673C2E81C6B900C188F0 /* MSAL */,
 			);
 			productName = CalAI;
 			productReference = 50745C922E7CA7C9004D0243 /* CalAI.app */;
@@ -186,6 +192,7 @@
 				50745CFE2E8080E1004D0243 /* XCRemoteSwiftPackageReference "swift-algorithms" */,
 				50745D052E80D877004D0243 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 				50745D0A2E80D8D5004D0243 /* XCRemoteSwiftPackageReference "google-api-swift-client" */,
+				505F673B2E81C6B900C188F0 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */,
 			);
 			productRefGroup = 50745C932E7CA7C9004D0243 /* Products */;
 			projectDirPath = "";
@@ -223,6 +230,7 @@
 				50745CB02E7CA929004D0243 /* SettingsTabView.swift in Sources */,
 				50745CB22E7CA939004D0243 /* DayCalendarView.swift in Sources */,
 				50745CB42E7CA949004D0243 /* WeekCalendarView.swift in Sources */,
+				505F673F2E81C75F00C188F0 /* OutlookCalendarManager.swift in Sources */,
 				50745CB62E7CA959004D0243 /* MonthCalendarView.swift in Sources */,
 				50745CB82E7CA969004D0243 /* YearCalendarView.swift in Sources */,
 				50745CA42E7CA8C9004D0243 /* CalendarManager.swift in Sources */,
@@ -440,6 +448,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		505F673B2E81C6B900C188F0 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/AzureAD/microsoft-authentication-library-for-objc";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.0;
+			};
+		};
 		50745CC02E7CAA00004D0243 /* XCRemoteSwiftPackageReference "SwiftAnthropic" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/jamesrochabrun/SwiftAnthropic";
@@ -475,6 +491,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		505F673C2E81C6B900C188F0 /* MSAL */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 505F673B2E81C6B900C188F0 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */;
+			productName = MSAL;
+		};
 		50745CC22E7CAA20004D0243 /* SwiftAnthropic */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 50745CC02E7CAA00004D0243 /* XCRemoteSwiftPackageReference "SwiftAnthropic" */;
