@@ -77,6 +77,11 @@
             </array>
         </dict>
     </array>
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+        <string>msauthv2</string>
+        <string>msauthv3</string>
+    </array>
     <key>MSALClientID</key>
     <string>1caae4b2-4f30-49d9-b486-5229dc148c3f</string>
 </dict>
