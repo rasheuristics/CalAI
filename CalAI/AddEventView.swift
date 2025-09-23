@@ -58,6 +58,9 @@ struct AddEventView: View {
     @ObservedObject var fontManager: FontManager
     @Environment(\.dismiss) private var dismiss
 
+    // Optional event for editing mode
+    let eventToEdit: UnifiedEvent?
+
     @State private var title = ""
     @State private var location = ""
     @State private var notes = ""
@@ -73,6 +76,20 @@ struct AddEventView: View {
     @State private var newAttendeeEmail = ""
     @State private var showingAttendeeInput = false
     @State private var sendInvitations = true
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+
+    // Computed properties for edit mode
+    private var isEditMode: Bool { eventToEdit != nil }
+    private var navigationTitle: String { isEditMode ? "Edit Event" : "Add Event" }
+    private var saveButtonTitle: String { isEditMode ? "Update" : "Save" }
+
+    // Initialize with optional event
+    init(calendarManager: CalendarManager, fontManager: FontManager, eventToEdit: UnifiedEvent? = nil) {
+        self.calendarManager = calendarManager
+        self.fontManager = fontManager
+        self.eventToEdit = eventToEdit
+    }
 
     var body: some View {
         NavigationView {
@@ -240,7 +257,7 @@ struct AddEventView: View {
                         .frame(minHeight: 100)
                 }
             }
-            .navigationTitle("Add Event")
+            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -251,13 +268,20 @@ struct AddEventView: View {
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        createEvent()
+                    Button(saveButtonTitle) {
+                        if isEditMode {
+                            updateEvent()
+                        } else {
+                            createEvent()
+                        }
                     }
-                    .disabled(title.isEmpty)
+                    .disabled(title.isEmpty || isLoading)
                     .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
                 }
             }
+        }
+        .onAppear {
+            loadEventDataIfNeeded()
         }
         .onChange(of: startDate) { newValue in
             if endDate <= newValue {
@@ -307,6 +331,131 @@ struct AddEventView: View {
         }
 
         dismiss()
+    }
+
+    private func loadEventDataIfNeeded() {
+        guard let event = eventToEdit else { return }
+
+        // Load event data into form fields
+        title = event.title
+        location = event.location ?? ""
+        notes = event.description ?? ""
+        startDate = event.startDate
+        endDate = event.endDate
+        isAllDay = event.isAllDay
+
+        // Set the appropriate calendar option based on source
+        switch event.source {
+        case .ios:
+            selectedCalendar = .ios
+        case .google:
+            selectedCalendar = .google
+        case .outlook:
+            selectedCalendar = .outlook
+        }
+    }
+
+    private func updateEvent() {
+        guard !title.isEmpty, let eventToEdit = eventToEdit else { return }
+
+        isLoading = true
+        errorMessage = nil
+
+        let updatedEvent = UnifiedEvent(
+            id: eventToEdit.id,
+            title: title,
+            startDate: startDate,
+            endDate: endDate,
+            location: location.isEmpty ? nil : location,
+            description: notes.isEmpty ? nil : notes,
+            isAllDay: isAllDay,
+            source: eventToEdit.source,
+            originalEvent: eventToEdit.originalEvent
+        )
+
+        updateEventInCalendar(updatedEvent) { success, error in
+            DispatchQueue.main.async {
+                isLoading = false
+                if success {
+                    // Refresh calendar data
+                    calendarManager.refreshAllCalendars()
+                    dismiss()
+                } else {
+                    errorMessage = error ?? "Failed to update event"
+                }
+            }
+        }
+    }
+
+    private func updateEventInCalendar(_ updatedEvent: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
+        switch updatedEvent.source {
+        case .ios:
+            updateIOSEvent(updatedEvent, completion: completion)
+        case .google:
+            updateGoogleEvent(updatedEvent, completion: completion)
+        case .outlook:
+            updateOutlookEvent(updatedEvent, completion: completion)
+        }
+    }
+
+    private func updateIOSEvent(_ updatedEvent: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
+        guard let ekEvent = updatedEvent.originalEvent as? EKEvent else {
+            completion(false, "Could not find original iOS event")
+            return
+        }
+
+        // Update the EKEvent with new data
+        ekEvent.title = updatedEvent.title
+        ekEvent.location = updatedEvent.location
+        ekEvent.notes = updatedEvent.description
+        ekEvent.startDate = updatedEvent.startDate
+        ekEvent.endDate = updatedEvent.endDate
+        ekEvent.isAllDay = updatedEvent.isAllDay
+
+        do {
+            try calendarManager.eventStore.save(ekEvent, span: .thisEvent)
+            print("✅ Successfully updated iOS event: \(updatedEvent.title)")
+            completion(true, nil)
+        } catch {
+            print("❌ Failed to update iOS event: \(error)")
+            completion(false, error.localizedDescription)
+        }
+    }
+
+    private func updateGoogleEvent(_ updatedEvent: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
+        // Convert UnifiedEvent to GoogleEvent for updating
+        let googleEvent = GoogleEvent(
+            id: updatedEvent.id,
+            title: updatedEvent.title,
+            startDate: updatedEvent.startDate,
+            endDate: updatedEvent.endDate,
+            location: updatedEvent.location,
+            description: updatedEvent.description,
+            calendarId: "primary",
+            organizer: nil
+        )
+
+        calendarManager.googleCalendarManager?.updateEvent(googleEvent) { success, error in
+            completion(success, error)
+        }
+    }
+
+    private func updateOutlookEvent(_ updatedEvent: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
+        // Convert UnifiedEvent to OutlookEvent for updating
+        let outlookEvent = OutlookEvent(
+            id: updatedEvent.id,
+            title: updatedEvent.title,
+            startDate: updatedEvent.startDate,
+            endDate: updatedEvent.endDate,
+            location: updatedEvent.location,
+            description: updatedEvent.description,
+            calendarId: "primary-calendar",
+            organizer: nil
+        )
+
+        calendarManager.outlookCalendarManager?.updateEvent(outlookEvent) { success, error in
+            completion(success, error)
+        }
     }
 
     private func addAttachment(from url: URL) {

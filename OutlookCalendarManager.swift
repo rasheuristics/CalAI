@@ -1144,4 +1144,27 @@ class OutlookCalendarManager: ObservableObject {
         // Provide fallback calendars since we can't access real Graph API without proper auth
         provideFallbackCalendars(for: fallbackAccount)
     }
+
+    func updateEvent(_ event: OutlookEvent, completion: @escaping (Bool, String?) -> Void) {
+        print("📅 Attempting to update Outlook Calendar event: \(event.title)")
+
+        // TODO: Implement actual Microsoft Graph API event update
+        // This would require:
+        // 1. Authentication with Microsoft Graph API (handling keychain issues)
+        // 2. Making a PATCH request to /me/events/{event-id}
+        // 3. Handling date format conversion back to Microsoft Graph format
+
+        // For now, simulate the update for fallback events
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            // Find and update the event in our local array
+            if let index = self?.outlookEvents.firstIndex(where: { $0.id == event.id }) {
+                self?.outlookEvents[index] = event
+                print("✅ Successfully updated Outlook Calendar event (simulated): \(event.title)")
+                completion(true, nil)
+            } else {
+                print("❌ Outlook Calendar event not found for update: \(event.id)")
+                completion(false, "Event not found")
+            }
+        }
+    }
 }

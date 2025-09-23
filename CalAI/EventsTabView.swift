@@ -100,6 +100,22 @@ struct EventsTabView: View {
                             Section(header: Text(formatSectionHeader(date))) {
                                 ForEach(groupedEvents[date] ?? [], id: \.eventIdentifier) { event in
                                     EventDetailRow(event: event, fontManager: fontManager)
+                                        .onTapGesture(count: 2) {
+                                            // Convert EKEvent to UnifiedEvent for editing
+                                            let unifiedEvent = UnifiedEvent(
+                                                id: event.eventIdentifier,
+                                                title: event.title ?? "Untitled Event",
+                                                startDate: event.startDate,
+                                                endDate: event.endDate ?? event.startDate.addingTimeInterval(3600),
+                                                location: event.location,
+                                                description: event.notes,
+                                                isAllDay: event.isAllDay,
+                                                source: .ios,
+                                                originalEvent: event
+                                            )
+                                            selectedEventForEdit = unifiedEvent
+                                            showingEditAlert = true
+                                        }
                                 }
                                 .onDelete { indexSet in
                                     let eventsForDate = groupedEvents[date] ?? []
@@ -125,10 +141,10 @@ struct EventsTabView: View {
             .sheet(isPresented: $showingAddEvent) {
                 AddEventView(calendarManager: calendarManager, fontManager: fontManager)
             }
-            .alert("Edit Event", isPresented: $showingEditAlert) {
-                Button("OK") { }
-            } message: {
-                Text("Event editing will be available in a future update.")
+            .sheet(isPresented: $showingEditAlert) {
+                if let eventToEdit = selectedEventForEdit {
+                    AddEventView(calendarManager: calendarManager, fontManager: fontManager, eventToEdit: eventToEdit)
+                }
             }
         }
     }
