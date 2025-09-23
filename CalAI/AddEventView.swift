@@ -30,6 +30,29 @@ struct AttachmentItem: Identifiable {
     let data: Data?
 }
 
+enum RepeatOption: String, CaseIterable, Identifiable {
+    case none = "None"
+    case daily = "Daily"
+    case weekly = "Weekly"
+    case monthly = "Monthly"
+    case yearly = "Yearly"
+    case custom = "Custom"
+
+    var id: String { rawValue }
+
+    var displayName: String { rawValue }
+}
+
+struct EventAttendee: Identifiable {
+    let id = UUID()
+    let email: String
+    let name: String?
+
+    var displayName: String {
+        return name ?? email
+    }
+}
+
 struct AddEventView: View {
     @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var fontManager: FontManager
@@ -45,6 +68,11 @@ struct AddEventView: View {
     @State private var selectedCalendar: CalendarOption = .ios
     @State private var attachments: [AttachmentItem] = []
     @State private var showingDocumentPicker = false
+    @State private var selectedRepeat: RepeatOption = .none
+    @State private var attendees: [EventAttendee] = []
+    @State private var newAttendeeEmail = ""
+    @State private var showingAttendeeInput = false
+    @State private var sendInvitations = true
 
     var body: some View {
         NavigationView {
@@ -83,6 +111,71 @@ struct AddEventView: View {
                             .dynamicFont(size: 17, fontManager: fontManager)
 
                         DatePicker("Ends", selection: $endDate, displayedComponents: .date)
+                            .dynamicFont(size: 17, fontManager: fontManager)
+                    }
+                }
+
+                Section("Repeat") {
+                    Picker("Repeat", selection: $selectedRepeat) {
+                        ForEach(RepeatOption.allCases) { option in
+                            Text(option.displayName)
+                                .dynamicFont(size: 17, fontManager: fontManager)
+                                .tag(option)
+                        }
+                    }
+                    .dynamicFont(size: 17, fontManager: fontManager)
+                }
+
+                Section("Invites & Attendees") {
+                    if attendees.isEmpty {
+                        Button(action: {
+                            showingAttendeeInput = true
+                        }) {
+                            HStack {
+                                Image(systemName: "person.badge.plus")
+                                    .foregroundColor(.blue)
+                                Text("Add Attendees")
+                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                    .foregroundColor(.blue)
+                                Spacer()
+                            }
+                        }
+                    } else {
+                        ForEach(attendees) { attendee in
+                            HStack {
+                                Image(systemName: "person.circle")
+                                    .foregroundColor(.secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(attendee.displayName)
+                                        .dynamicFont(size: 17, fontManager: fontManager)
+                                    Text(attendee.email)
+                                        .dynamicFont(size: 12, fontManager: fontManager)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Button(action: {
+                                    removeAttendee(attendee)
+                                }) {
+                                    Image(systemName: "minus.circle")
+                                        .foregroundColor(.red)
+                                }
+                            }
+                        }
+
+                        Button(action: {
+                            showingAttendeeInput = true
+                        }) {
+                            HStack {
+                                Image(systemName: "plus")
+                                    .foregroundColor(.blue)
+                                Text("Add More")
+                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                    .foregroundColor(.blue)
+                                Spacer()
+                            }
+                        }
+
+                        Toggle("Send Invitations", isOn: $sendInvitations)
                             .dynamicFont(size: 17, fontManager: fontManager)
                     }
                 }
@@ -178,6 +271,19 @@ struct AddEventView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingAttendeeInput) {
+            AttendeeInputView(
+                newAttendeeEmail: $newAttendeeEmail,
+                onAdd: { email in
+                    addAttendee(email: email)
+                    showingAttendeeInput = false
+                },
+                onCancel: {
+                    newAttendeeEmail = ""
+                    showingAttendeeInput = false
+                }
+            )
+        }
     }
 
     private func createEvent() {
@@ -226,6 +332,37 @@ struct AddEventView: View {
     private func removeAttachment(_ attachment: AttachmentItem) {
         attachments.removeAll { $0.id == attachment.id }
     }
+
+    private func addAttendee(email: String) {
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedEmail.isEmpty,
+              trimmedEmail.contains("@"),
+              !attendees.contains(where: { $0.email == trimmedEmail }) else {
+            return
+        }
+
+        let name = extractDisplayName(from: trimmedEmail)
+        let attendee = EventAttendee(email: trimmedEmail, name: name.isEmpty ? nil : name)
+        attendees.append(attendee)
+        newAttendeeEmail = ""
+    }
+
+    private func removeAttendee(_ attendee: EventAttendee) {
+        attendees.removeAll { $0.id == attendee.id }
+    }
+
+    private func extractDisplayName(from email: String) -> String {
+        let localPart = email.components(separatedBy: "@").first ?? ""
+        let nameParts = localPart.components(separatedBy: ".")
+
+        if nameParts.count >= 2 {
+            let firstName = nameParts[0].capitalized
+            let lastName = nameParts[1].capitalized
+            return "\(firstName) \(lastName)"
+        } else {
+            return localPart.capitalized
+        }
+    }
 }
 
 struct DocumentPicker: UIViewControllerRepresentable {
@@ -266,6 +403,48 @@ struct DocumentPicker: UIViewControllerRepresentable {
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             // Handle cancellation if needed
+        }
+    }
+}
+
+struct AttendeeInputView: View {
+    @Binding var newAttendeeEmail: String
+    let onAdd: (String) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Add Attendee") {
+                    TextField("Email address", text: $newAttendeeEmail)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .textInputAutocapitalization(.never)
+                }
+
+                Section {
+                    Text("Enter the email address of the person you want to invite to this event.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .navigationTitle("Add Attendee")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Add") {
+                        onAdd(newAttendeeEmail)
+                    }
+                    .disabled(newAttendeeEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !newAttendeeEmail.contains("@"))
+                }
+            }
         }
     }
 }

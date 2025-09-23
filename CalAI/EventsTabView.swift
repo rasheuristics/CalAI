@@ -73,6 +73,14 @@ struct EventsTabView: View {
                                 ForEach(groupedUnifiedEvents[date] ?? [], id: \.id) { event in
                                     UnifiedEventDetailRow(event: event, fontManager: fontManager)
                                 }
+                                .onDelete { indexSet in
+                                    let eventsForDate = groupedUnifiedEvents[date] ?? []
+                                    for index in indexSet {
+                                        if index < eventsForDate.count {
+                                            deleteUnifiedEvent(eventsForDate[index])
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -176,6 +184,26 @@ struct EventsTabView: View {
         let formatter = DateFormatter()
         formatter.dateStyle = .full
         return formatter.string(from: date)
+    }
+
+    private func deleteUnifiedEvent(_ event: UnifiedEvent) {
+        switch event.source {
+        case .ios:
+            if let ekEvent = event.originalEvent as? EKEvent {
+                calendarManager.deleteEvent(ekEvent)
+            }
+        case .google:
+            // TODO: Implement Google Calendar event deletion
+            print("📅 Google Calendar event deletion not yet implemented")
+        case .outlook:
+            // TODO: Implement Outlook Calendar event deletion
+            print("📅 Outlook Calendar event deletion not yet implemented")
+        }
+
+        // Refresh the unified events after deletion
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            calendarManager.loadAllUnifiedEvents()
+        }
     }
 }
 
