@@ -8,6 +8,8 @@ struct EventsTabView: View {
     @State private var selectedTimeRange: TimeRange = .week
     @State private var showingAddEvent = false
     @State private var showUnifiedEvents = true
+    @State private var selectedEventForEdit: UnifiedEvent?
+    @State private var showingEditAlert = false
 
     var body: some View {
         ZStack {
@@ -72,6 +74,10 @@ struct EventsTabView: View {
                             Section(header: Text(formatSectionHeader(date))) {
                                 ForEach(groupedUnifiedEvents[date] ?? [], id: \.id) { event in
                                     UnifiedEventDetailRow(event: event, fontManager: fontManager)
+                                        .onTapGesture(count: 2) {
+                                            selectedEventForEdit = event
+                                            showingEditAlert = true
+                                        }
                                 }
                                 .onDelete { indexSet in
                                     let eventsForDate = groupedUnifiedEvents[date] ?? []
@@ -118,6 +124,11 @@ struct EventsTabView: View {
             }
             .sheet(isPresented: $showingAddEvent) {
                 AddEventView(calendarManager: calendarManager, fontManager: fontManager)
+            }
+            .alert("Edit Event", isPresented: $showingEditAlert) {
+                Button("OK") { }
+            } message: {
+                Text("Event editing will be available in a future update.")
             }
         }
     }
