@@ -40,65 +40,69 @@ struct ContentView: View {
                 }
                 .tag(3)
         }
+        .accentColor(.blue)
+        .preferredColorScheme(.light)
         .onAppear {
             // Inject external calendar managers into the main calendar manager
             calendarManager.googleCalendarManager = googleCalendarManager
             calendarManager.outlookCalendarManager = outlookCalendarManager
 
             calendarManager.requestCalendarAccess()
-            setupGlassmorphismTabBar()
+            setupiOS18TabBar()
         }
     }
 
-    private func setupGlassmorphismTabBar() {
-        // Configure modern iOS glassmorphism tab bar (dock-style)
+    private func setupiOS18TabBar() {
+        // iOS 18 Tab Bar Design - More prominent, floating appearance
         let appearance = UITabBarAppearance()
 
-        // Start with transparent base
-        appearance.configureWithTransparentBackground()
+        // Use prominent background instead of transparent
+        appearance.configureWithOpaqueBackground()
 
-        // Advanced glassmorphism effect matching iOS dock
-        appearance.backgroundColor = UIColor.white.withAlphaComponent(0.1)
+        // iOS 18 style materials and effects
+        appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
 
-        // Multi-layered blur system like iOS dock
-        let primaryBlur = UIBlurEffect(style: .systemThinMaterial)
-        appearance.backgroundEffect = primaryBlur
+        // Prominent background color with better contrast
+        appearance.backgroundColor = UIColor.systemGray6.withAlphaComponent(0.95)
 
-        // Enhanced shadow system for modern depth
-        appearance.shadowColor = UIColor.black.withAlphaComponent(0.12)
+        // Enhanced shadow for floating effect
+        appearance.shadowColor = UIColor.black.withAlphaComponent(0.2)
 
-        // Modern icon styling with refined colors
-        appearance.stackedLayoutAppearance.normal.iconColor = UIColor.secondaryLabel
+        // Tab item styling - normal state
+        appearance.stackedLayoutAppearance.normal.iconColor = UIColor.systemGray
         appearance.stackedLayoutAppearance.normal.titleTextAttributes = [
-            .foregroundColor: UIColor.secondaryLabel,
+            .foregroundColor: UIColor.systemGray,
             .font: UIFont.systemFont(ofSize: 10, weight: .medium)
         ]
 
-        // Vibrant selected state matching iOS system colors
-        appearance.stackedLayoutAppearance.selected.iconColor = UIColor.label
+        // Tab item styling - selected state (more prominent)
+        appearance.stackedLayoutAppearance.selected.iconColor = UIColor.systemBlue
         appearance.stackedLayoutAppearance.selected.titleTextAttributes = [
-            .foregroundColor: UIColor.label,
+            .foregroundColor: UIColor.systemBlue,
             .font: UIFont.systemFont(ofSize: 10, weight: .semibold)
         ]
 
-        // Apply sophisticated appearance settings
+        // Apply the appearance globally
         UITabBar.appearance().standardAppearance = appearance
         UITabBar.appearance().scrollEdgeAppearance = appearance
 
-        // Modern translucency settings
-        UITabBar.appearance().isTranslucent = true
-        UITabBar.appearance().backgroundColor = UIColor.clear
+        // Force tab bar to be opaque and prominent
+        UITabBar.appearance().isTranslucent = false
+        UITabBar.appearance().barTintColor = UIColor.systemGray6
 
-        // Advanced visual effects for iOS dock-like behavior
+        // Additional iOS 18 styling
         if #available(iOS 15.0, *) {
-            // Ensure consistent appearance across scroll states
             UITabBar.appearance().scrollEdgeAppearance = appearance
         }
 
-        // Additional refinements for glassmorphism
-        UITabBar.appearance().barTintColor = UIColor.clear
-        UITabBar.appearance().backgroundImage = UIImage()
-        UITabBar.appearance().shadowImage = UIImage()
+        // Force immediate update - iOS 18 compatible
+        DispatchQueue.main.async {
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                for window in windowScene.windows {
+                    window.rootViewController?.view.setNeedsDisplay()
+                }
+            }
+        }
     }
 
 

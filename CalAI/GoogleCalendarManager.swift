@@ -31,7 +31,7 @@ class GoogleCalendarManager: ObservableObject {
 
     init() {
         // setupService()
-        checkSignInStatus()
+        restorePreviousSignIn()
     }
 
     // private func setupService() {
@@ -39,14 +39,87 @@ class GoogleCalendarManager: ObservableObject {
     //     calendarService.shouldFetchNextPages = true
     // }
 
-    private func checkSignInStatus() {
+    private func restorePreviousSignIn() {
+        print("🔄 Attempting to restore previous Google Sign-In...")
+
         if let currentUser = GIDSignIn.sharedInstance.currentUser {
-            isSignedIn = true
-            // calendarService.authorizer = currentUser.authentication.fetcherAuthorizer()
-            print("✅ Google user already signed in: \(currentUser.profile?.email ?? "")")
+            print("✅ Found current user, refreshing token if needed...")
+            currentUser.refreshTokensIfNeeded { [weak self] refreshedUser, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        print("❌ Token refresh failed: \(error.localizedDescription)")
+                        self?.isSignedIn = false
+                        return
+                    }
+
+                    if let user = refreshedUser {
+                        self?.isSignedIn = true
+                        print("✅ Google user restored with refreshed token: \(user.profile?.email ?? "")")
+                        self?.checkCalendarAccess(for: user)
+                    } else {
+                        print("❌ No user after token refresh")
+                        self?.isSignedIn = false
+                    }
+                }
+            }
         } else {
-            isSignedIn = false
-            print("❌ No Google user signed in")
+            GIDSignIn.sharedInstance.restorePreviousSignIn { [weak self] user, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        print("❌ Failed to restore Google Sign-In: \(error.localizedDescription)")
+                        self?.isSignedIn = false
+                        return
+                    }
+
+                    if let user = user {
+                        self?.isSignedIn = true
+                        print("✅ Google user restored: \(user.profile?.email ?? "")")
+                        self?.checkCalendarAccess(for: user)
+                    } else {
+                        self?.isSignedIn = false
+                        print("❌ No previous Google sign-in found")
+                    }
+                }
+            }
+        }
+    }
+
+    private func checkCalendarAccess(for user: GIDGoogleUser) {
+        let requiredScopes = ["https://www.googleapis.com/auth/calendar"]
+        let grantedScopes = user.grantedScopes ?? []
+
+        let hasCalendarAccess = requiredScopes.allSatisfy { grantedScopes.contains($0) }
+
+        if !hasCalendarAccess {
+            print("⚠️ User doesn't have calendar access, requesting additional scopes...")
+            requestAdditionalScopes(requiredScopes)
+        } else {
+            print("✅ User has calendar access")
+            // Could fetch events here if needed
+        }
+    }
+
+    private func requestAdditionalScopes(_ scopes: [String]) {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first,
+              let presentingViewController = window.rootViewController else {
+            print("❌ No presenting view controller for additional scopes")
+            return
+        }
+
+        GIDSignIn.sharedInstance.signIn(withPresenting: presentingViewController, hint: nil, additionalScopes: scopes) { [weak self] result, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ Failed to add calendar scope: \(error.localizedDescription)")
+                    return
+                }
+
+                if let user = result?.user {
+                    print("✅ Additional scopes granted for: \(user.profile?.email ?? "")")
+                    self?.isSignedIn = true
+                    // self?.calendarService.authorizer = user.authentication.fetcherAuthorizer()
+                }
+            }
         }
     }
 
@@ -89,10 +162,42 @@ class GoogleCalendarManager: ObservableObject {
         }
     }
 
+    func refreshTokenIfNeeded(completion: @escaping (Bool) -> Void) {
+        guard let user = GIDSignIn.sharedInstance.currentUser else {
+            print("❌ No user to refresh token for")
+            completion(false)
+            return
+        }
+
+        print("🔄 Refreshing Google access token...")
+
+        user.refreshTokensIfNeeded { [weak self] user, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ Token refresh failed: \(error.localizedDescription)")
+                    // If token refresh fails, user may need to sign in again
+                    self?.isSignedIn = false
+                    completion(false)
+                    return
+                }
+
+                if let refreshedUser = user {
+                    print("✅ Token refreshed for: \(refreshedUser.profile?.email ?? "")")
+                    // self?.calendarService.authorizer = refreshedUser.authentication.fetcherAuthorizer()
+                    completion(true)
+                } else {
+                    print("❌ No user returned after token refresh")
+                    completion(false)
+                }
+            }
+        }
+    }
+
     func signOut() {
         GIDSignIn.sharedInstance.signOut()
         isSignedIn = false
         // calendarService.authorizer = nil
+        googleEvents = [] // Clear events on sign out
         print("✅ Google Sign-Out successful")
     }
 
@@ -108,13 +213,34 @@ class GoogleCalendarManager: ObservableObject {
     // }
 
     func fetchEvents(from startDate: Date = Date(), to endDate: Date = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()) {
-        guard let user = GIDSignIn.sharedInstance.currentUser else {
+        guard GIDSignIn.sharedInstance.currentUser != nil else {
             print("❌ No Google user signed in for event fetching")
             return
         }
 
-        print("🔵 Fetching Google Calendar events for \(user.profile?.email ?? "")...")
+        print("🔵 Fetching Google Calendar events...")
         isLoading = true
+
+        // Refresh token before making API calls
+        refreshTokenIfNeeded { [weak self] success in
+            guard success else {
+                print("❌ Token refresh failed, cannot fetch events")
+                self?.isLoading = false
+                return
+            }
+
+            self?.performEventFetch(from: startDate, to: endDate)
+        }
+    }
+
+    private func performEventFetch(from startDate: Date, to endDate: Date) {
+        guard let user = GIDSignIn.sharedInstance.currentUser else {
+            print("❌ No Google user after token refresh")
+            isLoading = false
+            return
+        }
+
+        print("🔵 Performing event fetch for \(user.profile?.email ?? "")...")
 
         // Simulate Google Calendar API call to fetch events
         // In real implementation: GET https://www.googleapis.com/calendar/v3/calendars/primary/events
@@ -155,6 +281,29 @@ class GoogleCalendarManager: ObservableObject {
             self?.googleEvents = simulatedEvents
             self?.isLoading = false
             print("✅ Fetched \(simulatedEvents.count) Google Calendar events")
+        }
+    }
+
+    func updateEvent(_ event: GoogleEvent, completion: @escaping (Bool, String?) -> Void) {
+        print("📅 Attempting to update Google Calendar event: \(event.title)")
+
+        // TODO: Implement actual Google Calendar API event update
+        // This would require:
+        // 1. Authentication with Google Calendar API
+        // 2. Using GTLRCalendarService to update the event
+        // 3. Making a PATCH request to the Calendar API
+
+        // For now, simulate the update for fallback events
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            // Find and update the event in our local array
+            if let index = self?.googleEvents.firstIndex(where: { $0.id == event.id }) {
+                self?.googleEvents[index] = event
+                print("✅ Successfully updated Google Calendar event (simulated): \(event.title)")
+                completion(true, nil)
+            } else {
+                print("❌ Google Calendar event not found for update: \(event.id)")
+                completion(false, "Event not found")
+            }
         }
     }
 }
