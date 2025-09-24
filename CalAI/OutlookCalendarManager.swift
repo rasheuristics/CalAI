@@ -951,19 +951,54 @@ class OutlookCalendarManager: ObservableObject {
         print("🔵 Fetching Outlook events from \(selectedCalendar.displayName)...")
         isLoading = true
 
-        // Skip cached account lookup due to keychain issues, use interactive flow
-        print("🔄 Using interactive token acquisition for events to avoid keychain issues")
+        // Try silent token refresh first, then fallback to interactive
+        refreshTokenAndFetch(msalApp: msalApp, startDate: startDate, endDate: endDate)
+    }
+
+    private func refreshTokenAndFetch(msalApp: MSALPublicClientApplication, startDate: Date, endDate: Date) {
+        print("🔄 Attempting silent token refresh...")
+
+        // Try to get account for silent token acquisition
+        msalApp.getCurrentAccount { [weak self] (account, error) in
+            guard let self = self else { return }
+
+            if let account = account {
+                // Try silent token acquisition first
+                let silentParameters = MSALSilentTokenParameters(scopes: self.scopes, account: account)
+
+                msalApp.acquireTokenSilent(with: silentParameters) { [weak self] (result, error) in
+                    if let result = result {
+                        print("✅ Silent token refresh successful")
+                        self?.fetchEventsWithToken(result.accessToken, startDate: startDate, endDate: endDate)
+                    } else {
+                        print("⚠️ Silent token refresh failed: \(error?.localizedDescription ?? "Unknown error")")
+                        // Fall back to interactive authentication
+                        self?.acquireTokenInteractively(msalApp: msalApp, startDate: startDate, endDate: endDate)
+                    }
+                }
+            } else {
+                print("⚠️ No cached account found, using interactive authentication")
+                // Fall back to interactive authentication
+                self.acquireTokenInteractively(msalApp: msalApp, startDate: startDate, endDate: endDate)
+            }
+        }
+    }
+
+    private func acquireTokenInteractively(msalApp: MSALPublicClientApplication, startDate: Date, endDate: Date) {
+        print("🔄 Using interactive token acquisition")
 
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let window = windowScene.windows.first else {
-            print("❌ Unable to find window for events authentication")
+            print("❌ Unable to find window for authentication")
             isLoading = false
             return
         }
 
         let webviewParameters = MSALWebviewParameters(authPresentationViewController: window.rootViewController!)
         let interactiveParameters = MSALInteractiveTokenParameters(scopes: scopes, webviewParameters: webviewParameters)
-        interactiveParameters.loginHint = currentAccount.email
+        if let currentAccount = currentAccount {
+            interactiveParameters.loginHint = currentAccount.email
+        }
 
         msalApp.acquireToken(with: interactiveParameters) { [weak self] (result, error) in
             if let error = error {
@@ -986,33 +1021,50 @@ class OutlookCalendarManager: ObservableObject {
                 return
             }
 
-            // Format dates for Microsoft Graph API using wider range
-            let formatter = ISO8601DateFormatter()
-            let startTimeString = formatter.string(from: actualStartDate)
-            let endTimeString = formatter.string(from: actualEndDate)
+            print("✅ Interactive token acquisition successful")
+            self?.fetchEventsWithToken(tokenResult.accessToken, startDate: startDate, endDate: endDate)
+        }
+    }
 
-            // Try default calendar endpoint if this is the default calendar
-            let endpoint: String
-            if selectedCalendar.isDefault {
-                endpoint = "/me/calendar/events?$filter=start/dateTime ge '\(startTimeString)' and end/dateTime le '\(endTimeString)'"
-                print("🔍 Debug - Using default calendar endpoint for default calendar")
-            } else {
-                endpoint = GraphEndpoints.calendarEvents(
-                    calendarId: selectedCalendar.id,
-                    startTime: startTimeString,
-                    endTime: endTimeString
-                )
-                print("🔍 Debug - Using specific calendar endpoint")
-            }
-            print("🔍 Debug - Fetching from endpoint: \(endpoint)")
-            print("🔍 Debug - Calendar ID: \(selectedCalendar.id)")
-            print("🔍 Debug - Original date range: \(startDate) to \(endDate)")
-            print("🔍 Debug - Actual API date range: \(actualStartDate) to \(actualEndDate)")
-            print("🔍 Debug - API ISO dates: \(startTimeString) to \(endTimeString)")
+    private func fetchEventsWithToken(_ accessToken: String, startDate: Date, endDate: Date) {
+        guard let selectedCalendar = selectedCalendar else {
+            print("❌ No selected calendar for token-based fetch")
+            isLoading = false
+            return
+        }
 
-            self?.makeGraphAPIRequest(
-                endpoint: endpoint,
-                accessToken: tokenResult.accessToken
+        // Use wider date range to catch events regardless of system date issues
+        let actualStartDate = Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date()
+        let actualEndDate = Calendar.current.date(byAdding: .year, value: 1, to: Date()) ?? Date()
+
+        // Format dates for Microsoft Graph API using wider range
+        let formatter = ISO8601DateFormatter()
+        let startTimeString = formatter.string(from: actualStartDate)
+        let endTimeString = formatter.string(from: actualEndDate)
+
+        // Build enhanced endpoint with recurring events support
+        let endpoint: String
+        let baseQuery = "$select=subject,start,end,location,isAllDay,type,seriesMasterId,recurrence,bodyPreview"
+        let filterQuery = "$filter=start/dateTime ge '\(startTimeString)' and end/dateTime le '\(endTimeString)'"
+        let expandQuery = "$expand=instances"
+        let fullQuery = "\(baseQuery)&\(filterQuery)&\(expandQuery)"
+
+        if selectedCalendar.isDefault {
+            endpoint = "/me/calendar/events?\(fullQuery)"
+            print("🔍 Debug - Using enhanced default calendar endpoint")
+        } else {
+            endpoint = "/me/calendars/\(selectedCalendar.id)/events?\(fullQuery)"
+            print("🔍 Debug - Using enhanced specific calendar endpoint")
+        }
+        print("🔍 Debug - Fetching from endpoint: \(endpoint)")
+        print("🔍 Debug - Calendar ID: \(selectedCalendar.id)")
+        print("🔍 Debug - Original date range: \(startDate) to \(endDate)")
+        print("🔍 Debug - Actual API date range: \(actualStartDate) to \(actualEndDate)")
+        print("🔍 Debug - API ISO dates: \(startTimeString) to \(endTimeString)")
+
+        makeGraphAPIRequest(
+            endpoint: endpoint,
+            accessToken: accessToken
             ) { (data: GraphEventsResponse?, error) in
                 DispatchQueue.main.async {
                     self?.isLoading = false
