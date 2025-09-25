@@ -48,6 +48,12 @@ struct EventsTabView: View {
                         }
                         .font(.caption)
                         .foregroundColor(.blue)
+
+                        Button("Add Sample") {
+                            calendarManager.createSampleEvents()
+                        }
+                        .font(.caption)
+                        .foregroundColor(.green)
                     }
                 }
                 .padding(.top, 8)
@@ -64,6 +70,26 @@ struct EventsTabView: View {
                     Text("Events will appear here when you create them")
                         .dynamicFont(size: 12, fontManager: fontManager)
                         .foregroundColor(.secondary)
+
+                    // Debug info
+                    VStack {
+                        Text("Debug Info:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("iOS Events: \(calendarManager.events.count)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("Unified Events: \(calendarManager.unifiedEvents.count)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("Filtered Events: \(showUnifiedEvents ? filteredUnifiedEvents.count : filteredEvents.count)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("Has Calendar Access: \(calendarManager.hasCalendarAccess ? "Yes" : "No")")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, 8)
                 }
                 .padding()
                 Spacer()

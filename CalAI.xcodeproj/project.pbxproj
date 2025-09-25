@@ -11,6 +11,7 @@
 		505F673F2E81C75F00C188F0 /* OutlookCalendarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505F673E2E81C75F00C188F0 /* OutlookCalendarManager.swift */; };
 		50745C962E7CA7C9004D0243 /* CalAIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50745C952E7CA7C9004D0243 /* CalAIApp.swift */; };
 		50745C982E7CA7C9004D0243 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50745C972E7CA7C9004D0243 /* ContentView.swift */; };
+		9FA4E490D02D41DB8BC3D5E4 /* SecureStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FA4E490D02D41DB8BC3D5E3 /* SecureStorage.swift */; };
 		50745C9A2E7CA7CA004D0243 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 50745C992E7CA7CA004D0243 /* Assets.xcassets */; };
 		50745C9D2E7CA7CA004D0243 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 50745C9C2E7CA7CA004D0243 /* Preview Assets.xcassets */; };
 		50745CA42E7CA8C9004D0243 /* CalendarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50745CA32E7CA8C9004D0243 /* CalendarManager.swift */; };
@@ -38,10 +39,11 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		505F673E2E81C75F00C188F0 /* OutlookCalendarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlookCalendarManager.swift; sourceTree = "<group>"; };
+		505F673E2E81C75F00C188F0 /* OutlookCalendarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OutlookCalendarManager.swift; path = CalAI/OutlookCalendarManager.swift; sourceTree = "<group>"; };
 		50745C922E7CA7C9004D0243 /* CalAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CalAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		50745C952E7CA7C9004D0243 /* CalAIApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalAIApp.swift; sourceTree = "<group>"; };
 		50745C972E7CA7C9004D0243 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		9FA4E490D02D41DB8BC3D5E3 /* SecureStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureStorage.swift; sourceTree = "<group>"; };
 		50745C992E7CA7CA004D0243 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		50745C9C2E7CA7CA004D0243 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		50745CA32E7CA8C9004D0243 /* CalendarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarManager.swift; sourceTree = "<group>"; };
@@ -106,6 +108,7 @@
 			children = (
 				50745C952E7CA7C9004D0243 /* CalAIApp.swift */,
 				50745C972E7CA7C9004D0243 /* ContentView.swift */,
+				9FA4E490D02D41DB8BC3D5E3 /* SecureStorage.swift */,
 				50745CAB2E7CA8F9004D0243 /* CalendarTabView.swift */,
 				50745CAD2E7CA909004D0243 /* EventsTabView.swift */,
 				50745CAF2E7CA919004D0243 /* AITabView.swift */,
@@ -222,6 +225,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				50745C982E7CA7C9004D0243 /* ContentView.swift in Sources */,
+				9FA4E490D02D41DB8BC3D5E4 /* SecureStorage.swift in Sources */,
 				50745D102E80DAB3004D0243 /* GoogleCalendarManager.swift in Sources */,
 				50745CAA2E7CA8F9004D0243 /* CalendarTabView.swift in Sources */,
 				50745CAC2E7CA909004D0243 /* EventsTabView.swift in Sources */,

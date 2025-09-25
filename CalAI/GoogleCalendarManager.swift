@@ -117,6 +117,8 @@ class GoogleCalendarManager: ObservableObject {
                 if let user = result?.user {
                     print("✅ Additional scopes granted for: \(user.profile?.email ?? "")")
                     self?.isSignedIn = true
+                    // Store tokens securely
+                    self?.storeUserTokensSecurely(user: user)
                     // self?.calendarService.authorizer = user.authentication.fetcherAuthorizer()
                 }
             }
@@ -156,6 +158,8 @@ class GoogleCalendarManager: ObservableObject {
                 }
 
                 self?.isSignedIn = true
+                // Store tokens securely
+                self?.storeUserTokensSecurely(user: user)
                 // self?.calendarService.authorizer = user.authentication.fetcherAuthorizer()
                 print("✅ Google Sign-In successful: \(user.profile?.email ?? "")")
             }
@@ -198,7 +202,65 @@ class GoogleCalendarManager: ObservableObject {
         isSignedIn = false
         // calendarService.authorizer = nil
         googleEvents = [] // Clear events on sign out
+
+        // Clear stored tokens
+        clearStoredTokens()
         print("✅ Google Sign-Out successful")
+    }
+
+    // MARK: - Secure Storage Methods
+
+    /// Store user tokens securely in Keychain
+    private func storeUserTokensSecurely(user: GIDGoogleUser) {
+        do {
+            let accessToken = user.accessToken.tokenString
+            let refreshToken = user.refreshToken.tokenString
+
+            try SecureStorage.storeGoogleTokens(
+                accessToken: accessToken,
+                refreshToken: refreshToken
+            )
+
+            // Store user email for reference
+            if let email = user.profile?.email {
+                try SecureStorage.store(key: "google_user_email", value: email)
+            }
+
+            print("🔒 Google tokens stored securely")
+        } catch {
+            print("❌ Failed to store Google tokens securely: \(error.localizedDescription)")
+        }
+    }
+
+    /// Retrieve stored tokens from Keychain
+    private func getStoredTokens() -> (accessToken: String, refreshToken: String?)? {
+        do {
+            let tokens = try SecureStorage.getGoogleTokens()
+            return tokens
+        } catch SecureStorage.KeychainError.itemNotFound {
+            print("📝 No stored Google tokens found")
+            return nil
+        } catch {
+            print("❌ Failed to retrieve Google tokens: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Clear stored tokens from Keychain
+    private func clearStoredTokens() {
+        do {
+            try SecureStorage.delete(key: SecureStorage.Keys.googleAccessToken)
+            try SecureStorage.delete(key: SecureStorage.Keys.googleRefreshToken)
+            try SecureStorage.delete(key: "google_user_email")
+            print("🧹 Cleared stored Google tokens")
+        } catch {
+            print("⚠️ Error clearing stored tokens: \(error.localizedDescription)")
+        }
+    }
+
+    /// Check if we have valid stored tokens
+    private func hasValidStoredTokens() -> Bool {
+        return SecureStorage.exists(key: SecureStorage.Keys.googleAccessToken)
     }
 
     // Calendar API functions temporarily disabled until Google Calendar API packages are added

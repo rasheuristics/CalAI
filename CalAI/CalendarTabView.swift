@@ -36,7 +36,7 @@ struct CalendarTabView: View {
                     case .day:
                         CompressedDayTimelineView(
                             date: Date(), // Always show current day
-                            events: eventsForDate(Date()).map { TimelineEvent(from: $0) },
+                            events: unifiedEventsForDate(Date()).map { TimelineEvent(from: $0) },
                             fontManager: fontManager
                         )
                         .id("\(Date().timeIntervalSince1970)") // Force recreation on date change
@@ -76,6 +76,14 @@ struct CalendarTabView: View {
 
     // Calendar instance for date comparisons
     private let calendar = Calendar.current
+
+    // MARK: - Helper Functions
+    private func unifiedEventsForDate(_ date: Date) -> [UnifiedEvent] {
+        let calendar = Calendar.current
+        return calendarManager.unifiedEvents.filter { event in
+            calendar.isDate(event.startDate, inSameDayAs: date)
+        }
+    }
 }
 
 // MARK: - Native iOS Calendar Header
@@ -1029,6 +1037,19 @@ struct WeekViewWithCompressedTimeline: View {
     }
 }
 
+// MARK: - Calendar Source Colors
+
+func colorForCalendarSource(_ source: CalendarSource) -> Color {
+    switch source {
+    case .ios:
+        return Color(red: 0/255, green: 122/255, blue: 255/255) // #007AFF - Apple's system blue
+    case .google:
+        return Color(red: 52/255, green: 168/255, blue: 83/255) // #34A853 - Google's brand green
+    case .outlook:
+        return Color(red: 255/255, green: 140/255, blue: 0/255) // #FF8C00 - Microsoft's Outlook orange
+    }
+}
+
 // MARK: - Compressed Day Timeline Implementation
 
 // Calendar Event Protocol for timeline
@@ -1039,6 +1060,7 @@ protocol CalendarEvent {
     var end: Date { get }
     var eventLocation: String? { get }
     var isAllDay: Bool { get }
+    var source: CalendarSource { get }
 }
 
 // Wrapper struct for UnifiedEvent to work with CalendarEvent protocol
@@ -1049,6 +1071,7 @@ struct TimelineEvent: CalendarEvent {
     let end: Date
     let eventLocation: String?
     let isAllDay: Bool
+    let source: CalendarSource
 
     init(from unifiedEvent: UnifiedEvent) {
         self.id = unifiedEvent.id
@@ -1057,6 +1080,7 @@ struct TimelineEvent: CalendarEvent {
         self.end = unifiedEvent.endDate
         self.eventLocation = unifiedEvent.location
         self.isAllDay = unifiedEvent.isAllDay
+        self.source = unifiedEvent.source
     }
 
     // Legacy support for EKEvent if needed
@@ -1067,6 +1091,7 @@ struct TimelineEvent: CalendarEvent {
         self.end = ekEvent.endDate
         self.eventLocation = ekEvent.location
         self.isAllDay = ekEvent.isAllDay
+        self.source = .ios
     }
 }
 
@@ -1078,6 +1103,7 @@ private struct ClampedEvent: CalendarEvent {
     let end: Date
     let eventLocation: String?
     let isAllDay: Bool
+    let source: CalendarSource
     let originalEvent: CalendarEvent
 
     var isClampedStart: Bool {
@@ -1495,10 +1521,10 @@ struct CompressedDayTimelineView: View {
             .frame(width: cardWidth, height: height, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.blue.opacity(0.1))
+                    .fill(colorForCalendarSource(event.source).opacity(0.2))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                            .stroke(colorForCalendarSource(event.source).opacity(0.4), lineWidth: 1)
                     )
             )
             .accessibilityLabel("\(event.title ?? "Untitled Event"), \(formatTime(event.start)) to \(formatTime(event.end))\(event.eventLocation.map { ", at \($0)" } ?? "")")
@@ -1623,6 +1649,7 @@ struct CompressedDayTimelineView: View {
                 end: dayEnd,
                 eventLocation: event.eventLocation,
                 isAllDay: true,
+                source: event.source,
                 originalEvent: event
             )
         }.sorted { $0.title ?? "" < $1.title ?? "" }
@@ -1640,6 +1667,7 @@ struct CompressedDayTimelineView: View {
                 end: clampedEnd,
                 eventLocation: event.eventLocation,
                 isAllDay: false,
+                source: event.source,
                 originalEvent: event
             )
         }.sorted { $0.start < $1.start }

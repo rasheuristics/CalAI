@@ -401,11 +401,90 @@ class OutlookCalendarManager: ObservableObject {
         showCredentialInput = false
         signInError = nil
 
-        // Clear all saved data
+        // Clear all saved data (migrate to secure storage)
         UserDefaults.standard.removeObject(forKey: selectedCalendarKey)
         UserDefaults.standard.removeObject(forKey: currentAccountKey)
 
+        // Clear secure storage
+        clearSecurelyStoredData()
+
         print("✅ Outlook Sign-Out successful: \(accountEmail)")
+    }
+
+    // MARK: - Secure Storage Methods
+
+    /// Save account info securely to Keychain
+    private func saveAccountInfoSecurely(_ account: OutlookAccount) {
+        do {
+            let data = try JSONEncoder().encode(account)
+            let dataString = data.base64EncodedString()
+            try SecureStorage.store(key: "outlook_current_account", value: dataString)
+            print("🔒 Outlook account stored securely")
+        } catch {
+            print("❌ Failed to store Outlook account securely: \(error.localizedDescription)")
+            // Fallback to UserDefaults if secure storage fails
+            if let data = try? JSONEncoder().encode(account) {
+                UserDefaults.standard.set(data, forKey: currentAccountKey)
+            }
+        }
+    }
+
+    /// Load account info from secure storage
+    private func loadAccountSecurely() -> OutlookAccount? {
+        do {
+            let dataString = try SecureStorage.retrieve(key: "outlook_current_account")
+            guard let data = Data(base64Encoded: dataString) else { return nil }
+            return try JSONDecoder().decode(OutlookAccount.self, from: data)
+        } catch SecureStorage.KeychainError.itemNotFound {
+            return nil
+        } catch {
+            print("❌ Failed to load Outlook account from secure storage: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Save calendar selection securely to Keychain
+    private func saveCalendarSecurely(_ calendar: OutlookCalendar) {
+        do {
+            let data = try JSONEncoder().encode(calendar)
+            let dataString = data.base64EncodedString()
+            try SecureStorage.store(key: "outlook_selected_calendar", value: dataString)
+            print("🔒 Outlook calendar selection stored securely")
+        } catch {
+            print("❌ Failed to store Outlook calendar securely: \(error.localizedDescription)")
+            // Fallback to UserDefaults if secure storage fails
+            if let data = try? JSONEncoder().encode(calendar) {
+                UserDefaults.standard.set(data, forKey: selectedCalendarKey)
+            }
+        }
+    }
+
+    /// Load calendar selection from secure storage
+    private func loadCalendarSecurely() -> OutlookCalendar? {
+        do {
+            let dataString = try SecureStorage.retrieve(key: "outlook_selected_calendar")
+            guard let data = Data(base64Encoded: dataString) else { return nil }
+            return try JSONDecoder().decode(OutlookCalendar.self, from: data)
+        } catch SecureStorage.KeychainError.itemNotFound {
+            return nil
+        } catch {
+            print("❌ Failed to load Outlook calendar from secure storage: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Clear all securely stored Outlook data
+    private func clearSecurelyStoredData() {
+        do {
+            try SecureStorage.delete(key: "outlook_current_account")
+            try SecureStorage.delete(key: "outlook_selected_calendar")
+            // Clear any stored tokens
+            try? SecureStorage.delete(key: SecureStorage.Keys.outlookAccessToken)
+            try? SecureStorage.delete(key: SecureStorage.Keys.outlookRefreshToken)
+            print("🧹 Cleared all secure Outlook data")
+        } catch {
+            print("⚠️ Error clearing secure Outlook data: \(error.localizedDescription)")
+        }
     }
 
     func fetchCalendars() {
@@ -568,10 +647,8 @@ class OutlookCalendarManager: ObservableObject {
         selectedCalendar = calendar
         showCalendarSelection = false
 
-        // Save selection to UserDefaults
-        if let data = try? JSONEncoder().encode(calendar) {
-            UserDefaults.standard.set(data, forKey: selectedCalendarKey)
-        }
+        // Save selection to secure storage
+        saveCalendarSecurely(calendar)
 
         print("✅ Selected Outlook calendar: \(calendar.displayName)")
         print("✅ Outlook Calendar integration fully configured")
@@ -778,26 +855,40 @@ class OutlookCalendarManager: ObservableObject {
     }
 
     private func loadCurrentAccount() {
-        if let data = UserDefaults.standard.data(forKey: currentAccountKey),
-           let account = try? JSONDecoder().decode(OutlookAccount.self, from: data) {
+        // Try secure storage first, then fall back to UserDefaults for migration
+        if let account = loadAccountSecurely() {
             currentAccount = account
             isSignedIn = true
-            print("✅ Loaded previously signed-in account: \(account.email)")
+            print("✅ Loaded account from secure storage: \(account.email)")
+        } else if let data = UserDefaults.standard.data(forKey: currentAccountKey),
+                  let account = try? JSONDecoder().decode(OutlookAccount.self, from: data) {
+            currentAccount = account
+            isSignedIn = true
+            // Migrate to secure storage
+            saveAccountInfoSecurely(account)
+            UserDefaults.standard.removeObject(forKey: currentAccountKey)
+            print("🔄 Migrated account to secure storage: \(account.email)")
         }
     }
 
     private func loadSelectedCalendar() {
-        if let data = UserDefaults.standard.data(forKey: selectedCalendarKey),
-           let calendar = try? JSONDecoder().decode(OutlookCalendar.self, from: data) {
+        // Try secure storage first, then fall back to UserDefaults for migration
+        if let calendar = loadCalendarSecurely() {
             selectedCalendar = calendar
-            print("✅ Loaded previously selected calendar: \(calendar.displayName)")
+            print("✅ Loaded calendar from secure storage: \(calendar.displayName)")
+        } else if let data = UserDefaults.standard.data(forKey: selectedCalendarKey),
+                  let calendar = try? JSONDecoder().decode(OutlookCalendar.self, from: data) {
+            selectedCalendar = calendar
+            // Migrate to secure storage
+            saveCalendarSecurely(calendar)
+            UserDefaults.standard.removeObject(forKey: selectedCalendarKey)
+            print("🔄 Migrated calendar to secure storage: \(calendar.displayName)")
         }
     }
 
     private func saveAccountInfo(_ account: OutlookAccount) {
-        if let data = try? JSONEncoder().encode(account) {
-            UserDefaults.standard.set(data, forKey: currentAccountKey)
-        }
+        // Save to secure storage instead of UserDefaults
+        saveAccountInfoSecurely(account)
     }
 
     func showAccountManagementSheet() {
@@ -959,7 +1050,7 @@ class OutlookCalendarManager: ObservableObject {
         print("🔄 Attempting silent token refresh...")
 
         // Try to get account for silent token acquisition
-        msalApp.getCurrentAccount { [weak self] (account, error) in
+        msalApp.getCurrentAccount(with: nil) { [weak self] (account, previousAccount, error) in
             guard let self = self else { return }
 
             if let account = account {
@@ -1065,8 +1156,8 @@ class OutlookCalendarManager: ObservableObject {
         makeGraphAPIRequest(
             endpoint: endpoint,
             accessToken: accessToken
-            ) { (data: GraphEventsResponse?, error) in
-                DispatchQueue.main.async {
+        ) { (data: GraphEventsResponse?, error) in
+                DispatchQueue.main.async { [weak self] in
                     self?.isLoading = false
 
                     if let error = error {
@@ -1149,7 +1240,6 @@ class OutlookCalendarManager: ObservableObject {
                 }
             }
         }
-    }
 
     private func setupMSALWithoutKeychain() {
         print("🔄 Setting up MSAL without keychain dependency...")
@@ -1183,18 +1273,18 @@ class OutlookCalendarManager: ObservableObject {
             tenantId: "fallback-tenant"
         )
 
-        currentAccount = fallbackAccount
-        isSignedIn = true
-        showCredentialInput = false
-        isLoading = false
+        self.currentAccount = fallbackAccount
+        self.isSignedIn = true
+        self.showCredentialInput = false
+        self.isLoading = false
 
         // Save account info
-        saveAccountInfo(fallbackAccount)
+        self.saveAccountInfo(fallbackAccount)
 
         print("✅ Fallback authentication successful: \(fallbackAccount.email)")
 
         // Provide fallback calendars since we can't access real Graph API without proper auth
-        provideFallbackCalendars(for: fallbackAccount)
+        self.provideFallbackCalendars(for: fallbackAccount)
     }
 
     func updateEvent(_ event: OutlookEvent, completion: @escaping (Bool, String?) -> Void) {
