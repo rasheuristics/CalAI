@@ -17,6 +17,7 @@ struct UnifiedEvent: Identifiable {
     let description: String?
     let isAllDay: Bool
     let source: CalendarSource
+    let organizer: String?
     let originalEvent: Any
 
     var sourceLabel: String {
@@ -40,10 +41,31 @@ class CalendarManager: ObservableObject {
     @Published var hasCalendarAccess = false
 
     let eventStore = EKEventStore()
+    private let coreDataManager = CoreDataManager.shared
+    private let syncManager = SyncManager.shared
+    private let deltaSyncManager = DeltaSyncManager.shared
+    private let webhookManager = WebhookManager.shared
+    private let conflictResolutionManager = ConflictResolutionManager.shared
 
     // External calendar managers will be injected
     var googleCalendarManager: GoogleCalendarManager?
     var outlookCalendarManager: OutlookCalendarManager?
+
+    init() {
+        // Inject self into sync manager
+        syncManager.calendarManager = self
+        // Setup advanced sync asynchronously to avoid blocking main thread
+        setupAdvancedSyncAsync()
+    }
+
+    private func setupAdvancedSyncAsync() {
+        // Enable all Phase 6 sync capabilities asynchronously
+        Task { @MainActor in
+            // Delay to ensure UI is fully loaded first
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
+            await enableAdvancedSyncFeatures()
+        }
+    }
 
     func requestCalendarAccess() {
         print("📅 Requesting iOS Calendar access...")
@@ -156,6 +178,11 @@ class CalendarManager: ObservableObject {
         print("📅 loadAllUnifiedEvents called")
         var allEvents: [UnifiedEvent] = []
 
+        // First load cached events from Core Data
+        let cachedEvents = coreDataManager.fetchEvents()
+        allEvents.append(contentsOf: cachedEvents)
+        print("💾 Loaded \(cachedEvents.count) cached events from Core Data")
+
         // Add iOS events
         print("📅 Converting \(events.count) iOS events to unified events")
         let iosEvents = events.map { event in
@@ -168,10 +195,20 @@ class CalendarManager: ObservableObject {
                 description: event.notes,
                 isAllDay: event.isAllDay,
                 source: .ios,
+                organizer: event.organizer?.name,
                 originalEvent: event
             )
         }
-        allEvents.append(contentsOf: iosEvents)
+
+        // Cache iOS events to Core Data
+        coreDataManager.saveEvents(iosEvents, syncStatus: .synced)
+
+        // Merge with existing events, avoiding duplicates
+        for iosEvent in iosEvents {
+            if !allEvents.contains(where: { $0.id == iosEvent.id && $0.source == iosEvent.source }) {
+                allEvents.append(iosEvent)
+            }
+        }
         print("📱 Added \(iosEvents.count) iOS events to unified list")
 
         // Add Google events
@@ -186,10 +223,21 @@ class CalendarManager: ObservableObject {
                     description: event.description,
                     isAllDay: false, // Google events default to not all-day
                     source: .google,
+                    organizer: nil, // Google events organizer can be added later
                     originalEvent: event
                 )
             }
-            allEvents.append(contentsOf: googleEvents)
+
+            // Cache Google events to Core Data
+            coreDataManager.saveEvents(googleEvents, syncStatus: .synced)
+
+            // Merge with existing events, avoiding duplicates
+            for googleEvent in googleEvents {
+                if !allEvents.contains(where: { $0.id == googleEvent.id && $0.source == googleEvent.source }) {
+                    allEvents.append(googleEvent)
+                }
+            }
+            print("🟢 Added \(googleEvents.count) Google events to unified list")
         }
 
         // Add Outlook events
@@ -204,10 +252,21 @@ class CalendarManager: ObservableObject {
                     description: event.description,
                     isAllDay: false, // Outlook events default to not all-day
                     source: .outlook,
+                    organizer: nil, // Outlook events organizer can be added later
                     originalEvent: event
                 )
             }
-            allEvents.append(contentsOf: outlookEvents)
+
+            // Cache Outlook events to Core Data
+            coreDataManager.saveEvents(outlookEvents, syncStatus: .synced)
+
+            // Merge with existing events, avoiding duplicates
+            for outlookEvent in outlookEvents {
+                if !allEvents.contains(where: { $0.id == outlookEvent.id && $0.source == outlookEvent.source }) {
+                    allEvents.append(outlookEvent)
+                }
+            }
+            print("🔵 Added \(outlookEvents.count) Outlook events to unified list")
         }
 
         // Sort all events by start date
@@ -218,23 +277,137 @@ class CalendarManager: ObservableObject {
     func refreshAllCalendars() {
         print("🔄 Refreshing all calendar sources...")
 
+        // Update sync status for each source
+        coreDataManager.updateSyncStatus(for: .ios, lastSyncDate: Date())
+
         // Refresh iOS events
         loadEvents()
 
         // Refresh Google events
         if let googleManager = googleCalendarManager, googleManager.isSignedIn {
             googleManager.fetchEvents()
+            coreDataManager.updateSyncStatus(for: .google, lastSyncDate: Date())
         }
 
         // Refresh Outlook events
         if let outlookManager = outlookCalendarManager, outlookManager.isSignedIn, outlookManager.selectedCalendar != nil {
             outlookManager.fetchEvents()
+            coreDataManager.updateSyncStatus(for: .outlook, lastSyncDate: Date())
         }
 
         // Update unified events after a delay to allow external fetches to complete
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             self.loadAllUnifiedEvents()
         }
+    }
+
+    func loadOfflineEvents() {
+        print("📱 Loading offline events from cache...")
+
+        let cachedEvents = coreDataManager.fetchEvents()
+
+        DispatchQueue.main.async {
+            self.unifiedEvents = cachedEvents.sorted { $0.startDate < $1.startDate }
+            print("💾 Loaded \(cachedEvents.count) offline events from Core Data")
+        }
+    }
+
+    func getLastSyncDate(for source: CalendarSource) -> Date? {
+        return coreDataManager.getLastSyncDate(for: source)
+    }
+
+    func cleanupOldCachedEvents() {
+        let oneMonthAgo = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+        coreDataManager.cleanupOldEvents(olderThan: oneMonthAgo)
+    }
+
+    // MARK: - Real-time Sync Methods
+
+    func startRealTimeSync() {
+        print("🔄 Starting real-time calendar sync")
+        syncManager.startRealTimeSync()
+    }
+
+    func stopRealTimeSync() {
+        print("⏹️ Stopping real-time calendar sync")
+        syncManager.stopRealTimeSync()
+    }
+
+    func performManualSync() async {
+        print("🔄 Performing manual sync")
+        await syncManager.performIncrementalSync()
+
+        // Refresh UI after sync
+        DispatchQueue.main.async {
+            self.loadAllUnifiedEvents()
+        }
+    }
+
+    var isSyncing: Bool {
+        syncManager.isSyncing
+    }
+
+    var lastSyncDate: Date? {
+        syncManager.lastSyncDate
+    }
+
+    var syncErrors: [SyncError] {
+        syncManager.syncErrors
+    }
+
+    // MARK: - Advanced Sync Features (Phase 6)
+
+    private func enableAdvancedSyncFeatures() async {
+        print("🚀 Enabling Phase 6 advanced sync features...")
+
+        // Enable webhooks for real-time updates
+        await syncManager.enableWebhooks()
+
+        // Setup conflict resolution
+        conflictResolutionManager.enableAutoResolution()
+
+        print("✅ Phase 6 advanced sync features enabled")
+    }
+
+    func performOptimizedSync() async {
+        print("⚡ Performing optimized delta sync...")
+        await syncManager.performOptimizedSync()
+    }
+
+
+    func resolveAllConflicts() {
+        print("🔧 Resolving all pending conflicts...")
+
+        for event in unifiedEvents {
+            let conflicts = conflictResolutionManager.detectConflicts(for: event)
+            if !conflicts.isEmpty {
+                conflictResolutionManager.presentConflictResolution(for: conflicts)
+            }
+        }
+    }
+
+    // MARK: - Sync Status & Metrics
+
+
+    // MARK: - Cross-Device Sync Stubs (Disabled for now)
+    var crossDeviceSyncStatus: String { "Cross-device sync disabled" }
+    var lastCrossDeviceSync: Date? { nil }
+    var connectedDevices: [String] { [] }
+
+    func syncToAllDevices() async {
+        print("ℹ️ Cross-device sync is disabled in this version")
+    }
+
+    var deltaPerformanceMetrics: DeltaPerformanceMetrics {
+        deltaSyncManager.getPerformanceMetrics()
+    }
+
+    var registeredWebhooks: [RegisteredWebhook] {
+        webhookManager.registeredWebhooks
+    }
+
+    var pendingConflicts: [EventConflict] {
+        conflictResolutionManager.pendingConflicts
     }
 
     func createEvent(title: String, startDate: Date, endDate: Date? = nil) {

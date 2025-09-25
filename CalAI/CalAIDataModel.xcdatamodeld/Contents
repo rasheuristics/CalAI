@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="22758" systemVersion="23F79" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithSwiftData="YES" userDefinedModelVersionIdentifier="">
+    <entity name="CachedEvent" representedClassName="CachedEvent" syncable="YES">
+        <attribute name="calendarId" optional="YES" attributeType="String"/>
+        <attribute name="eventDescription" optional="YES" attributeType="String"/>
+        <attribute name="endDate" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="eventId" optional="NO" attributeType="String"/>
+        <attribute name="isAllDay" optional="NO" attributeType="Boolean" usesScalarValueType="YES"/>
+        <attribute name="lastModified" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="location" optional="YES" attributeType="String"/>
+        <attribute name="organizer" optional="YES" attributeType="String"/>
+        <attribute name="source" optional="NO" attributeType="String"/>
+        <attribute name="startDate" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="syncStatus" optional="NO" attributeType="String"/>
+        <attribute name="title" optional="NO" attributeType="String"/>
+        <uniquenessConstraints>
+            <uniquenessConstraint>
+                <constraint value="eventId"/>
+                <constraint value="source"/>
+            </uniquenessConstraint>
+        </uniquenessConstraints>
+    </entity>
+    <entity name="CalendarSyncStatus" representedClassName="CalendarSyncStatus" syncable="YES">
+        <attribute name="lastSyncDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="source" optional="NO" attributeType="String"/>
+        <attribute name="syncToken" optional="YES" attributeType="String"/>
+        <uniquenessConstraints>
+            <uniquenessConstraint>
+                <constraint value="source"/>
+            </uniquenessConstraint>
+        </uniquenessConstraints>
+    </entity>
+</model>
