@@ -56,6 +56,16 @@ struct Config {
         }
     }
 
+    static var hasAnthropicKey: Bool {
+        let key = anthropicAPIKey
+        return !key.isEmpty && key.hasPrefix("sk-ant-")
+    }
+
+    static var hasOpenAIKey: Bool {
+        let key = openaiAPIKey
+        return !key.isEmpty && key.hasPrefix("sk-")
+    }
+
     static var currentAPIKey: String {
         switch aiProvider {
         case .anthropic:

@@ -520,9 +520,81 @@ class CalendarManager: ObservableObject {
             }
         case .queryEvents:
             print("📋 Loading events")
-            loadEvents()
+            if let queryDate = response.startDate {
+                checkAvailability(for: queryDate) { [weak self] isAvailable, conflictingEvents in
+                    DispatchQueue.main.async {
+                        self?.handleAvailabilityResult(isAvailable: isAvailable,
+                                                     conflictingEvents: conflictingEvents,
+                                                     queryDate: queryDate)
+                    }
+                }
+            } else {
+                loadEvents()
+            }
         case .unknown:
             print("❓ Unknown AI response: \(response.message)")
         }
+    }
+
+    // MARK: - Availability Checking
+
+    func checkAvailability(for queryDate: Date, completion: @escaping (Bool, [UnifiedEvent]) -> Void) {
+        print("🔍 Checking availability for \(queryDate)")
+
+        // Ensure events are loaded
+        loadAllUnifiedEvents()
+
+        // Use a slight delay to ensure events are loaded
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+
+            // Define a 1-hour window around the query time
+            let endDate = Calendar.current.date(byAdding: .hour, value: 1, to: queryDate) ?? queryDate
+
+            // Find conflicting events
+            let conflictingEvents = self.unifiedEvents.filter { event in
+                // Check if the event overlaps with the query time window
+                return (event.startDate < endDate && event.endDate > queryDate)
+            }
+
+            let isAvailable = conflictingEvents.isEmpty
+
+            print("📊 Availability check result: \(isAvailable ? "FREE" : "BUSY"), \(conflictingEvents.count) conflicts")
+
+            completion(isAvailable, conflictingEvents)
+        }
+    }
+
+    private func handleAvailabilityResult(isAvailable: Bool, conflictingEvents: [UnifiedEvent], queryDate: Date) {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+
+        let formattedDate = formatter.string(from: queryDate)
+
+        var resultMessage: String
+
+        if isAvailable {
+            resultMessage = "✅ You're free at \(formattedDate)!"
+        } else {
+            resultMessage = "❌ You have \(conflictingEvents.count) conflict\(conflictingEvents.count == 1 ? "" : "s") at \(formattedDate):"
+
+            for event in conflictingEvents.prefix(3) {
+                resultMessage += "\n• \(event.title) (\(event.duration))"
+            }
+
+            if conflictingEvents.count > 3 {
+                resultMessage += "\n• ...and \(conflictingEvents.count - 3) more"
+            }
+        }
+
+        print("📢 Availability result: \(resultMessage)")
+
+        // Post notification for UI to show the result
+        NotificationCenter.default.post(
+            name: NSNotification.Name("AvailabilityResult"),
+            object: nil,
+            userInfo: ["message": resultMessage]
+        )
     }
 }

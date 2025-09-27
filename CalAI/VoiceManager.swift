@@ -137,8 +137,13 @@ class VoiceManager: NSObject, ObservableObject {
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
 
             if let result = result {
-                self?.latestTranscript = result.bestTranscription.formattedString
-                print("🎤 Transcript received: \(self?.latestTranscript ?? "")")
+                let newTranscript = result.bestTranscription.formattedString
+                print("🎤 Transcript received: \(newTranscript)")
+
+                // Only update if we have a non-empty transcript or no previous transcript
+                if !newTranscript.isEmpty || (self?.latestTranscript.isEmpty ?? true) {
+                    self?.latestTranscript = newTranscript
+                }
 
                 if result.isFinal {
                     print("✅ Final transcript: \(self?.latestTranscript ?? "")")

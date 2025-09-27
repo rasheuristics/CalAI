@@ -7,6 +7,8 @@ struct AITabView: View {
     @ObservedObject var fontManager: FontManager
     @State private var conversationHistory: [ConversationItem] = []
     @State private var isProcessing = false
+    @State private var pendingResponse: AIResponse?
+    @State private var showingConfirmation = false
 
     var body: some View {
         ZStack {
@@ -66,7 +68,7 @@ struct AITabView: View {
                 }
             }
 
-            // Floating mic button in bottom right corner
+            // Mic button at bottom center
             VStack {
                 Spacer()
                 HStack {
@@ -86,13 +88,48 @@ struct AITabView: View {
                             print("🎯 Response action: \(response.action)")
                             print("📅 Event title: \(response.eventTitle ?? "nil")")
                             print("⏰ Start date: \(response.startDate?.description ?? "nil")")
-                            addAIResponse(response)
+
+                            if response.requiresConfirmation {
+                                print("⚠️ Response requires confirmation")
+                                pendingResponse = response
+                                showingConfirmation = true
+                            } else {
+                                addAIResponse(response)
+                                executeAIAction(response)
+                            }
                         }
                     )
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 20)
+                    Spacer()
                 }
+                .padding(.bottom, 20)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("AvailabilityResult"))) { notification in
+            if let message = notification.userInfo?["message"] as? String {
+                print("🔔 Received availability result notification: \(message)")
+                let item = ConversationItem(
+                    id: UUID(),
+                    message: message,
+                    isUser: false,
+                    timestamp: Date()
+                )
+                conversationHistory.append(item)
+                isProcessing = false
+            }
+        }
+        .alert("Confirm Action", isPresented: $showingConfirmation) {
+            Button("Cancel", role: .cancel) {
+                pendingResponse = nil
+            }
+            Button("Confirm") {
+                if let response = pendingResponse {
+                    addAIResponse(response)
+                    executeAIAction(response)
+                }
+                pendingResponse = nil
+            }
+        } message: {
+            Text(pendingResponse?.confirmationMessage ?? "Do you want to proceed with this action?")
         }
     }
 
@@ -116,6 +153,10 @@ struct AITabView: View {
         )
         conversationHistory.append(item)
         isProcessing = false
+    }
+
+    private func executeAIAction(_ response: AIResponse) {
+        calendarManager.handleAIResponse(response)
     }
 }
 

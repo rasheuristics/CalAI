@@ -18,6 +18,18 @@ struct AIResponse {
     let startDate: Date?
     let endDate: Date?
     let message: String
+    let requiresConfirmation: Bool
+    let confirmationMessage: String?
+
+    init(action: AIAction, eventTitle: String?, startDate: Date?, endDate: Date?, message: String, requiresConfirmation: Bool = false, confirmationMessage: String? = nil) {
+        self.action = action
+        self.eventTitle = eventTitle
+        self.startDate = startDate
+        self.endDate = endDate
+        self.message = message
+        self.requiresConfirmation = requiresConfirmation
+        self.confirmationMessage = confirmationMessage
+    }
 }
 
 class AIManager: ObservableObject {
@@ -86,10 +98,28 @@ class AIManager: ObservableObject {
         print("🧠 AI Manager processing transcript: \(transcript)")
         isProcessing = true
 
+        // Validate transcript is not empty
+        let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTranscript.isEmpty else {
+            print("❌ Empty transcript received")
+            let errorResponse = AIResponse(
+                action: .unknown,
+                eventTitle: nil,
+                startDate: nil,
+                endDate: nil,
+                message: "I didn't catch that. Please try speaking again."
+            )
+            DispatchQueue.main.async {
+                self.isProcessing = false
+                completion(errorResponse)
+            }
+            return
+        }
+
         // Check if API key is configured
         guard Config.hasValidAPIKey else {
             print("❌ No valid API key configured, using fallback parsing")
-            let fallbackResponse = parseCommand(transcript)
+            let fallbackResponse = parseCommand(cleanTranscript)
             DispatchQueue.main.async {
                 self.isProcessing = false
                 print("🔄 Fallback response: \(fallbackResponse.message)")
@@ -99,6 +129,10 @@ class AIManager: ObservableObject {
         }
 
         print("✅ API key configured, processing with \(Config.aiProvider.displayName)")
+        processWithRetry(transcript: cleanTranscript, maxRetries: 2, completion: completion)
+    }
+
+    private func processWithRetry(transcript: String, maxRetries: Int, currentAttempt: Int = 0, completion: @escaping (AIResponse) -> Void) {
         Task {
             do {
                 let response: AIResponse
@@ -114,13 +148,51 @@ class AIManager: ObservableObject {
                     completion(response)
                 }
             } catch {
-                print("❌ \(Config.aiProvider.displayName) API error: \(error), falling back to basic parsing")
-                // Fallback to simple parsing if API fails
-                let fallbackResponse = parseCommand(transcript)
-                print("🔄 Fallback response: \(fallbackResponse.message)")
-                await MainActor.run {
-                    self.isProcessing = false
-                    completion(fallbackResponse)
+                print("❌ \(Config.aiProvider.displayName) API error (attempt \(currentAttempt + 1)/\(maxRetries + 1)): \(error)")
+
+                if currentAttempt < maxRetries {
+                    print("🔄 Retrying in 1 second...")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        self.processWithRetry(transcript: transcript, maxRetries: maxRetries, currentAttempt: currentAttempt + 1, completion: completion)
+                    }
+                } else {
+                    // Try the alternative provider if primary fails
+                    if Config.aiProvider == .anthropic && Config.hasOpenAIKey {
+                        print("🔄 Anthropic failed, trying OpenAI as fallback...")
+                        do {
+                            let response = try await self.processWithOpenAI(transcript)
+                            print("✅ OpenAI fallback successful: \(response.message)")
+                            await MainActor.run {
+                                self.isProcessing = false
+                                completion(response)
+                            }
+                            return
+                        } catch {
+                            print("❌ OpenAI fallback also failed: \(error)")
+                        }
+                    } else if Config.aiProvider == .openai && Config.hasAnthropicKey {
+                        print("🔄 OpenAI failed, trying Anthropic as fallback...")
+                        do {
+                            let response = try await self.processWithClaude(transcript)
+                            print("✅ Anthropic fallback successful: \(response.message)")
+                            await MainActor.run {
+                                self.isProcessing = false
+                                completion(response)
+                            }
+                            return
+                        } catch {
+                            print("❌ Anthropic fallback also failed: \(error)")
+                        }
+                    }
+
+                    print("❌ All AI providers failed, falling back to basic parsing")
+                    // Fallback to simple parsing if all retries fail
+                    let fallbackResponse = self.parseCommand(transcript)
+                    print("🔄 Fallback response: \(fallbackResponse.message)")
+                    await MainActor.run {
+                        self.isProcessing = false
+                        completion(fallbackResponse)
+                    }
                 }
             }
         }
@@ -264,10 +336,16 @@ class AIManager: ObservableObject {
     private func parseAIResponse(_ responseText: String) throws -> AIResponse {
         print("🔍 Parsing AI response: \(responseText)")
 
+        // Validate response is not empty
+        guard !responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            print("❌ Empty AI response received")
+            throw AIError.invalidResponse
+        }
+
         // Try to extract JSON from response (Claude might wrap it in text)
         var jsonString = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // If response contains markdown-style JSON blocks, extract the JSON
+        // Enhanced JSON extraction with multiple fallback patterns
         if jsonString.contains("```json") {
             let components = jsonString.components(separatedBy: "```json")
             if components.count > 1 {
@@ -281,7 +359,21 @@ class AIManager: ObservableObject {
             }
         }
 
+        // Try to find JSON object markers if no code blocks
+        if !jsonString.hasPrefix("{") && jsonString.contains("{") {
+            if let startIndex = jsonString.firstIndex(of: "{"),
+               let endIndex = jsonString.lastIndex(of: "}") {
+                jsonString = String(jsonString[startIndex...endIndex])
+            }
+        }
+
         print("🔧 Extracted JSON string: \(jsonString)")
+
+        // Validate JSON string looks reasonable
+        guard jsonString.hasPrefix("{") && jsonString.hasSuffix("}") else {
+            print("❌ Invalid JSON format: missing braces")
+            throw AIError.invalidResponse
+        }
 
         guard let jsonData = jsonString.data(using: .utf8) else {
             print("❌ Failed to convert to data")
@@ -314,6 +406,14 @@ class AIManager: ObservableObject {
             let title = json["title"] as? String
             let message = json["message"] as? String ?? "Task completed"
 
+            // Validate createEvent has required fields
+            if action == .createEvent {
+                guard let eventTitle = title, !eventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    print("❌ CreateEvent action missing title")
+                    throw AIError.invalidResponse
+                }
+            }
+
             var startDate: Date?
             var endDate: Date?
 
@@ -321,20 +421,51 @@ class AIManager: ObservableObject {
                 let isoFormatter = ISO8601DateFormatter()
                 startDate = isoFormatter.date(from: startDateString)
                 print("📅 Parsed start date: \(startDate?.description ?? "nil")")
+
+                // Validate start date is reasonable (not too far in past/future)
+                if let date = startDate {
+                    let calendar = Calendar.current
+                    let now = Date()
+                    let maxFuture = calendar.date(byAdding: .year, value: 2, to: now) ?? now
+                    let maxPast = calendar.date(byAdding: .year, value: -1, to: now) ?? now
+
+                    if date > maxFuture || date < maxPast {
+                        print("⚠️ Start date outside reasonable range, using fallback")
+                        startDate = calendar.date(byAdding: .hour, value: 1, to: now)
+                    }
+                }
             }
 
             if let endDateString = json["endDate"] as? String {
                 let isoFormatter = ISO8601DateFormatter()
                 endDate = isoFormatter.date(from: endDateString)
                 print("📅 Parsed end date: \(endDate?.description ?? "nil")")
+
+                // Validate end date is after start date
+                if let start = startDate, let end = endDate, end <= start {
+                    print("⚠️ End date before start date, adjusting")
+                    endDate = Calendar.current.date(byAdding: .hour, value: 1, to: start)
+                }
             }
+
+            // For createEvent, ensure we have a start date
+            if action == .createEvent && startDate == nil {
+                print("⚠️ CreateEvent missing start date, using default (1 hour from now)")
+                startDate = Calendar.current.date(byAdding: .hour, value: 1, to: Date())
+            }
+
+            // Determine if confirmation is needed
+            let needsConfirmation = action == .createEvent
+            let confirmMessage = needsConfirmation ? generateConfirmationMessage(action: action, title: title, startDate: startDate, endDate: endDate) : nil
 
             let response = AIResponse(
                 action: action,
                 eventTitle: title,
                 startDate: startDate,
                 endDate: endDate,
-                message: message
+                message: message,
+                requiresConfirmation: needsConfirmation,
+                confirmationMessage: confirmMessage
             )
 
             print("✅ Created AIResponse: action=\(action), title=\(title ?? "nil"), message=\(message)")
@@ -346,16 +477,52 @@ class AIManager: ObservableObject {
         }
     }
 
+    private func generateConfirmationMessage(action: AIAction, title: String?, startDate: Date?, endDate: Date?) -> String {
+        switch action {
+        case .createEvent:
+            let eventTitle = title ?? "event"
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+
+            if let start = startDate {
+                let startTime = formatter.string(from: start)
+                if let end = endDate {
+                    let endFormatter = DateFormatter()
+                    endFormatter.timeStyle = .short
+                    let endTime = endFormatter.string(from: end)
+                    return "Create '\(eventTitle)' from \(startTime) to \(endTime)?"
+                } else {
+                    return "Create '\(eventTitle)' at \(startTime)?"
+                }
+            } else {
+                return "Create '\(eventTitle)'?"
+            }
+        case .queryEvents:
+            return "Show your upcoming events?"
+        case .unknown:
+            return "Proceed with this action?"
+        }
+    }
+
     private func parseCommand(_ transcript: String) -> AIResponse {
         let lowercased = transcript.lowercased()
 
+        // Check for availability queries first
+        if lowercased.contains("am i free") || lowercased.contains("are you free") ||
+           lowercased.contains("free at") || lowercased.contains("available") ||
+           lowercased.contains("busy") || lowercased.contains("do i have") {
+            return parseAvailabilityQuery(transcript)
+        }
         // More natural language patterns for creating events
-        if lowercased.contains("create") || lowercased.contains("schedule") || lowercased.contains("add") ||
+        else if lowercased.contains("create") || lowercased.contains("schedule") || lowercased.contains("add") ||
            lowercased.contains("i want to") || lowercased.contains("i need to") ||
            lowercased.contains("meeting") || lowercased.contains("appointment") ||
            lowercased.contains("event") {
             return parseCreateEventCommand(transcript)
-        } else if lowercased.contains("show") || lowercased.contains("what") || lowercased.contains("events") ||
+        }
+        // Calendar queries
+        else if lowercased.contains("show") || lowercased.contains("what") || lowercased.contains("events") ||
                   lowercased.contains("calendar") || lowercased.contains("today") ||
                   lowercased.contains("week") || lowercased.contains("month") {
             return AIResponse(
@@ -363,7 +530,9 @@ class AIManager: ObservableObject {
                 eventTitle: nil,
                 startDate: nil,
                 endDate: nil,
-                message: "Showing your events"
+                message: "Here are your events",
+                requiresConfirmation: false,
+                confirmationMessage: nil
             )
         } else {
             return AIResponse(
@@ -371,7 +540,39 @@ class AIManager: ObservableObject {
                 eventTitle: nil,
                 startDate: nil,
                 endDate: nil,
-                message: "I can help you create events or show your calendar. Try saying 'I want to create a meeting tomorrow at 2pm' or 'show my events'."
+                message: "I can help you create events or show your calendar. Try saying 'I want to create a meeting tomorrow at 2pm' or 'show my events'.",
+                requiresConfirmation: false,
+                confirmationMessage: nil
+            )
+        }
+    }
+
+    private func parseAvailabilityQuery(_ transcript: String) -> AIResponse {
+        let queryDate = extractDate(from: transcript)
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+
+        if let date = queryDate {
+            let formattedDate = dateFormatter.string(from: date)
+            return AIResponse(
+                action: .queryEvents,
+                eventTitle: nil,
+                startDate: date,
+                endDate: nil,
+                message: "Checking your availability for \(formattedDate)",
+                requiresConfirmation: false,
+                confirmationMessage: nil
+            )
+        } else {
+            return AIResponse(
+                action: .queryEvents,
+                eventTitle: nil,
+                startDate: nil,
+                endDate: nil,
+                message: "Checking your calendar availability",
+                requiresConfirmation: false,
+                confirmationMessage: nil
             )
         }
     }
@@ -381,12 +582,21 @@ class AIManager: ObservableObject {
         let startDate = extractDate(from: transcript)
 
         if let title = title, let startDate = startDate {
+            let confirmationMessage = generateConfirmationMessage(
+                action: .createEvent,
+                title: title,
+                startDate: startDate,
+                endDate: nil
+            )
+
             return AIResponse(
                 action: .createEvent,
                 eventTitle: title,
                 startDate: startDate,
                 endDate: nil,
-                message: "Created event: \(title)"
+                message: "Created event: \(title)",
+                requiresConfirmation: true,
+                confirmationMessage: confirmationMessage
             )
         } else {
             return AIResponse(
@@ -394,7 +604,9 @@ class AIManager: ObservableObject {
                 eventTitle: nil,
                 startDate: nil,
                 endDate: nil,
-                message: "I need more details. Try saying 'create meeting tomorrow at 2pm'."
+                message: "I need more details. Try saying 'create meeting tomorrow at 2pm'.",
+                requiresConfirmation: false,
+                confirmationMessage: nil
             )
         }
     }
