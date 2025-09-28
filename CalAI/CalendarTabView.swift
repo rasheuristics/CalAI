@@ -35,11 +35,11 @@ struct CalendarTabView: View {
                     switch currentViewType {
                     case .day:
                         CompressedDayTimelineView(
-                            date: Date(), // Always show current day
-                            events: unifiedEventsForDate(Date()).map { TimelineEvent(from: $0) },
+                            date: selectedDate, // Show selected day
+                            events: unifiedEventsForDate(selectedDate).map { TimelineEvent(from: $0) },
                             fontManager: fontManager
                         )
-                        .id("\(Date().timeIntervalSince1970)") // Force recreation on date change
+                        .id("\(selectedDate.timeIntervalSince1970)") // Force recreation on date change
                     case .week:
                         WeekViewWithCompressedTimeline(
                             selectedDate: $selectedDate,
@@ -50,7 +50,14 @@ struct CalendarTabView: View {
                         MonthCalendarView(selectedDate: $selectedDate)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     case .year:
-                        iOSYearView(selectedDate: $selectedDate, fontManager: fontManager)
+                        iOSYearView(
+                            selectedDate: $selectedDate,
+                            fontManager: fontManager,
+                            onMonthDoubleClick: { month in
+                                selectedDate = month
+                                currentViewType = .month
+                            }
+                        )
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -81,7 +88,15 @@ struct CalendarTabView: View {
     private func unifiedEventsForDate(_ date: Date) -> [UnifiedEvent] {
         let calendar = Calendar.current
         return calendarManager.unifiedEvents.filter { event in
-            calendar.isDate(event.startDate, inSameDayAs: date)
+            if event.isAllDay {
+                // For all-day events, check if this day is within the event's date range
+                let eventStartDay = calendar.startOfDay(for: event.startDate)
+                let eventEndDay = calendar.startOfDay(for: event.endDate)
+                let selectedDay = calendar.startOfDay(for: date)
+                return selectedDay >= eventStartDay && selectedDay <= eventEndDay
+            } else {
+                return calendar.isDate(event.startDate, inSameDayAs: date)
+            }
         }
     }
 }
@@ -703,6 +718,7 @@ struct DayEventCard: View {
 struct iOSYearView: View {
     @Binding var selectedDate: Date
     @ObservedObject var fontManager: FontManager
+    let onMonthDoubleClick: (Date) -> Void
 
     private let calendar = Calendar.current
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 2)
@@ -714,7 +730,8 @@ struct iOSYearView: View {
                     YearMonthCard(
                         month: month,
                         selectedDate: $selectedDate,
-                        fontManager: fontManager
+                        fontManager: fontManager,
+                        onDoubleClick: onMonthDoubleClick
                     )
                 }
             }
@@ -797,6 +814,7 @@ struct YearMonthCard: View {
     let month: Date
     @Binding var selectedDate: Date
     @ObservedObject var fontManager: FontManager
+    let onDoubleClick: (Date) -> Void
 
     private let calendar = Calendar.current
 
@@ -847,6 +865,9 @@ struct YearMonthCard: View {
             RoundedRectangle(cornerRadius: 4)
                 .stroke(Color.gray.opacity(0.2), lineWidth: 0.5)
         )
+        .onTapGesture(count: 2) {
+            onDoubleClick(month)
+        }
     }
 
     private var monthName: String {

@@ -37,34 +37,41 @@ struct DayCalendarView: View {
 
                 // Day column with events
                 ScrollView(.vertical) {
-                    ZStack(alignment: .topLeading) {
-                        // Background grid
-                        VStack(spacing: 0) {
-                            // Header with day name and date
-                            DayHeaderCell(date: selectedDate)
-                                .frame(height: 22)
-                                .background(Color(.systemGray6))
+                    VStack(spacing: 0) {
+                        // Header with day name and date
+                        DayHeaderCell(date: selectedDate)
+                            .frame(height: 22)
+                            .background(Color(.systemGray6))
 
-                            // Hour grid lines
-                            ForEach(hours, id: \.self) { hour in
-                                Rectangle()
-                                    .fill(Color(.systemGray5))
-                                    .frame(height: 1)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.top, hourHeight * zoomScale - 1)
+                        // All-day events section
+                        if !allDayEvents.isEmpty {
+                            VStack(spacing: 2) {
+                                ForEach(allDayEvents, id: \.eventIdentifier) { event in
+                                    AllDayEventView(event: event)
+                                }
                             }
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 4)
+                            .background(Color(.systemGray6).opacity(0.5))
                         }
 
-                        // Events overlay
-                        VStack(spacing: 0) {
-                            // Header spacer
-                            Rectangle()
-                                .fill(Color.clear)
-                                .frame(height: 22)
+                        // Timed events section
+                        ZStack(alignment: .topLeading) {
+                            // Background grid
+                            VStack(spacing: 0) {
+                                // Hour grid lines
+                                ForEach(hours, id: \.self) { hour in
+                                    Rectangle()
+                                        .fill(Color(.systemGray5))
+                                        .frame(height: 1)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.top, hourHeight * zoomScale - 1)
+                                }
+                            }
 
-                            // Events positioned by time
+                            // Timed events positioned by time
                             ZStack(alignment: .topLeading) {
-                                ForEach(dayEvents, id: \.eventIdentifier) { event in
+                                ForEach(timedEvents, id: \.eventIdentifier) { event in
                                     DayEventView(event: event, hourHeight: hourHeight * zoomScale)
                                         .offset(y: eventOffset(for: event))
                                 }
@@ -92,6 +99,14 @@ struct DayCalendarView: View {
         return events.filter { event in
             calendar.isDate(event.startDate, inSameDayAs: selectedDate)
         }
+    }
+
+    private var allDayEvents: [EKEvent] {
+        return dayEvents.filter { $0.isAllDay }
+    }
+
+    private var timedEvents: [EKEvent] {
+        return dayEvents.filter { !$0.isAllDay }
     }
 
     private func formatHour(_ hour: Int) -> String {
@@ -189,5 +204,29 @@ struct DayEventView: View {
         let duration = event.endDate?.timeIntervalSince(event.startDate) ?? 3600 // Default 1 hour
         let hours = duration / 3600
         return max(20, CGFloat(hours) * hourHeight)
+    }
+}
+
+struct AllDayEventView: View {
+    let event: EKEvent
+
+    var body: some View {
+        HStack {
+            Rectangle()
+                .fill(Color(event.calendar?.cgColor ?? CGColor(red: 0, green: 0, blue: 1, alpha: 1)))
+                .frame(width: 3)
+
+            Text(event.title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .lineLimit(1)
+
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(event.calendar?.cgColor ?? CGColor(red: 0, green: 0, blue: 1, alpha: 1)).opacity(0.2))
+        .cornerRadius(4)
+        .frame(height: 20)
     }
 }
