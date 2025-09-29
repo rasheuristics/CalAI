@@ -4,6 +4,7 @@ import EventKit
 struct EventsTabView: View {
     @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var fontManager: FontManager
+    @ObservedObject var appearanceManager: AppearanceManager
     @State private var showingUpcoming = true
     @State private var selectedTimeRange: TimeRange = .week
     @State private var showingAddEvent = false
@@ -13,8 +14,8 @@ struct EventsTabView: View {
 
     var body: some View {
         ZStack {
-            // Background that extends to all edges
-            Color(.systemGroupedBackground)
+            // Transparent background to show main gradient
+            Color.clear
                 .ignoresSafeArea(.all)
 
             VStack(spacing: 0) {

@@ -6,6 +6,7 @@ struct AITabView: View {
     @ObservedObject var aiManager: AIManager
     @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var fontManager: FontManager
+    @ObservedObject var appearanceManager: AppearanceManager
     @State private var conversationHistory: [ConversationItem] = []
     @State private var isProcessing = false
     @State private var pendingResponse: AICalendarResponse?
@@ -18,8 +19,8 @@ struct AITabView: View {
 
     var body: some View {
         ZStack {
-            // Background that extends to all edges
-            Color(.systemGroupedBackground)
+            // Transparent background to show main gradient
+            Color.clear
                 .ignoresSafeArea(.all)
 
             VStack(spacing: 0) {
@@ -56,6 +57,7 @@ struct AITabView: View {
                                 CommandCategoryCard(
                                     category: category,
                                     fontManager: fontManager,
+                                    appearanceManager: appearanceManager,
                                     onCommandSelected: { command in
                                         executeExampleCommand(command)
                                     },
@@ -141,6 +143,7 @@ struct AITabView: View {
                         aiManager: aiManager,
                         calendarManager: calendarManager,
                         fontManager: fontManager,
+                        appearanceManager: appearanceManager,
                         onTranscript: { transcript in
                             print("🗣️ Transcript received in AITabView: '\(transcript)'")
                             print("📝 Adding user message to conversation")
@@ -338,9 +341,16 @@ struct ConversationBubble: View {
                 Text(item.message)
                     .dynamicFont(size: 16, fontManager: fontManager)
                     .padding(12)
-                    .background(item.isUser ? Color.blue : Color.gray.opacity(0.2))
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(item.isUser ? .blue : Color.gray.opacity(0.15))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(.white.opacity(item.isUser ? 0.3 : 0.2), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                    )
                     .foregroundColor(item.isUser ? .white : .primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
 
                 Text(formatTime(item.timestamp))
                     .dynamicFont(size: 11, fontManager: fontManager)
@@ -456,17 +466,32 @@ enum CommandCategory: String, CaseIterable {
 struct CommandCategoryCard: View {
     let category: CommandCategory
     let fontManager: FontManager
+    let appearanceManager: AppearanceManager
     let onCommandSelected: (String) -> Void
     let onCategoryDoubleTap: ((CommandCategory) -> Void)?
 
     @State private var isExpanded = false
     @State private var isPressed = false
 
-    init(category: CommandCategory, fontManager: FontManager, onCommandSelected: @escaping (String) -> Void, onCategoryDoubleTap: ((CommandCategory) -> Void)? = nil) {
+    init(category: CommandCategory, fontManager: FontManager, appearanceManager: AppearanceManager, onCommandSelected: @escaping (String) -> Void, onCategoryDoubleTap: ((CommandCategory) -> Void)? = nil) {
         self.category = category
         self.fontManager = fontManager
+        self.appearanceManager = appearanceManager
         self.onCommandSelected = onCommandSelected
         self.onCategoryDoubleTap = onCategoryDoubleTap
+    }
+
+    private var headerBackground: some View {
+        RoundedRectangle(cornerRadius: 12)
+            .fill(Color.white.opacity(appearanceManager.glassOpacity))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.blue.opacity(isPressed ? 0.2 : 0.1))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(.white.opacity(appearanceManager.strokeOpacity), lineWidth: 1)
+            )
     }
 
     var body: some View {
@@ -503,8 +528,7 @@ struct CommandCategoryCard: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(Color.blue.opacity(isPressed ? 0.15 : 0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .background(headerBackground)
             .scaleEffect(isPressed ? 0.98 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: isPressed)
             .onTapGesture(count: category == .eventManagement ? 1 : 2) {
@@ -529,6 +553,7 @@ struct CommandCategoryCard: View {
                         CommandItem(
                             text: command,
                             fontManager: fontManager,
+                            appearanceManager: appearanceManager,
                             onDoubleTap: {
                                 onCommandSelected(command)
                                 // Collapse after selection
@@ -545,9 +570,13 @@ struct CommandCategoryCard: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(appearanceManager.glassOpacity))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(.white.opacity(appearanceManager.strokeOpacity), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
         )
     }
 }
@@ -557,6 +586,7 @@ struct CommandCategoryCard: View {
 struct CommandItem: View {
     let text: String
     let fontManager: FontManager
+    let appearanceManager: AppearanceManager
     let onDoubleTap: () -> Void
 
     @State private var isPressed = false
@@ -581,8 +611,18 @@ struct CommandItem: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Color.blue.opacity(isPressed ? 0.15 : 0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white.opacity(appearanceManager.glassOpacity * 0.5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.blue.opacity(isPressed ? 0.15 : 0.05))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(.white.opacity(appearanceManager.strokeOpacity), lineWidth: 0.5)
+                )
+        )
         .scaleEffect(isPressed ? 0.96 : 1.0)
         .animation(.easeInOut(duration: 0.1), value: isPressed)
         .onTapGesture(count: 2) {

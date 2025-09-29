@@ -6,6 +6,7 @@ struct SettingsTabView: View {
     @ObservedObject var fontManager: FontManager
     @ObservedObject var googleCalendarManager: GoogleCalendarManager
     @ObservedObject var outlookCalendarManager: OutlookCalendarManager
+    @ObservedObject var appearanceManager: AppearanceManager
     @State private var selectedLanguage = "en-US"
     @State private var notificationsEnabled = true
     @State private var autoSyncEnabled = true
@@ -42,8 +43,8 @@ struct SettingsTabView: View {
 
     var body: some View {
         ZStack {
-            // Background that extends to all edges
-            Color(.systemGroupedBackground)
+            // Transparent background to show main gradient
+            Color.clear
                 .ignoresSafeArea(.all)
 
             Form {
@@ -214,6 +215,21 @@ struct SettingsTabView: View {
                         }
                         .pickerStyle(SegmentedPickerStyle())
                         .frame(width: 200)
+                    }
+
+                    HStack {
+                        Image(systemName: appearanceManager.currentMode.icon)
+                            .foregroundColor(.blue)
+                        Text("Appearance")
+                            .dynamicFont(size: 16, fontManager: fontManager)
+                        Spacer()
+                        Picker("Appearance", selection: $appearanceManager.currentMode) {
+                            ForEach(AppearanceMode.allCases) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .pickerStyle(SegmentedPickerStyle())
+                        .frame(width: 180)
                     }
                 }
 
@@ -469,6 +485,7 @@ struct SettingsTabView: View {
                     }
                 }
             }
+            .background(Color.clear)
             .environment(\.sizeCategory, sizeCategory)
         }
         .alert("Get \(selectedAIProvider.displayName) API Key", isPresented: $showingAPIKeyAlert) {

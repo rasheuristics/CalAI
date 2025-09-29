@@ -11,14 +11,15 @@ enum CalendarViewType: String, CaseIterable {
 struct CalendarTabView: View {
     @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var fontManager: FontManager
+    @ObservedObject var appearanceManager: AppearanceManager
     @State private var selectedDate = Date()
     @State private var currentViewType: CalendarViewType = .day
     @State private var showingDatePicker = false
 
     var body: some View {
         ZStack {
-            // Background that extends to all edges
-            Color(.systemGroupedBackground)
+            // Transparent background to show main gradient
+            Color.clear
                 .ignoresSafeArea(.all)
 
             VStack(spacing: 0) {
@@ -179,7 +180,7 @@ struct iOSCalendarHeader: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .background(Color(.systemBackground))
+        .background(Color.white.opacity(0.15))
         .sheet(isPresented: $showingDatePicker) {
             iOSDatePicker(selectedDate: $selectedDate, fontManager: fontManager)
         }
@@ -694,8 +695,15 @@ struct DayEventCard: View {
             Spacer()
         }
         .padding(16)
-        .background(Color.gray.opacity(0.05))
-        .cornerRadius(8)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.15))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(.white.opacity(0.2), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+        )
     }
 
     private var startTime: String {
@@ -1360,12 +1368,17 @@ struct CompressedDayTimelineView: View {
         .padding(.vertical, 8)
         .frame(width: width, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill((isMultiDay ? Color.orange : Color.green).opacity(0.1))
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.15))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke((isMultiDay ? Color.orange : Color.green).opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill((isMultiDay ? Color.orange : Color.green).opacity(0.15))
                 )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke((isMultiDay ? Color.orange : Color.green).opacity(0.6), lineWidth: 1.5)
+                )
+                .shadow(color: (isMultiDay ? Color.orange : Color.green).opacity(0.3), radius: 8, x: 0, y: 4)
         )
         .accessibilityLabel("\(isMultiDay ? "Multi-day" : "All day") event: \(event.title ?? "Untitled Event")\(event.eventLocation.map { ", at \($0)" } ?? "")")
     }
@@ -1546,12 +1559,17 @@ struct CompressedDayTimelineView: View {
             .padding(8)
             .frame(width: cardWidth, height: height, alignment: .topLeading)
             .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(colorForCalendarSource(event.source).opacity(0.2))
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.white.opacity(0.15))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(colorForCalendarSource(event.source).opacity(0.4), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(colorForCalendarSource(event.source).opacity(0.15))
                     )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(colorForCalendarSource(event.source).opacity(0.6), lineWidth: 1.5)
+                    )
+                    .shadow(color: colorForCalendarSource(event.source).opacity(0.3), radius: 8, x: 0, y: 4)
             )
             .accessibilityLabel("\(event.title ?? "Untitled Event"), \(formatTime(event.start)) to \(formatTime(event.end))\(event.eventLocation.map { ", at \($0)" } ?? "")")
 

@@ -120,7 +120,12 @@ struct AddEventView: View {
 
     var body: some View {
         NavigationView {
-            Form {
+            ZStack {
+                // Transparent background to show main gradient
+                Color.clear
+                    .ignoresSafeArea()
+
+                Form {
                 Section("Event Details") {
                     TextField("Title", text: $title)
                         .dynamicFont(size: 17, fontManager: fontManager)
@@ -335,6 +340,8 @@ struct AddEventView: View {
                     .disabled(title.isEmpty || isLoading)
                     .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
                 }
+                }
+                .background(Color.clear)
             }
         }
         .onAppear {
