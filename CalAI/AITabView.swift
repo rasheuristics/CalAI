@@ -1,4 +1,5 @@
 import SwiftUI
+import EventKit
 
 struct AITabView: View {
     @ObservedObject var voiceManager: VoiceManager
@@ -9,6 +10,11 @@ struct AITabView: View {
     @State private var isProcessing = false
     @State private var pendingResponse: AICalendarResponse?
     @State private var showingConfirmation = false
+
+    // Inline form states
+    @State private var showingInlineForm = false
+    @State private var currentFormType: InlineFormType?
+    @State private var selectedEventForEdit: UnifiedEvent?
 
     var body: some View {
         ZStack {
@@ -32,9 +38,18 @@ struct AITabView: View {
                             .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
                             .padding(.top, 8)
 
-                        Text("(Double-tap any command to execute)")
-                            .dynamicFont(size: 12, fontManager: fontManager)
-                            .foregroundColor(.secondary)
+                        HStack {
+                            Image(systemName: "hand.tap")
+                                .foregroundColor(.blue)
+                                .font(.caption2)
+                            Text("Double-tap any command to execute")
+                                .dynamicFont(size: 12, fontManager: fontManager)
+                                .foregroundColor(.blue)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.blue.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
 
                         VStack(alignment: .leading, spacing: 12) {
                             ForEach(CommandCategory.allCases, id: \.self) { category in
@@ -54,17 +69,50 @@ struct AITabView: View {
                     }
                     .padding(.horizontal)
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(conversationHistory, id: \.id) { item in
-                                ConversationBubble(item: item, fontManager: fontManager)
+                    if showingInlineForm {
+                        // Show inline form
+                        InlineFormView(
+                            formType: currentFormType ?? .createEvent,
+                            calendarManager: calendarManager,
+                            fontManager: fontManager,
+                            eventToEdit: selectedEventForEdit,
+                            onSave: { success in
+                                if success {
+                                    showingInlineForm = false
+                                    currentFormType = nil
+                                    selectedEventForEdit = nil
+
+                                    // Add success message to conversation
+                                    let successMessage = "✅ Event saved successfully!"
+                                    let item = ConversationItem(
+                                        id: UUID(),
+                                        message: successMessage,
+                                        isUser: false,
+                                        timestamp: Date()
+                                    )
+                                    conversationHistory.append(item)
+                                }
+                            },
+                            onCancel: {
+                                showingInlineForm = false
+                                currentFormType = nil
+                                selectedEventForEdit = nil
                             }
+                        )
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 12) {
+                                ForEach(conversationHistory, id: \.id) { item in
+                                    ConversationBubble(item: item, fontManager: fontManager)
+                                }
+                            }
+                            .padding(.top, 8)
+                            .padding(.horizontal)
                         }
-                        .padding(.top, 8)
-                        .padding(.horizontal)
-                    }
-                    .refreshable {
-                        clearConversation()
+                        .refreshable {
+                            clearConversation()
+                        }
                     }
                 }
 
@@ -176,37 +224,50 @@ struct AITabView: View {
     private func executeExampleCommand(_ text: String) {
         print("🔮 Example command double-tapped: '\(text)'")
 
-        // Check if this is a template command (contains brackets)
-        if text.contains("[") && text.contains("]") {
-            // This is a template - show instruction message instead of processing
-            let instructionMessage = "Please say: '\(text.replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: ""))' with your specific details.\n\nFor example:\n• Replace [title] with your event name\n• Replace [time] with when you want it\n• Replace [person] with attendee names"
+        // Determine if this should trigger an inline form
+        let formType = getFormType(for: text)
 
-            let instructionItem = ConversationItem(
-                id: UUID(),
-                message: instructionMessage,
-                isUser: false,
-                timestamp: Date()
-            )
-            conversationHistory.append(instructionItem)
-            return
-        }
+        if let formType = formType {
+            // Show inline form
+            withAnimation(.easeInOut(duration: 0.3)) {
+                currentFormType = formType
+                showingInlineForm = true
+            }
+        } else {
+            // Handle non-form commands (queries, help, etc.)
+            addUserMessage(text)
 
-        // Add the command as a user message to conversation
-        addUserMessage(text)
+            // Process the command through AI
+            aiManager.processVoiceCommand(text) { result in
+                print("🎯 AI processing completed for example command: \(result.message)")
 
-        // Process the command through AI
-        aiManager.processVoiceCommand(text) { result in
-            print("🎯 AI processing completed for example command: \(result.message)")
-
-            if result.requiresConfirmation {
-                print("⚠️ Example command requires confirmation")
-                pendingResponse = result
-                showingConfirmation = true
-            } else {
-                addAIResponse(result)
-                executeAIAction(result)
+                if result.requiresConfirmation {
+                    print("⚠️ Example command requires confirmation")
+                    pendingResponse = result
+                    showingConfirmation = true
+                } else {
+                    addAIResponse(result)
+                    executeAIAction(result)
+                }
             }
         }
+    }
+
+    private func getFormType(for command: String) -> InlineFormType? {
+        let lowerCommand = command.lowercased()
+
+        if lowerCommand.contains("create") && lowerCommand.contains("event") {
+            return .createEvent
+        } else if lowerCommand.contains("update") && lowerCommand.contains("event") {
+            return .updateEvent
+        } else if lowerCommand.contains("schedule") && lowerCommand.contains("event") {
+            return .createEvent
+        } else if lowerCommand.contains("block") && lowerCommand.contains("time") {
+            return .blockTime
+        }
+
+        // Return nil for query commands (show events, find event, etc.)
+        return nil
     }
 
     private func clearConversation() {
@@ -258,6 +319,15 @@ struct ConversationBubble: View {
     }
 }
 
+// MARK: - Inline Form Types
+
+enum InlineFormType {
+    case createEvent
+    case updateEvent
+    case blockTime
+    case scheduleEvent
+}
+
 // MARK: - Command Category Data Structures
 
 enum CommandCategory: String, CaseIterable {
@@ -294,49 +364,49 @@ enum CommandCategory: String, CaseIterable {
         switch self {
         case .eventManagement:
             return [
-                "Create [title] at [time]",
-                "Schedule [title] with [person] at [time]",
-                "Update [title] meeting to [new time]",
-                "Delete [title] meeting at [time]",
-                "Move [title] meeting to [new time]",
-                "Extend [title] meeting by [duration]"
+                "Create event",
+                "Update event",
+                "Delete event",
+                "Move event",
+                "Extend event",
+                "Schedule event"
             ]
         case .eventQueries:
             return [
-                "What do I have [today/tomorrow/date]",
-                "Show my events for [timeframe]",
-                "Find my [title] meeting",
-                "Check my availability [when]",
-                "What's my schedule for [date]"
+                "Show my events",
+                "Find event",
+                "Check availability",
+                "View schedule",
+                "Search events"
             ]
         case .attendeeManagement:
             return [
-                "Add [person] to [title] meeting",
-                "Remove [person] from [title] meeting",
-                "Invite [people] to [title] meeting",
-                "Who's attending [title] meeting"
+                "Add attendee",
+                "Remove attendee",
+                "Invite people",
+                "View attendees"
             ]
         case .recurringEvents:
             return [
-                "Set up weekly [title] at [time]",
-                "Create daily [title] at [time]",
-                "Schedule monthly [title] at [time]",
-                "Make [title] meeting recurring"
+                "Create recurring event",
+                "Set up weekly meeting",
+                "Schedule daily standup",
+                "Make event recurring"
             ]
         case .scheduleManagement:
             return [
-                "Clear my schedule [when]",
-                "Block [duration] for [purpose] at [time]",
-                "Show my workload summary",
-                "Find [duration] slot for [title]",
-                "Reserve [duration] for [purpose] [when]"
+                "Clear schedule",
+                "Block time",
+                "Show workload",
+                "Find time slot",
+                "Reserve time"
             ]
         case .helpSupport:
             return [
                 "Help",
-                "Show available commands",
-                "What can I do with CalAI",
-                "How do I create events"
+                "Show commands",
+                "View documentation",
+                "Get support"
             ]
         }
     }
@@ -460,9 +530,6 @@ struct CommandItem: View {
             print("👆👆 Double-tap detected on command: '\(text)'")
             onDoubleTap()
         }
-        .onTapGesture(count: 1) {
-            print("👆 Single tap on command (hint: double-tap to execute)")
-        }
         .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
             isPressed = pressing
         }, perform: {})
@@ -509,12 +576,354 @@ struct ExampleCommand: View {
             print("👆👆 Double-tap detected on example command: '\(text)'")
             onDoubleTap?(text)
         }
-        .onTapGesture(count: 1) {
-            print("👆 Single tap on example command (hint: double-tap to execute)")
-        }
         .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
             isPressed = pressing
         }, perform: {})
+    }
+}
+
+// MARK: - Inline Form View
+
+struct InlineFormView: View {
+    let formType: InlineFormType
+    let calendarManager: CalendarManager
+    let fontManager: FontManager
+    let eventToEdit: UnifiedEvent?
+    let onSave: (Bool) -> Void
+    let onCancel: () -> Void
+
+    @State private var title = ""
+    @State private var startDate = Date()
+    @State private var endDate = Date().addingTimeInterval(3600) // 1 hour later
+    @State private var isAllDay = false
+    @State private var location = ""
+    @State private var notes = ""
+    @State private var selectedCalendar: String = ""
+    @State private var availableCalendars: [EKCalendar] = []
+    @State private var showingEventSearch = false
+    @State private var searchQuery = ""
+    @State private var searchResults: [UnifiedEvent] = []
+
+    var body: some View {
+        NavigationView {
+            ScrollView(.vertical, showsIndicators: true, content: {
+                VStack(spacing: 20) {
+                    // Header with Cancel and Save buttons
+                    HStack {
+                        Button("Cancel") {
+                            onCancel()
+                        }
+                        .dynamicFont(size: 16, fontManager: fontManager)
+
+                        Spacer()
+
+                        Button("Save") {
+                            saveEvent()
+                        }
+                        .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                        .disabled(title.isEmpty)
+                    }
+                    .padding(.horizontal)
+
+                    // Form header
+                    VStack(spacing: 8) {
+                        Image(systemName: formIcon)
+                            .font(.system(size: 40))
+                            .foregroundColor(.blue)
+
+                        Text(formTitle)
+                            .dynamicFont(size: 24, weight: .bold, fontManager: fontManager)
+
+                        Text(formDescription)
+                            .dynamicFont(size: 14, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 20)
+
+                    // Form fields
+                    VStack(spacing: 16) {
+                        // Title field with event search for update
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Title")
+                                .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                .foregroundColor(.primary)
+
+                            if formType == .updateEvent {
+                                HStack {
+                                    TextField("Search events...", text: $searchQuery)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        .dynamicFont(size: 16, fontManager: fontManager)
+                                        .onChange(of: searchQuery) { query in
+                                            searchEvents(query)
+                                        }
+
+                                    Button("Search") {
+                                        showingEventSearch.toggle()
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                }
+
+                                if !searchResults.isEmpty {
+                                    ScrollView {
+                                        LazyVStack {
+                                            ForEach(searchResults) { event in
+                                                Button(action: {
+                                                    selectEvent(event)
+                                                }) {
+                                                    HStack {
+                                                        VStack(alignment: .leading) {
+                                                            Text(event.title)
+                                                                .font(.headline)
+                                                            Text(event.duration)
+                                                                .font(.caption)
+                                                                .foregroundColor(.secondary)
+                                                        }
+                                                        Spacer()
+                                                        Text(event.sourceLabel)
+                                                            .font(.caption2)
+                                                    }
+                                                    .padding(8)
+                                                    .background(Color.gray.opacity(0.1))
+                                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                                }
+                                                .buttonStyle(PlainButtonStyle())
+                                            }
+                                        }
+                                    }
+                                    .frame(maxHeight: 200)
+                                }
+                            } else {
+                                TextField("Event title", text: $title)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                            }
+                        }
+
+                        // Location field (moved under title)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Location")
+                                .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                .foregroundColor(.primary)
+
+                            TextField("Enter location", text: $location)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .dynamicFont(size: 16, fontManager: fontManager)
+                        }
+
+                        // Calendar selection
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Calendar")
+                                .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                .foregroundColor(.primary)
+
+                            if availableCalendars.isEmpty {
+                                Text("Default Calendar")
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Color.gray.opacity(0.1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                            } else {
+                                Picker("Select Calendar", selection: $selectedCalendar) {
+                                    ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
+                                        Text(calendar.title)
+                                            .tag(calendar.calendarIdentifier)
+                                    }
+                                }
+                                .pickerStyle(MenuPickerStyle())
+                            }
+                        }
+
+                        // Date and time fields
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Date & Time")
+                                .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                .foregroundColor(.primary)
+
+                            Toggle("All Day", isOn: $isAllDay)
+                                .dynamicFont(size: 16, fontManager: fontManager)
+
+                            if !isAllDay {
+                                VStack(spacing: 12) {
+                                    HStack {
+                                        Text("Start:")
+                                            .dynamicFont(size: 14, fontManager: fontManager)
+                                            .frame(width: 50, alignment: .leading)
+                                        DatePicker("", selection: $startDate, displayedComponents: [.date, .hourAndMinute])
+                                            .labelsHidden()
+                                    }
+
+                                    HStack {
+                                        Text("End:")
+                                            .dynamicFont(size: 14, fontManager: fontManager)
+                                            .frame(width: 50, alignment: .leading)
+                                        DatePicker("", selection: $endDate, displayedComponents: [.date, .hourAndMinute])
+                                            .labelsHidden()
+                                    }
+                                }
+                            } else {
+                                DatePicker("Date", selection: $startDate, displayedComponents: [.date])
+                                    .labelsHidden()
+                            }
+                        }
+
+
+                        // Notes field
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Notes")
+                                .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                .foregroundColor(.primary)
+
+                            TextField("Optional notes", text: $notes)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .dynamicFont(size: 16, fontManager: fontManager)
+                                .lineLimit(6)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+
+                    Spacer(minLength: 80)
+                }
+            })
+            .navigationTitle("")
+            .navigationBarHidden(true)
+        }
+        .onAppear {
+            loadEventData()
+            loadAvailableCalendars()
+            // Auto-adjust end date when start date changes
+            if eventToEdit == nil {
+                endDate = startDate.addingTimeInterval(3600)
+            }
+        }
+        .onChange(of: startDate) { newValue in
+            if eventToEdit == nil {
+                endDate = newValue.addingTimeInterval(3600)
+            }
+        }
+        .onChange(of: isAllDay) { newValue in
+            if newValue {
+                // Set to beginning/end of day for all-day events
+                let calendar = Calendar.current
+                startDate = calendar.startOfDay(for: startDate)
+                endDate = calendar.date(byAdding: .day, value: 1, to: startDate) ?? startDate
+            }
+        }
+    }
+
+    private var formTitle: String {
+        switch formType {
+        case .createEvent, .scheduleEvent:
+            return "Create Event"
+        case .updateEvent:
+            return "Update Event"
+        case .blockTime:
+            return "Block Time"
+        }
+    }
+
+    private var formDescription: String {
+        switch formType {
+        case .createEvent, .scheduleEvent:
+            return "Create a new calendar event with details"
+        case .updateEvent:
+            return "Update the selected calendar event"
+        case .blockTime:
+            return "Block time on your calendar"
+        }
+    }
+
+    private var formIcon: String {
+        switch formType {
+        case .createEvent, .scheduleEvent:
+            return "calendar.badge.plus"
+        case .updateEvent:
+            return "calendar.badge.clock"
+        case .blockTime:
+            return "calendar.badge.minus"
+        }
+    }
+
+    private func loadEventData() {
+        guard let event = eventToEdit else {
+            // For new events, set reasonable defaults
+            if formType == .blockTime {
+                title = "Blocked Time"
+            }
+            return
+        }
+
+        // Load existing event data for editing
+        title = event.title
+        startDate = event.startDate
+        endDate = event.endDate
+        isAllDay = event.isAllDay
+        location = event.location ?? ""
+        notes = event.description ?? ""
+    }
+
+    private func saveEvent() {
+        // Create CalendarCommand for the AI system
+        let command = CalendarCommand(
+            type: formType == .updateEvent ? .updateEvent : .createEvent,
+            title: title.isEmpty ? nil : title,
+            startDate: startDate,
+            endDate: endDate,
+            location: location.isEmpty ? nil : location,
+            notes: notes.isEmpty ? nil : notes,
+            eventId: eventToEdit?.id
+        )
+
+        // Create AI response for processing
+        let response = AICalendarResponse(
+            message: formType == .updateEvent ? "Event updated successfully" : "Event created successfully",
+            command: command,
+            requiresConfirmation: false,
+            confirmationMessage: nil
+        )
+
+        // Process through calendar manager
+        calendarManager.handleAICalendarResponse(response)
+
+        // Notify parent of success
+        onSave(true)
+    }
+
+    private func loadAvailableCalendars() {
+        availableCalendars = calendarManager.eventStore.calendars(for: .event)
+
+        if let defaultCalendar = calendarManager.eventStore.defaultCalendarForNewEvents {
+            selectedCalendar = defaultCalendar.calendarIdentifier
+        } else if let firstCalendar = availableCalendars.first {
+            selectedCalendar = firstCalendar.calendarIdentifier
+        }
+    }
+
+    private func searchEvents(_ query: String) {
+        guard !query.isEmpty else {
+            searchResults = []
+            return
+        }
+
+        searchResults = calendarManager.unifiedEvents.filter { event in
+            event.title.lowercased().contains(query.lowercased())
+        }
+    }
+
+    private func selectEvent(_ event: UnifiedEvent) {
+        title = event.title
+        startDate = event.startDate
+        endDate = event.endDate
+        isAllDay = event.isAllDay
+        location = event.location ?? ""
+        notes = event.description ?? ""
+        searchQuery = event.title
+        searchResults = []
     }
 }
 
