@@ -43,6 +43,11 @@ struct ContentView: View {
         .accentColor(.blue)
         .preferredColorScheme(.light)
         .onAppear {
+            // Perform secure storage migration if needed
+            if !SecureStorage.isMigrationCompleted() {
+                SecureStorage.performAppMigration()
+            }
+
             // Inject external calendar managers into the main calendar manager
             calendarManager.googleCalendarManager = googleCalendarManager
             calendarManager.outlookCalendarManager = outlookCalendarManager
@@ -114,7 +119,7 @@ struct VoiceInputButton: View {
     @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var fontManager: FontManager
     var onTranscript: ((String) -> Void)? = nil
-    var onResponse: ((AIResponse) -> Void)? = nil
+    var onResponse: ((AICalendarResponse) -> Void)? = nil
 
     var body: some View {
         VStack {
@@ -129,7 +134,7 @@ struct VoiceInputButton: View {
                         onTranscript?(transcript)
                         aiManager.processVoiceCommand(transcript) { result in
                             print("🎯 AI processing completed with result: \(result.message)")
-                            calendarManager.handleAIResponse(result)
+                            calendarManager.handleAICalendarResponse(result)
                             onResponse?(result)
                         }
                     }

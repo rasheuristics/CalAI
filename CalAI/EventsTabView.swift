@@ -137,6 +137,7 @@ struct EventsTabView: View {
                                                 description: event.notes,
                                                 isAllDay: event.isAllDay,
                                                 source: .ios,
+                                                organizer: event.organizer?.name,
                                                 originalEvent: event
                                             )
                                             selectedEventForEdit = unifiedEvent

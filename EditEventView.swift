@@ -152,10 +152,9 @@ struct EditEventView: View {
             startDate: startDate,
             endDate: endDate,
             location: location.isEmpty ? nil : location,
-            description: notes.isEmpty ? nil : notes,
+            notes: notes.isEmpty ? nil : notes,
             isAllDay: isAllDay,
             source: event.source,
-            organizer: event.organizer,
             originalEvent: event.originalEvent
         )
 
@@ -256,10 +255,9 @@ struct EditEventView: View {
             startDate: Date(),
             endDate: Date().addingTimeInterval(3600),
             location: "Sample Location",
-            description: "Sample notes",
+            notes: "Sample notes",
             isAllDay: false,
             source: .ios,
-            organizer: nil,
             originalEvent: nil
         )
     )

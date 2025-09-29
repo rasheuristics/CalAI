@@ -9,7 +9,6 @@ struct WeekCalendarView: View {
 
     @State private var scrollOffset: CGFloat = 0
     private let hourHeight: CGFloat = 60
-    private let hours = Array(0...23)
 
     var body: some View {
         GeometryReader { geometry in
@@ -22,7 +21,7 @@ struct WeekCalendarView: View {
                         .frame(height: 44)
 
                     // Hour labels
-                    ForEach(hours, id: \.self) { hour in
+                    ForEach(displayHours, id: \.self) { hour in
                         HStack {
                             Text(formatHour(hour))
                                 .font(.caption)
@@ -36,15 +35,19 @@ struct WeekCalendarView: View {
                 .background(Color(.systemBackground))
 
                 // Week days scroll view
-                ScrollView(.vertical) {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical) {
                     VStack(spacing: 0) {
                         // Day headers
                         HStack(spacing: 0) {
                             ForEach(weekDays, id: \.self) { day in
                                 DayHeaderCell(date: day)
                                     .frame(maxWidth: .infinity)
+                                    .background(Color(.systemGray6))
                                     .onTapGesture {
+                                        print("👆 Day header tapped: \(day)")
                                         selectedDate = day
+                                        scrollToStartTime(proxy: proxy)
                                     }
 
                                 if day != weekDays.last {
@@ -61,7 +64,7 @@ struct WeekCalendarView: View {
                         ZStack(alignment: .topLeading) {
                             // Background grid
                             VStack(spacing: 0) {
-                                ForEach(hours, id: \.self) { hour in
+                                ForEach(displayHours, id: \.self) { hour in
                                     HStack(spacing: 0) {
                                         ForEach(0..<7) { dayIndex in
                                             Rectangle()
@@ -82,6 +85,7 @@ struct WeekCalendarView: View {
                                         }
                                     }
                                     .frame(height: hourHeight * zoomScale)
+                                    .id("hour-\(hour)")
                                 }
                             }
 
@@ -101,8 +105,12 @@ struct WeekCalendarView: View {
                                 }
                             }
                         }
-                        .frame(height: CGFloat(hours.count) * hourHeight * zoomScale)
+                        .frame(height: CGFloat(displayHours.count) * hourHeight * zoomScale)
                     }
+                    .onAppear {
+                        scrollToStartTime(proxy: proxy)
+                    }
+                }
                 }
                 .simultaneousGesture(
                     MagnificationGesture()
@@ -145,8 +153,65 @@ struct WeekCalendarView: View {
         let calendar = Calendar.current
         let hour = calendar.component(.hour, from: event.startDate)
         let minute = calendar.component(.minute, from: event.startDate)
-        return CGFloat(hour) * hourHeight * zoomScale + (CGFloat(minute) / 60.0) * hourHeight * zoomScale
+        // Adjust offset based on the dynamic start hour
+        let adjustedHour = hour - displayStartHour
+        return CGFloat(adjustedHour) * hourHeight * zoomScale + (CGFloat(minute) / 60.0) * hourHeight * zoomScale
     }
+
+    private var displayHours: [Int] {
+        return Array(displayStartHour...displayEndHour)
+    }
+
+    private var displayStartHour: Int {
+        guard !timedWeekEvents.isEmpty else { return 6 } // Default start at 6 AM if no events
+
+        let earliestHour = timedWeekEvents.compactMap { event in
+            Calendar.current.component(.hour, from: event.startDate)
+        }.min() ?? 6
+
+        // Start one hour before the earliest event, but not before 0
+        return max(0, earliestHour - 1)
+    }
+
+    private var displayEndHour: Int {
+        return 23 // Always end at 11 PM
+    }
+
+    private var timedWeekEvents: [EKEvent] {
+        let calendar = Calendar.current
+        return events.filter { event in
+            // Filter out all-day events and only include events in current week
+            !event.isAllDay && weekDays.contains { day in
+                calendar.isDate(event.startDate, inSameDayAs: day)
+            }
+        }
+    }
+
+    private func scrollToStartTime(proxy: ScrollViewProxy) {
+        // Get events for the selected date
+        let selectedDateEvents = eventsForDay(selectedDate).filter { !$0.isAllDay }
+
+        let targetHour: Int
+        if !selectedDateEvents.isEmpty {
+            let earliestHour = selectedDateEvents.compactMap { event in
+                Calendar.current.component(.hour, from: event.startDate)
+            }.min() ?? 6
+            targetHour = max(0, earliestHour - 1)
+        } else {
+            targetHour = max(displayStartHour, 0)
+        }
+
+        print("🔄 Scrolling to hour: \(targetHour) for date: \(selectedDate)")
+        print("📅 Events for selected date: \(selectedDateEvents.count)")
+        print("🎯 Target scroll ID: 'hour-\(targetHour)'")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            withAnimation(.easeInOut(duration: 0.8)) {
+                proxy.scrollTo("hour-\(targetHour)", anchor: .top)
+            }
+        }
+    }
+
 }
 
 struct WeekEventView: View {

@@ -1,6 +1,7 @@
 import SwiftUI
 import EventKit
 import UniformTypeIdentifiers
+import MapKit
 
 enum CalendarOption: CaseIterable, Identifiable {
     case ios
@@ -53,6 +54,25 @@ struct EventAttendee: Identifiable {
     }
 }
 
+struct LocationSuggestion: Identifiable {
+    let id = UUID()
+    let name: String
+    let subtitle: String?
+    let coordinate: CLLocationCoordinate2D?
+
+    init(name: String, subtitle: String? = nil, coordinate: CLLocationCoordinate2D? = nil) {
+        self.name = name
+        self.subtitle = subtitle
+        self.coordinate = coordinate
+    }
+
+    init(mapItem: MKMapItem) {
+        self.name = mapItem.name ?? "Unknown Location"
+        self.subtitle = mapItem.placemark.title
+        self.coordinate = mapItem.placemark.coordinate
+    }
+}
+
 struct AddEventView: View {
     @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var fontManager: FontManager
@@ -79,6 +99,13 @@ struct AddEventView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
 
+    // Location selection states
+    @State private var showingLocationPicker = false
+    @State private var locationSearchText = ""
+    @State private var locationSuggestions: [LocationSuggestion] = []
+    @State private var recentLocations: [LocationSuggestion] = []
+    @State private var isSearchingLocation = false
+
     // Computed properties for edit mode
     private var isEditMode: Bool { eventToEdit != nil }
     private var navigationTitle: String { isEditMode ? "Edit Event" : "Add Event" }
@@ -98,8 +125,38 @@ struct AddEventView: View {
                     TextField("Title", text: $title)
                         .dynamicFont(size: 17, fontManager: fontManager)
 
-                    TextField("Location", text: $location)
-                        .dynamicFont(size: 17, fontManager: fontManager)
+                    Button(action: {
+                        showingLocationPicker = true
+                    }) {
+                        HStack {
+                            Image(systemName: "location")
+                                .foregroundColor(.blue)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Location")
+                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+
+                                if location.isEmpty {
+                                    Text("Add location")
+                                        .dynamicFont(size: 15, fontManager: fontManager)
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text(location)
+                                        .dynamicFont(size: 15, fontManager: fontManager)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PlainButtonStyle())
                 }
 
                 Section("Calendar") {
@@ -282,6 +339,7 @@ struct AddEventView: View {
         }
         .onAppear {
             loadEventDataIfNeeded()
+            loadRecentLocations()
         }
         .onChange(of: startDate) { newValue in
             if endDate <= newValue {
@@ -305,6 +363,20 @@ struct AddEventView: View {
                 onCancel: {
                     newAttendeeEmail = ""
                     showingAttendeeInput = false
+                }
+            )
+        }
+        .sheet(isPresented: $showingLocationPicker) {
+            LocationPickerView(
+                selectedLocation: $location,
+                fontManager: fontManager,
+                onLocationSelected: { selectedLocation in
+                    location = selectedLocation
+                    saveToRecentLocations(selectedLocation)
+                    showingLocationPicker = false
+                },
+                onCancel: {
+                    showingLocationPicker = false
                 }
             )
         }
@@ -458,6 +530,34 @@ struct AddEventView: View {
         }
     }
 
+    private func loadRecentLocations() {
+        // Load recent locations from UserDefaults
+        if let data = UserDefaults.standard.data(forKey: "RecentLocations"),
+           let locations = try? JSONDecoder().decode([String].self, from: data) {
+            recentLocations = locations.prefix(5).map { LocationSuggestion(name: $0) }
+        }
+    }
+
+    private func saveToRecentLocations(_ location: String) {
+        guard !location.isEmpty else { return }
+
+        var locations = UserDefaults.standard.stringArray(forKey: "RecentLocations") ?? []
+
+        // Remove if already exists
+        locations.removeAll { $0 == location }
+
+        // Add to beginning
+        locations.insert(location, at: 0)
+
+        // Keep only 10 most recent
+        locations = Array(locations.prefix(10))
+
+        UserDefaults.standard.set(locations, forKey: "RecentLocations")
+
+        // Update the state
+        recentLocations = locations.prefix(5).map { LocationSuggestion(name: $0) }
+    }
+
     private func addAttachment(from url: URL) {
         guard url.startAccessingSecurityScopedResource() else {
             print("❌ Failed to access security scoped resource")
@@ -594,6 +694,246 @@ struct AttendeeInputView: View {
                     .disabled(newAttendeeEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !newAttendeeEmail.contains("@"))
                 }
             }
+        }
+    }
+}
+
+struct LocationPickerView: View {
+    @Binding var selectedLocation: String
+    @ObservedObject var fontManager: FontManager
+    let onLocationSelected: (String) -> Void
+    let onCancel: () -> Void
+
+    @State private var searchText = ""
+    @State private var searchResults: [LocationSuggestion] = []
+    @State private var recentLocations: [LocationSuggestion] = []
+    @State private var isSearching = false
+    @StateObject private var locationSearchDelegate = LocationSearchDelegate()
+
+    private let commonSuggestions = [
+        LocationSuggestion(name: "Home"),
+        LocationSuggestion(name: "Work"),
+        LocationSuggestion(name: "Office"),
+        LocationSuggestion(name: "Conference Room"),
+        LocationSuggestion(name: "Meeting Room"),
+        LocationSuggestion(name: "Coffee Shop"),
+        LocationSuggestion(name: "Restaurant"),
+        LocationSuggestion(name: "Library"),
+        LocationSuggestion(name: "Gym"),
+        LocationSuggestion(name: "Airport")
+    ]
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Search bar
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+
+                    TextField("Search for a location", text: $searchText)
+                        .dynamicFont(size: 17, fontManager: fontManager)
+                        .textFieldStyle(PlainTextFieldStyle())
+                        .onSubmit {
+                            performSearch()
+                        }
+
+                    if !searchText.isEmpty {
+                        Button(action: {
+                            searchText = ""
+                            searchResults = []
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+
+                List {
+                    // No location option
+                    Button(action: {
+                        onLocationSelected("")
+                    }) {
+                        HStack {
+                            Image(systemName: "xmark.circle")
+                                .foregroundColor(.red)
+                            Text("No Location")
+                                .dynamicFont(size: 17, fontManager: fontManager)
+                                .foregroundColor(.primary)
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(PlainButtonStyle())
+
+                    // Custom location entry
+                    if !searchText.isEmpty && !searchResults.contains(where: { $0.name.lowercased() == searchText.lowercased() }) {
+                        Button(action: {
+                            onLocationSelected(searchText)
+                        }) {
+                            HStack {
+                                Image(systemName: "plus.circle")
+                                    .foregroundColor(.blue)
+                                Text("Use \"\(searchText)\"")
+                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+                                Spacer()
+                            }
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+
+                    // Search results
+                    if !searchResults.isEmpty {
+                        Section("Search Results") {
+                            ForEach(searchResults) { location in
+                                LocationRow(
+                                    location: location,
+                                    fontManager: fontManager,
+                                    onTap: {
+                                        onLocationSelected(location.name)
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Recent locations
+                    if !recentLocations.isEmpty && searchText.isEmpty {
+                        Section("Recent") {
+                            ForEach(recentLocations) { location in
+                                LocationRow(
+                                    location: location,
+                                    fontManager: fontManager,
+                                    onTap: {
+                                        onLocationSelected(location.name)
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Common suggestions
+                    if searchText.isEmpty {
+                        Section("Suggestions") {
+                            ForEach(commonSuggestions) { location in
+                                LocationRow(
+                                    location: location,
+                                    fontManager: fontManager,
+                                    onTap: {
+                                        onLocationSelected(location.name)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                .listStyle(PlainListStyle())
+            }
+            .navigationTitle("Location")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                    .dynamicFont(size: 17, fontManager: fontManager)
+                }
+            }
+        }
+        .onAppear {
+            loadRecentLocations()
+            locationSearchDelegate.onSearchResultsUpdated = { results in
+                self.searchResults = results
+            }
+        }
+        .onChange(of: searchText) { newValue in
+            if newValue.isEmpty {
+                searchResults = []
+                locationSearchDelegate.searchCompleter.cancel()
+            } else {
+                locationSearchDelegate.searchCompleter.queryFragment = newValue
+            }
+        }
+    }
+
+    private func performSearch() {
+        guard !searchText.isEmpty else { return }
+        locationSearchDelegate.searchCompleter.queryFragment = searchText
+    }
+
+    private func loadRecentLocations() {
+        if let data = UserDefaults.standard.data(forKey: "RecentLocations"),
+           let locations = try? JSONDecoder().decode([String].self, from: data) {
+            recentLocations = locations.prefix(5).map { LocationSuggestion(name: $0) }
+        }
+    }
+}
+
+struct LocationRow: View {
+    let location: LocationSuggestion
+    @ObservedObject var fontManager: FontManager
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack {
+                Image(systemName: "location")
+                    .foregroundColor(.blue)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(location.name)
+                        .dynamicFont(size: 17, fontManager: fontManager)
+                        .foregroundColor(.primary)
+
+                    if let subtitle = location.subtitle {
+                        Text(subtitle)
+                            .dynamicFont(size: 14, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+class LocationSearchDelegate: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
+    @Published var searchResults: [LocationSuggestion] = []
+    var onSearchResultsUpdated: (([LocationSuggestion]) -> Void)?
+
+    let searchCompleter = MKLocalSearchCompleter()
+
+    override init() {
+        super.init()
+        searchCompleter.delegate = self
+        searchCompleter.resultTypes = [.address, .pointOfInterest]
+    }
+
+    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        let results = completer.results.map { completion in
+            LocationSuggestion(
+                name: completion.title,
+                subtitle: completion.subtitle.isEmpty ? nil : completion.subtitle
+            )
+        }
+
+        DispatchQueue.main.async {
+            self.searchResults = results
+            self.onSearchResultsUpdated?(results)
+        }
+    }
+
+    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        print("Location search failed: \(error.localizedDescription)")
+        DispatchQueue.main.async {
+            self.searchResults = []
+            self.onSearchResultsUpdated?([])
         }
     }
 }
