@@ -12,7 +12,7 @@ struct CalendarTabView: View {
     @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var fontManager: FontManager
     @State private var selectedDate = Date()
-    @State private var currentViewType: CalendarViewType = .month
+    @State private var currentViewType: CalendarViewType = .day
     @State private var showingDatePicker = false
 
     var body: some View {
@@ -62,6 +62,11 @@ struct CalendarTabView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        .onAppear {
+            // Always reset to day view showing today
+            currentViewType = .day
+            selectedDate = Date()
         }
     }
 
