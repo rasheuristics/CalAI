@@ -58,6 +58,9 @@ struct AITabView: View {
                                     fontManager: fontManager,
                                     onCommandSelected: { command in
                                         executeExampleCommand(command)
+                                    },
+                                    onCategoryDoubleTap: { category in
+                                        handleCategoryDoubleTap(category)
                                     }
                                 )
                             }
@@ -270,6 +273,42 @@ struct AITabView: View {
         return nil
     }
 
+    private func handleCategoryDoubleTap(_ category: CommandCategory) {
+        print("👆👆 Category double-tapped: \(category.rawValue)")
+
+        // For now, we'll add a placeholder message and implement functionality later
+        let message = "\(category.rawValue) functionality will be implemented here"
+        let item = ConversationItem(
+            id: UUID(),
+            message: message,
+            isUser: false,
+            timestamp: Date()
+        )
+        conversationHistory.append(item)
+
+        // TODO: Implement specific functionality for each category
+        switch category {
+        case .eventQueries:
+            // Handle Event Queries & Search
+            break
+        case .attendeeManagement:
+            // Handle Attendee Management
+            break
+        case .recurringEvents:
+            // Handle Recurring Events
+            break
+        case .scheduleManagement:
+            // Handle Schedule Management
+            break
+        case .helpSupport:
+            // Handle Help & Support
+            break
+        case .eventManagement:
+            // This shouldn't be called since Event Management uses dropdown
+            break
+        }
+    }
+
     private func clearConversation() {
         print("🗑️ Clearing conversation history - returning to first page")
         withAnimation(.easeInOut(duration: 0.5)) {
@@ -418,9 +457,17 @@ struct CommandCategoryCard: View {
     let category: CommandCategory
     let fontManager: FontManager
     let onCommandSelected: (String) -> Void
+    let onCategoryDoubleTap: ((CommandCategory) -> Void)?
 
     @State private var isExpanded = false
     @State private var isPressed = false
+
+    init(category: CommandCategory, fontManager: FontManager, onCommandSelected: @escaping (String) -> Void, onCategoryDoubleTap: ((CommandCategory) -> Void)? = nil) {
+        self.category = category
+        self.fontManager = fontManager
+        self.onCommandSelected = onCommandSelected
+        self.onCategoryDoubleTap = onCategoryDoubleTap
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -443,10 +490,16 @@ struct CommandCategoryCard: View {
 
                 Spacer()
 
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .foregroundColor(.blue)
-                    .font(.caption)
-                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                if category == .eventManagement {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .foregroundColor(.blue)
+                        .font(.caption)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                } else {
+                    Image(systemName: "hand.tap")
+                        .foregroundColor(.blue)
+                        .font(.caption2)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -454,9 +507,15 @@ struct CommandCategoryCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .scaleEffect(isPressed ? 0.98 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: isPressed)
-            .onTapGesture {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isExpanded.toggle()
+            .onTapGesture(count: category == .eventManagement ? 1 : 2) {
+                if category == .eventManagement {
+                    // Single tap for Event Management - toggle expansion
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                    }
+                } else {
+                    // Double tap for other categories - direct activation
+                    onCategoryDoubleTap?(category)
                 }
             }
             .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
