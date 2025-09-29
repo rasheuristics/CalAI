@@ -109,7 +109,7 @@ struct AITabView: View {
                         ScrollView {
                             LazyVStack(spacing: 12) {
                                 ForEach(conversationHistory, id: \.id) { item in
-                                    ConversationBubble(item: item, fontManager: fontManager)
+                                    ConversationBubble(item: item, fontManager: fontManager, appearanceManager: appearanceManager)
                                 }
                             }
                             .padding(.top, 8)
@@ -332,6 +332,7 @@ struct ConversationItem {
 struct ConversationBubble: View {
     let item: ConversationItem
     let fontManager: FontManager
+    let appearanceManager: AppearanceManager
 
     var body: some View {
         HStack {
@@ -342,13 +343,33 @@ struct ConversationBubble: View {
                     .dynamicFont(size: 16, fontManager: fontManager)
                     .padding(12)
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(item.isUser ? .blue : Color.gray.opacity(0.15))
-                            .overlay(
+                        Group {
+                            if item.isUser {
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(.white.opacity(item.isUser ? 0.3 : 0.2), lineWidth: 1)
-                            )
-                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                                    .fill(.blue)
+                            } else {
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(.thinMaterial)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .fill(Color.white.opacity(appearanceManager.ultraThinGlass))
+                                    )
+                            }
+                        }
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: item.isUser ?
+                                            [.white.opacity(0.6), .white.opacity(0.2)] :
+                                            [.white.opacity(appearanceManager.strokeOpacity), .white.opacity(appearanceManager.strokeOpacity * 0.3)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(color: .black.opacity(appearanceManager.shadowOpacity), radius: 8, x: 0, y: 4)
                     )
                     .foregroundColor(item.isUser ? .white : .primary)
 
@@ -483,15 +504,26 @@ struct CommandCategoryCard: View {
 
     private var headerBackground: some View {
         RoundedRectangle(cornerRadius: 12)
-            .fill(Color.white.opacity(appearanceManager.glassOpacity))
+            .fill(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.blue.opacity(isPressed ? 0.2 : 0.1))
+                    .fill(Color.blue.opacity(isPressed ? (appearanceManager.blueAccentOpacity * 3) : appearanceManager.blueAccentOpacity))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(.white.opacity(appearanceManager.strokeOpacity), lineWidth: 1)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                .white.opacity(appearanceManager.strokeOpacity),
+                                .white.opacity(appearanceManager.strokeOpacity * 0.3)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
             )
+            .shadow(color: .black.opacity(appearanceManager.shadowOpacity), radius: 12, x: 0, y: 6)
     }
 
     var body: some View {
@@ -571,12 +603,26 @@ struct CommandCategoryCard: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(appearanceManager.glassOpacity))
+                .fill(.thinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(.white.opacity(appearanceManager.strokeOpacity), lineWidth: 1)
+                        .fill(Color.white.opacity(appearanceManager.glassOpacity))
                 )
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    .white.opacity(appearanceManager.strokeOpacity),
+                                    .white.opacity(appearanceManager.strokeOpacity * 0.2)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.5
+                        )
+                )
+                .shadow(color: .black.opacity(appearanceManager.shadowOpacity), radius: 20, x: 0, y: 10)
         )
     }
 }
@@ -613,15 +659,26 @@ struct CommandItem: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.white.opacity(appearanceManager.glassOpacity * 0.5))
+                .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.blue.opacity(isPressed ? 0.15 : 0.05))
+                        .fill(Color.blue.opacity(isPressed ? (appearanceManager.blueAccentOpacity * 2) : appearanceManager.ultraThinGlass))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(.white.opacity(appearanceManager.strokeOpacity), lineWidth: 0.5)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    .white.opacity(appearanceManager.strokeOpacity * 0.6),
+                                    .white.opacity(appearanceManager.strokeOpacity * 0.1)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.5
+                        )
                 )
+                .shadow(color: .black.opacity(appearanceManager.shadowOpacity * 0.7), radius: 6, x: 0, y: 3)
         )
         .scaleEffect(isPressed ? 0.96 : 1.0)
         .animation(.easeInOut(duration: 0.1), value: isPressed)

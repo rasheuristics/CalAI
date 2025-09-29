@@ -141,22 +141,78 @@ extension AppearanceManager {
     var glassOpacity: Double {
         switch effectiveColorScheme {
         case .light:
-            return 0.15
+            return 0.1
         case .dark:
-            return 0.25
-        @unknown default:
             return 0.15
+        @unknown default:
+            return 0.1
         }
     }
 
     var strokeOpacity: Double {
         switch effectiveColorScheme {
         case .light:
-            return 0.2
+            return 0.3
         case .dark:
-            return 0.4
+            return 0.5
         @unknown default:
-            return 0.2
+            return 0.3
+        }
+    }
+
+    var cardGlassColor: Color {
+        switch effectiveColorScheme {
+        case .light:
+            return .white
+        case .dark:
+            return .white
+        @unknown default:
+            return .white
+        }
+    }
+
+    var shadowOpacity: Double {
+        switch effectiveColorScheme {
+        case .light:
+            return 0.1
+        case .dark:
+            return 0.3
+        @unknown default:
+            return 0.1
+        }
+    }
+
+    var blueAccentOpacity: Double {
+        switch effectiveColorScheme {
+        case .light:
+            return 0.05
+        case .dark:
+            return 0.08
+        @unknown default:
+            return 0.05
+        }
+    }
+
+    // True glassmorphism material properties
+    var ultraThinGlass: Double {
+        switch effectiveColorScheme {
+        case .light:
+            return 0.05
+        case .dark:
+            return 0.08
+        @unknown default:
+            return 0.05
+        }
+    }
+
+    var glassBlur: CGFloat {
+        switch effectiveColorScheme {
+        case .light:
+            return 20
+        case .dark:
+            return 30
+        @unknown default:
+            return 20
         }
     }
 }

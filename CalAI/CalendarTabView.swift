@@ -54,6 +54,7 @@ struct CalendarTabView: View {
                         iOSYearView(
                             selectedDate: $selectedDate,
                             fontManager: fontManager,
+                            appearanceManager: appearanceManager,
                             onMonthDoubleClick: { month in
                                 selectedDate = month
                                 currentViewType = .month
@@ -731,27 +732,29 @@ struct DayEventCard: View {
 struct iOSYearView: View {
     @Binding var selectedDate: Date
     @ObservedObject var fontManager: FontManager
+    @ObservedObject var appearanceManager: AppearanceManager
     let onMonthDoubleClick: (Date) -> Void
 
     private let calendar = Calendar.current
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 2)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: 2)
 
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVGrid(columns: columns, spacing: 20) {
                 ForEach(monthsInYear, id: \.self) { month in
                     YearMonthCard(
                         month: month,
                         selectedDate: $selectedDate,
                         fontManager: fontManager,
+                        appearanceManager: appearanceManager,
                         onDoubleClick: onMonthDoubleClick
                     )
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 20)
         }
-        .background(Color.white)
+        .background(Color.clear)
     }
 
     private var monthsInYear: [Date] {
@@ -827,6 +830,7 @@ struct YearMonthCard: View {
     let month: Date
     @Binding var selectedDate: Date
     @ObservedObject var fontManager: FontManager
+    @ObservedObject var appearanceManager: AppearanceManager
     let onDoubleClick: (Date) -> Void
 
     private let calendar = Calendar.current
@@ -835,9 +839,9 @@ struct YearMonthCard: View {
         VStack(spacing: 2) {
             // Month name
             Text(monthName)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.black)
-                .padding(.bottom, 4)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.primary)
+                .padding(.bottom, 6)
 
             // Mini calendar grid
             VStack(spacing: 1) {
@@ -845,24 +849,24 @@ struct YearMonthCard: View {
                 HStack(spacing: 0) {
                     ForEach(weekdaySymbols, id: \.self) { day in
                         Text(day)
-                            .font(.system(size: 8, weight: .regular))
-                            .foregroundColor(.gray)
-                            .frame(width: 14, height: 12)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .frame(width: 16, height: 14)
                     }
                 }
 
                 // Calendar days
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(14), spacing: 0), count: 7), spacing: 1) {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(16), spacing: 0), count: 7), spacing: 2) {
                     ForEach(monthDates, id: \.self) { date in
                         Button(action: {
                             selectedDate = date
                         }) {
                             Text(dayText(for: date))
-                                .font(.system(size: 8, weight: .regular))
+                                .font(.system(size: 9, weight: .medium))
                                 .foregroundColor(textColor(for: date))
-                                .frame(width: 14, height: 14)
+                                .frame(width: 16, height: 16)
                                 .background(
-                                    Rectangle()
+                                    Circle()
                                         .fill(backgroundFill(for: date))
                                 )
                         }
@@ -871,12 +875,19 @@ struct YearMonthCard: View {
                 }
             }
         }
-        .padding(8)
-        .background(Color.white)
-        .cornerRadius(4)
-        .overlay(
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(Color.gray.opacity(0.2), lineWidth: 0.5)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(appearanceManager.glassOpacity))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(isCurrentMonth ? Color.blue.opacity(0.1) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(isCurrentMonth ? Color.blue.opacity(0.6) : Color.white.opacity(appearanceManager.strokeOpacity), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
         )
         .onTapGesture(count: 2) {
             onDoubleClick(month)
@@ -887,6 +898,10 @@ struct YearMonthCard: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM"
         return formatter.string(from: month).uppercased()
+    }
+
+    private var isCurrentMonth: Bool {
+        calendar.isDate(month, equalTo: selectedDate, toGranularity: .month)
     }
 
     private var weekdaySymbols: [String] {
