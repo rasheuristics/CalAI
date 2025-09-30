@@ -64,51 +64,77 @@ struct ContentView: View {
             calendarManager.outlookCalendarManager = outlookCalendarManager
 
             calendarManager.requestCalendarAccess()
-            setupiOS18TabBar()
+            setupiOS26TabBar()
         }
     }
 
-    private func setupiOS18TabBar() {
-        // Modern glassmorphism tab bar design
+    private func setupiOS26TabBar() {
+        // iOS 26 enhanced dock with advanced glassmorphism
         let appearance = UITabBarAppearance()
 
-        // Configure with glass material
+        // Ultra-modern transparent configuration with enhanced blur
         appearance.configureWithTransparentBackground()
         appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
 
-        // Subtle glass background
-        appearance.backgroundColor = UIColor.clear
+        // iOS 26 dock styling with refined glass background
+        appearance.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.02)
 
-        // Enhanced shadow for floating glass effect
-        appearance.shadowColor = UIColor.black.withAlphaComponent(0.1)
+        // Enhanced shadow for floating dock appearance
+        appearance.shadowColor = UIColor.black.withAlphaComponent(0.15)
 
-        // Tab item styling - normal state with glass aesthetic
-        appearance.stackedLayoutAppearance.normal.iconColor = UIColor.label.withAlphaComponent(0.6)
+        // iOS 26 tab item styling - inactive state with refined opacity
+        appearance.stackedLayoutAppearance.normal.iconColor = UIColor.label.withAlphaComponent(0.55)
         appearance.stackedLayoutAppearance.normal.titleTextAttributes = [
-            .foregroundColor: UIColor.label.withAlphaComponent(0.6),
-            .font: UIFont.systemFont(ofSize: 10, weight: .medium)
+            .foregroundColor: UIColor.label.withAlphaComponent(0.55),
+            .font: UIFont.systemFont(ofSize: 9.5, weight: .medium)
         ]
+        appearance.stackedLayoutAppearance.normal.badgeBackgroundColor = UIColor.systemRed
 
-        // Tab item styling - selected state with accent color
+        // iOS 26 tab item styling - active state with enhanced accent
         appearance.stackedLayoutAppearance.selected.iconColor = UIColor.systemBlue
         appearance.stackedLayoutAppearance.selected.titleTextAttributes = [
             .foregroundColor: UIColor.systemBlue,
-            .font: UIFont.systemFont(ofSize: 10, weight: .semibold)
+            .font: UIFont.systemFont(ofSize: 9.5, weight: .semibold)
         ]
 
-        // Apply the glassmorphism appearance
+        // iOS 26 compact layout for smaller devices
+        appearance.compactInlineLayoutAppearance.normal.iconColor = UIColor.label.withAlphaComponent(0.55)
+        appearance.compactInlineLayoutAppearance.normal.titleTextAttributes = [
+            .foregroundColor: UIColor.label.withAlphaComponent(0.55),
+            .font: UIFont.systemFont(ofSize: 9, weight: .medium)
+        ]
+        appearance.compactInlineLayoutAppearance.selected.iconColor = UIColor.systemBlue
+        appearance.compactInlineLayoutAppearance.selected.titleTextAttributes = [
+            .foregroundColor: UIColor.systemBlue,
+            .font: UIFont.systemFont(ofSize: 9, weight: .semibold)
+        ]
+
+        // Apply iOS 26 dock appearance
         UITabBar.appearance().standardAppearance = appearance
         UITabBar.appearance().scrollEdgeAppearance = appearance
 
-        // Enable translucency for glass effect
+        // Note: Compact appearance is available in newer iOS versions
+        // if #available(iOS 15.0, *) {
+        //     UITabBar.appearance().compactAppearance = appearance
+        //     UITabBar.appearance().compactScrollEdgeAppearance = appearance
+        // }
+
+        // iOS 26 enhanced translucency and visual effects
         UITabBar.appearance().isTranslucent = true
         UITabBar.appearance().barTintColor = UIColor.clear
+        UITabBar.appearance().tintColor = UIColor.systemBlue
+        UITabBar.appearance().unselectedItemTintColor = UIColor.label.withAlphaComponent(0.55)
 
-        // Force immediate update
+        // Force immediate visual update for iOS 26 styling
         DispatchQueue.main.async {
             if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
                 for window in windowScene.windows {
+                    if let tabBarController = window.rootViewController as? UITabBarController {
+                        tabBarController.tabBar.setNeedsLayout()
+                        tabBarController.tabBar.layoutIfNeeded()
+                    }
                     window.rootViewController?.view.setNeedsDisplay()
+                    window.rootViewController?.view.setNeedsLayout()
                 }
             }
         }
