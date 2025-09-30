@@ -61,8 +61,8 @@ struct AITabView: View {
                                     onCommandSelected: { command in
                                         executeExampleCommand(command)
                                     },
-                                    onCategoryDoubleTap: { category in
-                                        handleCategoryDoubleTap(category)
+                                    onCategoryDoubleTap: { tappedCategory in
+                                        handleCategoryDoubleTap(tappedCategory)
                                     }
                                 )
                             }
@@ -277,25 +277,23 @@ struct AITabView: View {
     }
 
     private func handleCategoryDoubleTap(_ category: CommandCategory) {
-        print("👆👆 Category double-tapped: \(category.rawValue)")
-
-        // For now, we'll add a placeholder message and implement functionality later
-        let message = "\(category.rawValue) functionality will be implemented here"
-        let item = ConversationItem(
-            id: UUID(),
-            message: message,
-            isUser: false,
-            timestamp: Date()
-        )
-        conversationHistory.append(item)
-
-        // TODO: Implement specific functionality for each category
         switch category {
         case .eventQueries:
-            // Handle Event Queries & Search
-            break
+            // Show Event Queries & Search form
+            withAnimation(.easeInOut(duration: 0.3)) {
+                showingInlineForm = true
+                currentFormType = .eventQueries
+            }
         case .attendeeManagement:
-            // Handle Attendee Management
+            // Handle Attendee Management - placeholder for now
+            let message = "Attendee Management functionality will be implemented here"
+            let item = ConversationItem(
+                id: UUID(),
+                message: message,
+                isUser: false,
+                timestamp: Date()
+            )
+            conversationHistory.append(item)
             break
         case .recurringEvents:
             // Handle Recurring Events
@@ -396,6 +394,7 @@ enum InlineFormType {
     case updateEvent
     case blockTime
     case scheduleEvent
+    case eventQueries
 }
 
 // MARK: - Command Category Data Structures
@@ -773,11 +772,18 @@ struct InlineFormView: View {
 
                         Spacer()
 
-                        Button("Save") {
-                            saveEvent()
+                        if formType != .eventQueries {
+                            Button("Save") {
+                                saveEvent()
+                            }
+                            .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                            .disabled(title.isEmpty)
+                        } else {
+                            Button("Done") {
+                                onCancel()
+                            }
+                            .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
                         }
-                        .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                        .disabled(title.isEmpty)
                     }
                     .padding(.horizontal)
 
@@ -799,15 +805,15 @@ struct InlineFormView: View {
 
                     // Form fields
                     VStack(spacing: 16) {
-                        // Title field with event search for update
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Title")
-                                .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                                .foregroundColor(.primary)
+                        if formType == .eventQueries {
+                            // Event Search Interface
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Search Events")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
 
-                            if formType == .updateEvent {
                                 HStack {
-                                    TextField("Search events...", text: $searchQuery)
+                                    TextField("Search events by title, location, or description...", text: $searchQuery)
                                         .textFieldStyle(RoundedBorderTextFieldStyle())
                                         .dynamicFont(size: 16, fontManager: fontManager)
                                         .onChange(of: searchQuery) { query in
@@ -815,7 +821,7 @@ struct InlineFormView: View {
                                         }
 
                                     Button("Search") {
-                                        showingEventSearch.toggle()
+                                        searchEvents(searchQuery)
                                     }
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 8)
@@ -823,122 +829,243 @@ struct InlineFormView: View {
                                     .foregroundColor(.white)
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
                                 }
+                            }
 
-                                if !searchResults.isEmpty {
-                                    ScrollView {
-                                        LazyVStack {
-                                            ForEach(searchResults) { event in
-                                                Button(action: {
-                                                    selectEvent(event)
-                                                }) {
-                                                    HStack {
-                                                        VStack(alignment: .leading) {
-                                                            Text(event.title)
-                                                                .font(.headline)
-                                                            Text(event.duration)
-                                                                .font(.caption)
-                                                                .foregroundColor(.secondary)
-                                                        }
-                                                        Spacer()
-                                                        Text(event.sourceLabel)
-                                                            .font(.caption2)
-                                                    }
-                                                    .padding(8)
-                                                    .background(Color.gray.opacity(0.1))
-                                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                                }
-                                                .buttonStyle(PlainButtonStyle())
-                                            }
-                                        }
+                            // Date Range Filter
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Date Range")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text("From")
+                                            .dynamicFont(size: 12, fontManager: fontManager)
+                                            .foregroundColor(.secondary)
+                                        DatePicker("", selection: $startDate, displayedComponents: [.date])
+                                            .datePickerStyle(.compact)
                                     }
-                                    .frame(maxHeight: 200)
+
+                                    VStack(alignment: .leading) {
+                                        Text("To")
+                                            .dynamicFont(size: 12, fontManager: fontManager)
+                                            .foregroundColor(.secondary)
+                                        DatePicker("", selection: $endDate, displayedComponents: [.date])
+                                            .datePickerStyle(.compact)
+                                    }
                                 }
-                            } else {
-                                TextField("Event title", text: $title)
+                            }
+
+                            // Location Filter
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Location Filter")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+
+                                TextField("Filter by location", text: $location)
                                     .textFieldStyle(RoundedBorderTextFieldStyle())
                                     .dynamicFont(size: 16, fontManager: fontManager)
                             }
+
+                            // Search Results
+                            if !searchResults.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Search Results (\(searchResults.count) found)")
+                                        .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                        .foregroundColor(.primary)
+
+                                    ScrollView {
+                                        LazyVStack(spacing: 8) {
+                                            ForEach(searchResults) { event in
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    HStack {
+                                                        VStack(alignment: .leading) {
+                                                            Text(event.title)
+                                                                .dynamicFont(size: 15, weight: .semibold, fontManager: fontManager)
+                                                            Text(event.duration)
+                                                                .dynamicFont(size: 12, fontManager: fontManager)
+                                                                .foregroundColor(.secondary)
+                                                            if let loc = event.location, !loc.isEmpty {
+                                                                Text("📍 \(loc)")
+                                                                    .dynamicFont(size: 12, fontManager: fontManager)
+                                                                    .foregroundColor(.secondary)
+                                                            }
+                                                        }
+                                                        Spacer()
+                                                        VStack {
+                                                            Text(event.sourceLabel)
+                                                                .dynamicFont(size: 10, weight: .medium, fontManager: fontManager)
+                                                                .foregroundColor(.secondary)
+                                                                .padding(.horizontal, 6)
+                                                                .padding(.vertical, 2)
+                                                                .background(Color(.systemGray5))
+                                                                .cornerRadius(4)
+                                                        }
+                                                    }
+                                                }
+                                                .padding(12)
+                                                .background(Color(.systemGray6))
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            }
+                                        }
+                                    }
+                                    .frame(maxHeight: 300)
+                                }
+                            } else if !searchQuery.isEmpty {
+                                VStack {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 30))
+                                        .foregroundColor(.gray)
+                                    Text("No events found")
+                                        .dynamicFont(size: 14, fontManager: fontManager)
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.vertical, 20)
+                            }
+                        } else {
+                            // Title field with event search for update
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Title")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+
+                                if formType == .updateEvent {
+                                    HStack {
+                                        TextField("Search events...", text: $searchQuery)
+                                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                                            .dynamicFont(size: 16, fontManager: fontManager)
+                                            .onChange(of: searchQuery) { query in
+                                                searchEvents(query)
+                                            }
+
+                                        Button("Search") {
+                                            showingEventSearch.toggle()
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(Color.blue)
+                                        .foregroundColor(.white)
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    }
+
+                                    if !searchResults.isEmpty {
+                                        ScrollView {
+                                            LazyVStack {
+                                                ForEach(searchResults) { event in
+                                                    Button(action: {
+                                                        selectEvent(event)
+                                                    }) {
+                                                        HStack {
+                                                            VStack(alignment: .leading) {
+                                                                Text(event.title)
+                                                                    .font(.headline)
+                                                                Text(event.duration)
+                                                                    .font(.caption)
+                                                                    .foregroundColor(.secondary)
+                                                            }
+                                                            Spacer()
+                                                            Text(event.sourceLabel)
+                                                                .font(.caption2)
+                                                        }
+                                                        .padding(8)
+                                                        .background(Color.gray.opacity(0.1))
+                                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                                    }
+                                                    .buttonStyle(PlainButtonStyle())
+                                                }
+                                            }
+                                        }
+                                        .frame(maxHeight: 200)
+                                    }
+                                } else {
+                                    TextField("Event title", text: $title)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        .dynamicFont(size: 16, fontManager: fontManager)
+                                }
+                            }
                         }
 
-                        // Location field (moved under title)
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Location")
-                                .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                                .foregroundColor(.primary)
+                        if formType != .eventQueries {
+                            // Location field (moved under title)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Location")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
 
-                            TextField("Enter location", text: $location)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .dynamicFont(size: 16, fontManager: fontManager)
-                        }
-
-                        // Calendar selection
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Calendar")
-                                .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                                .foregroundColor(.primary)
-
-                            if availableCalendars.isEmpty {
-                                Text("Default Calendar")
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(Color.gray.opacity(0.1))
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                TextField("Enter location", text: $location)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
                                     .dynamicFont(size: 16, fontManager: fontManager)
-                            } else {
-                                Picker("Select Calendar", selection: $selectedCalendar) {
-                                    ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
-                                        Text(calendar.title)
-                                            .tag(calendar.calendarIdentifier)
-                                    }
-                                }
-                                .pickerStyle(MenuPickerStyle())
                             }
-                        }
 
-                        // Date and time fields
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Date & Time")
-                                .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                                .foregroundColor(.primary)
+                            // Calendar selection
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Calendar")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
 
-                            Toggle("All Day", isOn: $isAllDay)
-                                .dynamicFont(size: 16, fontManager: fontManager)
-
-                            if !isAllDay {
-                                VStack(spacing: 12) {
-                                    HStack {
-                                        Text("Start:")
-                                            .dynamicFont(size: 14, fontManager: fontManager)
-                                            .frame(width: 50, alignment: .leading)
-                                        DatePicker("", selection: $startDate, displayedComponents: [.date, .hourAndMinute])
-                                            .labelsHidden()
+                                if availableCalendars.isEmpty {
+                                    Text("Default Calendar")
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(Color.gray.opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                        .dynamicFont(size: 16, fontManager: fontManager)
+                                } else {
+                                    Picker("Select Calendar", selection: $selectedCalendar) {
+                                        ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
+                                            Text(calendar.title)
+                                                .tag(calendar.calendarIdentifier)
+                                        }
                                     }
-
-                                    HStack {
-                                        Text("End:")
-                                            .dynamicFont(size: 14, fontManager: fontManager)
-                                            .frame(width: 50, alignment: .leading)
-                                        DatePicker("", selection: $endDate, displayedComponents: [.date, .hourAndMinute])
-                                            .labelsHidden()
-                                    }
+                                    .pickerStyle(MenuPickerStyle())
                                 }
-                            } else {
-                                DatePicker("Date", selection: $startDate, displayedComponents: [.date])
-                                    .labelsHidden()
                             }
-                        }
+
+                            // Date and time fields
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Date & Time")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+
+                                Toggle("All Day", isOn: $isAllDay)
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+
+                                if !isAllDay {
+                                    VStack(spacing: 12) {
+                                        HStack {
+                                            Text("Start:")
+                                                .dynamicFont(size: 14, fontManager: fontManager)
+                                                .frame(width: 50, alignment: .leading)
+                                            DatePicker("", selection: $startDate, displayedComponents: [.date, .hourAndMinute])
+                                                .labelsHidden()
+                                        }
+
+                                        HStack {
+                                            Text("End:")
+                                                .dynamicFont(size: 14, fontManager: fontManager)
+                                                .frame(width: 50, alignment: .leading)
+                                            DatePicker("", selection: $endDate, displayedComponents: [.date, .hourAndMinute])
+                                                .labelsHidden()
+                                        }
+                                    }
+                                } else {
+                                    DatePicker("Date", selection: $startDate, displayedComponents: [.date])
+                                        .labelsHidden()
+                                }
+                            }
 
 
-                        // Notes field
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Notes")
-                                .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                                .foregroundColor(.primary)
+                            // Notes field
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Notes")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
 
-                            TextField("Optional notes", text: $notes)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .dynamicFont(size: 16, fontManager: fontManager)
-                                .lineLimit(6)
+                                TextField("Optional notes", text: $notes)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                    .lineLimit(6)
+                            }
                         }
                     }
                     .padding(.horizontal, 20)
@@ -980,6 +1107,8 @@ struct InlineFormView: View {
             return "Update Event"
         case .blockTime:
             return "Block Time"
+        case .eventQueries:
+            return "Event Queries & Search"
         }
     }
 
@@ -991,6 +1120,8 @@ struct InlineFormView: View {
             return "Update the selected calendar event"
         case .blockTime:
             return "Block time on your calendar"
+        case .eventQueries:
+            return "Search and find events in your calendars"
         }
     }
 
@@ -1002,6 +1133,8 @@ struct InlineFormView: View {
             return "calendar.badge.clock"
         case .blockTime:
             return "calendar.badge.minus"
+        case .eventQueries:
+            return "magnifyingglass.circle"
         }
     }
 
