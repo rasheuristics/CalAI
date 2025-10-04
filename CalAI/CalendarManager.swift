@@ -46,16 +46,108 @@ class CalendarManager: ObservableObject {
     private let deltaSyncManager = DeltaSyncManager.shared
     private let webhookManager = WebhookManager.shared
     private let conflictResolutionManager = ConflictResolutionManager.shared
+    private var cancellables = Set<AnyCancellable>()
 
     // External calendar managers will be injected
-    var googleCalendarManager: GoogleCalendarManager?
-    var outlookCalendarManager: OutlookCalendarManager?
+    var googleCalendarManager: GoogleCalendarManager? {
+        didSet {
+            setupGoogleEventsObserver()
+        }
+    }
+    var outlookCalendarManager: OutlookCalendarManager? {
+        didSet {
+            setupOutlookEventsObserver()
+        }
+    }
 
     init() {
         // Inject self into sync manager
         syncManager.calendarManager = self
         // Setup advanced sync asynchronously to avoid blocking main thread
         setupAdvancedSyncAsync()
+        // Listen for event time updates from drag-and-drop
+        setupEventUpdateListener()
+    }
+
+    private func setupEventUpdateListener() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("UpdateEventTime"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self,
+                  let userInfo = notification.userInfo,
+                  let eventId = userInfo["eventId"] as? String,
+                  let newStart = userInfo["newStart"] as? Date,
+                  let newEnd = userInfo["newEnd"] as? Date,
+                  let source = userInfo["source"] as? CalendarSource else {
+                print("❌ Invalid event update notification")
+                return
+            }
+
+            print("📥 Received event update notification for \(eventId)")
+            self.updateEventTime(eventId: eventId, newStart: newStart, newEnd: newEnd, source: source)
+        }
+    }
+
+    private func updateEventTime(eventId: String, newStart: Date, newEnd: Date, source: CalendarSource) {
+        switch source {
+        case .ios:
+            // Update iOS/EventKit event
+            if let event = eventStore.event(withIdentifier: eventId) {
+                event.startDate = newStart
+                event.endDate = newEnd
+                do {
+                    try eventStore.save(event, span: .thisEvent)
+                    print("✅ iOS event updated: \(event.title ?? "Untitled")")
+                    loadEvents() // Refresh the unified events list
+                } catch {
+                    print("❌ Failed to save iOS event: \(error)")
+                }
+            }
+
+        case .google:
+            // Update Google Calendar event
+            Task {
+                await googleCalendarManager?.updateEventTime(eventId: eventId, newStart: newStart, newEnd: newEnd)
+                await MainActor.run {
+                    loadEvents()
+                }
+            }
+
+        case .outlook:
+            // Update Outlook event
+            Task {
+                await outlookCalendarManager?.updateEventTime(eventId: eventId, newStart: newStart, newEnd: newEnd)
+                await MainActor.run {
+                    loadEvents()
+                }
+            }
+        }
+    }
+
+    private func setupGoogleEventsObserver() {
+        guard let googleManager = googleCalendarManager else { return }
+
+        googleManager.$googleEvents
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                print("🔔 Google events changed, reloading unified events")
+                self?.loadAllUnifiedEvents()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func setupOutlookEventsObserver() {
+        guard let outlookManager = outlookCalendarManager else { return }
+
+        outlookManager.$outlookEvents
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                print("🔔 Outlook events changed, reloading unified events")
+                self?.loadAllUnifiedEvents()
+            }
+            .store(in: &cancellables)
     }
 
     private func setupAdvancedSyncAsync() {
@@ -182,6 +274,9 @@ class CalendarManager: ObservableObject {
         let cachedEvents = coreDataManager.fetchEvents()
         allEvents.append(contentsOf: cachedEvents)
         print("💾 Loaded \(cachedEvents.count) cached events from Core Data")
+
+        // Schedule smart notifications for upcoming events
+        scheduleSmartNotificationsForEvents(cachedEvents)
 
         // Add iOS events
         print("📅 Converting \(events.count) iOS events to unified events")
@@ -1240,6 +1335,33 @@ class CalendarManager: ObservableObject {
 
         print("❓ \(helpMessage)")
         postNotificationMessage(helpMessage)
+    }
+
+    // MARK: - Smart Notifications
+
+    /// Schedule smart notifications for upcoming events
+    private func scheduleSmartNotificationsForEvents(_ events: [UnifiedEvent]) {
+        let notificationManager = SmartNotificationManager.shared
+
+        // Filter to only upcoming events in the next 24 hours
+        let now = Date()
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now
+
+        let upcomingEvents = events.filter { event in
+            event.startDate > now && event.startDate <= tomorrow
+        }
+
+        print("🔔 Scheduling smart notifications for \(upcomingEvents.count) upcoming events")
+
+        for event in upcomingEvents {
+            notificationManager.scheduleMeetingNotification(
+                title: event.title,
+                location: event.location,
+                notes: event.description,
+                startDate: event.startDate,
+                endDate: event.endDate
+            )
+        }
     }
 }
 

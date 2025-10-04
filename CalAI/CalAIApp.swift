@@ -1,6 +1,8 @@
 import SwiftUI
 import GoogleSignIn
 import MSAL
+import UserNotifications
+import CoreLocation
 
 @main
 struct CalAIApp: App {
@@ -25,6 +27,21 @@ struct CalAIApp: App {
 
                     GIDSignIn.sharedInstance.configuration = configuration
                     print("✅ Google Sign-In configured")
+
+                    // Initialize smart notifications
+                    let notificationManager = SmartNotificationManager.shared
+                    let travelManager = TravelTimeManager.shared
+
+                    // Request notification permission
+                    notificationManager.requestNotificationPermission { granted in
+                        if granted {
+                            print("✅ Time-sensitive notifications enabled")
+                            notificationManager.setupNotificationCategories()
+                        }
+                    }
+
+                    // Request location permission for travel time calculations
+                    travelManager.requestLocationPermission()
                 }
                 .onOpenURL { url in
                     print("🔵 App received URL: \(url)")

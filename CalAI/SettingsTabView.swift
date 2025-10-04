@@ -42,12 +42,13 @@ struct SettingsTabView: View {
     }
 
     var body: some View {
-        ZStack {
-            // Transparent background to show main gradient
-            Color.clear
-                .ignoresSafeArea(.all)
+        NavigationView {
+            ZStack {
+                // Transparent background to show main gradient
+                Color.clear
+                    .ignoresSafeArea(.all)
 
-            Form {
+                Form {
                 Section("Calendar Connections") {
                     PermissionRow(
                         title: "iOS Calendar",
@@ -198,6 +199,17 @@ struct SettingsTabView: View {
                             // Voice manager handles this automatically
                         }
                     )
+                }
+
+                Section("Smart Notifications") {
+                    NavigationLink(destination: NotificationSettingsView()) {
+                        HStack {
+                            Image(systemName: "bell.badge")
+                                .foregroundColor(.blue)
+                            Text("Notification Settings")
+                                .dynamicFont(size: 16, fontManager: fontManager)
+                        }
+                    }
                 }
 
                 Section("Display Settings") {
@@ -519,6 +531,8 @@ struct SettingsTabView: View {
             .sheet(isPresented: $outlookCalendarManager.showCredentialInput) {
                 OutlookCredentialInputView(outlookCalendarManager: outlookCalendarManager)
             }
+        }
+        .navigationViewStyle(.stack)
     }
 }
 

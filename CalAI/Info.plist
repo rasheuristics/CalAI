@@ -56,6 +56,10 @@
     <string>CalAI needs microphone access to process your voice commands for calendar management.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>CalAI uses speech recognition to understand your calendar management requests.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>CalAI needs your location to calculate travel time to meeting locations and send timely departure notifications.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>CalAI needs your location to monitor travel time and notify you when to leave for meetings, even when the app is in the background.</string>
     <key>GIDClientID</key>
     <string>43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo.apps.googleusercontent.com</string>
     <key>CFBundleURLTypes</key>
