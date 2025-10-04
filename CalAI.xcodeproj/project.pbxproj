@@ -53,6 +53,7 @@
 /* Begin PBXFileReference section */
 		505F673E2E81C75F00C188F0 /* OutlookCalendarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OutlookCalendarManager.swift; path = CalAI/OutlookCalendarManager.swift; sourceTree = "<group>"; };
 		50745C922E7CA7C9004D0243 /* CalAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CalAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ENTITLEMENTS001234567890 /* CalAI.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CalAI.entitlements; sourceTree = "<group>"; };
 		50745C952E7CA7C9004D0243 /* CalAIApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalAIApp.swift; sourceTree = "<group>"; };
 		50745C972E7CA7C9004D0243 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		9FA4E490D02D41DB8BC3D5E3 /* SecureStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureStorage.swift; sourceTree = "<group>"; };
@@ -131,6 +132,7 @@
 		50745C942E7CA7C9004D0243 /* CalAI */ = {
 			isa = PBXGroup;
 			children = (
+				ENTITLEMENTS001234567890 /* CalAI.entitlements */,
 				50745C952E7CA7C9004D0243 /* CalAIApp.swift */,
 				50745C972E7CA7C9004D0243 /* ContentView.swift */,
 				9FA4E490D02D41DB8BC3D5E3 /* SecureStorage.swift */,
@@ -423,6 +425,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_ENTITLEMENTS = CalAI/CalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"CalAI/Preview Content\"";
@@ -453,6 +457,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_ENTITLEMENTS = CalAI/CalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"CalAI/Preview Content\"";

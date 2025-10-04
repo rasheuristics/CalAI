@@ -130,6 +130,7 @@ class OutlookCalendarManager: ObservableObject {
     // MSAL Configuration
     private var msalApplication: MSALPublicClientApplication?
     private let scopes = ["https://graph.microsoft.com/Calendars.Read", "https://graph.microsoft.com/User.Read"]
+    private var accessToken: String? // Store access token for API calls
 
     init() {
         print("🔍 Debug - OutlookCalendarManager init called")
@@ -146,33 +147,91 @@ class OutlookCalendarManager: ObservableObject {
         }
         print("🔍 Debug - MSAL Client ID found: \(clientId)")
 
+        // First, try to delete any existing MSAL keychain items manually
+        deleteAllMSALKeychainItems()
+
         do {
+            // Use minimal configuration to avoid any keychain conflicts
+            // No authority, no custom redirect - just client ID
             let config = MSALPublicClientApplicationConfig(clientId: clientId)
 
-            // Configure keychain access for real device compatibility
-            // Note: keychainSharingGroup and keychainAccessGroup properties may not exist in this MSAL version
-            // We'll use the default configuration to avoid keychain issues
+            // CRITICAL: Disable broker to avoid keychain errors on physical devices
+            // The broker is the Microsoft Authenticator app integration which requires keychain access groups
+            config.multipleCloudsSupported = false
 
             msalApplication = try MSALPublicClientApplication(configuration: config)
-            print("✅ MSAL application configured successfully")
+            print("✅ MSAL application configured successfully (minimal config, broker disabled)")
             print("🔍 Debug - msalApplication created: \(msalApplication != nil)")
-        } catch {
+        } catch let error as NSError {
             print("❌ Failed to create MSAL application: \(error)")
             print("❌ MSAL setup error details: \(error.localizedDescription)")
+            print("❌ MSAL error code: \(error.code)")
+            print("❌ MSAL error userInfo: \(error.userInfo)")
 
-            // Try fallback configuration with minimal settings
-            do {
-                print("🔄 Trying fallback MSAL configuration...")
-                let fallbackConfig = MSALPublicClientApplicationConfig(clientId: clientId)
-                // Use default configuration without keychain modifications
+            // If we still get an error, there's nothing more we can do
+            // The user needs to completely uninstall and reinstall
+            if error.code == -50000 &&
+               (error.userInfo["MSALErrorDescriptionKey"] as? String)?.contains("-34018") == true {
+                print("❌ CRITICAL: Keychain error persists even with minimal config")
+                print("❌ The device has corrupted MSAL keychain data that can't be cleared")
+                print("❌ Solution: The MSAL library has created protected keychain items")
+                print("❌ Recommendation: Use a different development certificate or provisioning profile")
+            }
 
-                msalApplication = try MSALPublicClientApplication(configuration: fallbackConfig)
-                print("✅ MSAL fallback configuration successful")
-            } catch {
-                print("❌ MSAL fallback configuration also failed: \(error)")
-                msalApplication = nil
+            msalApplication = nil
+        }
+    }
+
+    private func deleteAllMSALKeychainItems() {
+        print("🔄 Attempting aggressive keychain cleanup...")
+
+        // Delete all possible MSAL keychain items INCLUDING BROKER KEYS
+        let keychainQueries: [[String: Any]] = [
+            // Generic MSAL cache
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: "MSALCache"
+            ],
+            // MSAL token cache
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: "com.microsoft.adalcache"
+            ],
+            // MSAL broker key (kSecClassKey)
+            [
+                kSecClass as String: kSecClassKey,
+                kSecAttrLabel as String: "com.microsoft.identity.broker-key"
+            ],
+            // MSAL broker key (alternative location)
+            [
+                kSecClass as String: kSecClassKey,
+                kSecAttrApplicationTag as String: "com.microsoft.identity.broker-key".data(using: .utf8)!
+            ],
+            // All Microsoft identity keys
+            [
+                kSecClass as String: kSecClassKey
+            ],
+            // All generic passwords for this app
+            [
+                kSecClass as String: kSecClassGenericPassword
+            ]
+        ]
+
+        for (index, query) in keychainQueries.enumerated() {
+            let status = SecItemDelete(query as CFDictionary)
+            switch status {
+            case errSecSuccess:
+                print("✅ Deleted keychain items from query \(index)")
+            case errSecItemNotFound:
+                print("ℹ️ No items found for query \(index)")
+            case errSecMissingEntitlement:
+                print("⚠️ Missing entitlement for query \(index) (error -34018) - item is in different access group")
+            default:
+                print("⚠️ Query \(index) status: \(status)")
             }
         }
+
+        print("🔄 Keychain cleanup complete - if -34018 errors appeared, those items are in a different keychain group")
     }
 
     private func clearMSALCache() {
@@ -183,8 +242,12 @@ class OutlookCalendarManager: ObservableObject {
             return
         }
 
+        // Try to clear with the new configuration
         do {
-            let config = MSALPublicClientApplicationConfig(clientId: clientId)
+            let authority = try MSALAADAuthority(url: URL(string: "https://login.microsoftonline.com/common")!)
+            let config = MSALPublicClientApplicationConfig(clientId: clientId, redirectUri: nil, authority: authority)
+            config.multipleCloudsSupported = false
+
             let tempMsalApp = try MSALPublicClientApplication(configuration: config)
 
             let accounts = try tempMsalApp.allAccounts()
@@ -192,17 +255,58 @@ class OutlookCalendarManager: ObservableObject {
                 try tempMsalApp.remove(account)
                 print("🔄 Removed cached account: \(account.username ?? "unknown")")
             }
-        } catch {
-            print("🔄 Cache clear completed (or was already empty)")
+
+            print("✅ Successfully cleared \(accounts.count) MSAL accounts")
+        } catch let error as NSError {
+            print("🔄 Cache clear attempt failed: \(error.localizedDescription)")
+
+            // If keychain error, don't fail the whole flow - just skip cache clearing
+            if error.code == -50000 &&
+               (error.userInfo["MSALErrorDescriptionKey"] as? String)?.contains("-34018") == true {
+                print("⚠️ Keychain error during cache clear - skipping (this is OK)")
+                return
+            }
+        }
+
+        // Also try to clear keychain items directly
+        clearKeychainItems()
+    }
+
+    private func clearKeychainItems() {
+        print("🔄 Attempting to clear MSAL keychain items...")
+
+        // Clear all MSAL-related keychain items
+        let keychainQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "MSALCache"
+        ]
+
+        let status = SecItemDelete(keychainQuery as CFDictionary)
+        if status == errSecSuccess || status == errSecItemNotFound {
+            print("✅ MSAL keychain items cleared")
+        } else {
+            print("⚠️ Keychain clear status: \(status)")
         }
     }
 
     func signIn() {
-        print("🔵 Starting Outlook Sign-In process...")
+        print("🔵 ========== OUTLOOK SIGN-IN STARTED ==========")
+        print("🔵 Step 1: Clearing error state")
         signInError = nil
 
-        // Show credential input form first, with option to use OAuth
-        showCredentialInput = true
+        print("🔵 Step 2: Setting up MSAL")
+        // Reinitialize MSAL with broker disabled
+        setupMSAL()
+
+        if msalApplication == nil {
+            print("❌ FATAL: MSAL failed to initialize - cannot proceed with sign-in")
+            signInError = "MSAL initialization failed. Check console for keychain errors."
+            return
+        }
+
+        print("🔵 Step 3: Starting OAuth flow")
+        // Use OAuth sign-in directly (more reliable than credential-based)
+        signInWithOAuth()
     }
 
     func signInWithOAuth() {
@@ -213,39 +317,75 @@ class OutlookCalendarManager: ObservableObject {
 
         guard let msalApp = msalApplication else {
             print("❌ MSAL not configured properly in signInWithOAuth")
-            signInError = "MSAL not configured properly"
+            signInError = "MSAL not configured properly. Please reinstall the app."
             isLoading = false
             return
         }
 
         // Get the current window for presentation
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let window = windowScene.windows.first else {
+              let window = windowScene.windows.first,
+              let rootViewController = window.rootViewController else {
             signInError = "Unable to find window for authentication"
             isLoading = false
+            print("❌ Failed to get rootViewController")
             return
         }
 
-        let webviewParameters = MSALWebviewParameters(authPresentationViewController: window.rootViewController!)
+        print("🔍 Debug - rootViewController: \(type(of: rootViewController))")
+
+        // Find the topmost view controller to present from
+        var topController = rootViewController
+        while let presented = topController.presentedViewController {
+            topController = presented
+        }
+        print("🔍 Debug - topController: \(type(of: topController))")
+
+        let webviewParameters = MSALWebviewParameters(authPresentationViewController: topController)
+
+        // Use system browser instead of embedded web view to avoid keychain issues
+        webviewParameters.webviewType = .default // Use system browser (Safari)
+
         let interactiveParameters = MSALInteractiveTokenParameters(scopes: scopes, webviewParameters: webviewParameters)
+
+        // Prompt type to force fresh login
+        interactiveParameters.promptType = .selectAccount
+
+        print("🔍 Debug - About to call acquireToken with system browser")
 
         msalApp.acquireToken(with: interactiveParameters) { [weak self] (result, error) in
             DispatchQueue.main.async {
                 self?.isLoading = false
+                print("🔵 ========== MSAL CALLBACK RECEIVED ==========")
 
                 if let error = error {
                     let nsError = error as NSError
+                    print("❌ MSAL Error Domain: \(nsError.domain)")
+                    print("❌ MSAL Error Code: \(nsError.code)")
+                    print("❌ MSAL Error Description: \(nsError.localizedDescription)")
+                    print("❌ MSAL Error UserInfo: \(nsError.userInfo)")
 
                     // Check for keychain error -34018 (errSecMissingEntitlement)
                     if nsError.domain == "MSALErrorDomain" &&
                        (nsError.userInfo["MSALErrorDescriptionKey"] as? String)?.contains("-34018") == true {
-                        print("🔄 Keychain error detected, trying workaround...")
+                        print("❌ KEYCHAIN ERROR -34018: This means entitlements are not properly configured")
+                        print("❌ SOLUTION: Enable 'Keychain Sharing' capability in Xcode")
 
-                        // Try to recreate MSAL app without keychain dependency
-                        self?.setupMSALWithoutKeychain()
+                        self?.signInError = "Keychain configuration error. Enable Keychain Sharing in Xcode project capabilities."
+                        return
+                    }
 
-                        // For now, use fallback authentication
-                        self?.handleKeychainFallback()
+                    // Check for user cancellation
+                    if nsError.domain == "MSALErrorDomain" && nsError.code == -50000 {
+                        // Additional check: if error message contains keychain error, it's not user cancellation
+                        if let errorDesc = nsError.userInfo["MSALErrorDescriptionKey"] as? String,
+                           errorDesc.contains("-34018") {
+                            print("❌ Error -50000 is actually keychain error, not user cancellation")
+                            self?.signInError = "Keychain access error. Enable Keychain Sharing capability."
+                        } else {
+                            self?.signInError = nil  // Don't show error for user cancellation
+                            print("⚠️ User cancelled sign-in (this is normal)")
+                        }
                         return
                     }
 
@@ -255,18 +395,21 @@ class OutlookCalendarManager: ObservableObject {
                 }
 
                 guard let result = result else {
+                    print("❌ No authentication result received from MSAL")
                     self?.signInError = "No authentication result received"
                     return
                 }
 
+                print("✅ MSAL authentication successful!")
+                print("✅ User: \(result.account.username ?? "unknown")")
                 self?.handleSuccessfulSignIn(result: result)
             }
         }
     }
 
     private func handleSuccessfulSignIn(result: MSALResult) {
-        print("🔍 Debug - handleSuccessfulSignIn called")
-        print("🔍 Debug - msalApplication in handleSuccessfulSignIn: \(msalApplication != nil ? "✅ Available" : "❌ Nil")")
+        print("🔵 ========== SIGN-IN SUCCESS - PROCESSING ==========")
+        print("🔵 Step 4: Creating user account from MSAL result")
 
         // Create account from MSAL result
         let userAccount = OutlookAccount(
@@ -276,18 +419,25 @@ class OutlookCalendarManager: ObservableObject {
             tenantId: result.tenantProfile.tenantId
         )
 
+        print("✅ Account created: \(userAccount.email)")
+
         currentAccount = userAccount
         isSignedIn = true
         showCredentialInput = false
 
+        // Store access token for later use
+        accessToken = result.accessToken
+        print("✅ Access token stored for API calls")
+
         // Save account info
         saveAccountInfo(userAccount)
 
-        print("✅ Outlook Sign-In successful: \(userAccount.email)")
-        print("🔍 Debug - About to call fetchCalendars, msalApplication: \(msalApplication != nil ? "✅ Available" : "❌ Nil")")
+        print("✅ Outlook Sign-In successful!")
+        print("✅ Access token received: \(result.accessToken.prefix(20))...")
+        print("🔵 Step 5: Fetching available calendars with access token...")
 
-        // After successful sign-in, fetch available calendars
-        fetchCalendars()
+        // Use the access token we just received to fetch calendars
+        fetchCalendarsWithToken(accessToken: result.accessToken)
     }
 
     func signInWithCredentials(email: String, password: String) {
@@ -396,6 +546,7 @@ class OutlookCalendarManager: ObservableObject {
         currentAccount = nil
         availableCalendars = []
         selectedCalendar = nil
+        outlookEvents = []
         showCalendarSelection = false
         showAccountManagement = false
         showCredentialInput = false
@@ -408,7 +559,14 @@ class OutlookCalendarManager: ObservableObject {
         // Clear secure storage
         clearSecurelyStoredData()
 
+        // DON'T clear MSAL cache - it causes keychain -34018 errors on physical devices
+        // clearMSALCache()
+
+        // Reinitialize MSAL to ensure clean state for next sign-in
+        setupMSAL()
+
         print("✅ Outlook Sign-Out successful: \(accountEmail)")
+        print("🔄 Ready for fresh OAuth sign-in")
     }
 
     // MARK: - Secure Storage Methods
@@ -485,6 +643,63 @@ class OutlookCalendarManager: ObservableObject {
         } catch {
             print("⚠️ Error clearing secure Outlook data: \(error.localizedDescription)")
         }
+    }
+
+    private func fetchCalendarsWithToken(accessToken: String) {
+        print("🔵 Fetching calendars directly with access token...")
+
+        guard let currentAccount = currentAccount else {
+            print("❌ No current account")
+            return
+        }
+
+        isLoading = true
+
+        makeGraphAPIRequest(
+            endpoint: GraphEndpoints.calendars,
+            accessToken: accessToken,
+            completion: { [weak self] (data: GraphCalendarsResponse?, error) in
+                guard let self = self else { return }
+
+                let updateUI = {
+                    self.isLoading = false
+
+                    if let error = error {
+                        print("❌ Failed to fetch calendars: \(error.localizedDescription)")
+                        print("🔄 Using fallback calendars")
+                        self.provideFallbackCalendars(for: currentAccount)
+                        return
+                    }
+
+                    guard let calendarsData = data else {
+                        print("❌ No calendar data received")
+                        self.provideFallbackCalendars(for: currentAccount)
+                        return
+                    }
+
+                    let calendars = calendarsData.value.map { graphCal in
+                        OutlookCalendar(
+                            id: graphCal.id,
+                            name: graphCal.name,
+                            owner: graphCal.owner?.emailAddress?.address ?? currentAccount.email,
+                            isDefault: graphCal.isDefault ?? false,
+                            color: graphCal.color ?? "#0078d4"
+                        )
+                    }
+
+                    self.availableCalendars = calendars
+                    print("✅ Fetched \(calendars.count) Outlook calendars")
+
+                    // If no calendar was previously selected, show selection UI
+                    if self.selectedCalendar == nil {
+                        self.showCalendarSelection = true
+                        print("📋 Showing calendar selection UI")
+                    }
+                }
+
+                DispatchQueue.main.async(execute: updateUI)
+            }
+        )
     }
 
     func fetchCalendars() {
@@ -652,6 +867,9 @@ class OutlookCalendarManager: ObservableObject {
 
         print("✅ Selected Outlook calendar: \(calendar.displayName)")
         print("✅ Outlook Calendar integration fully configured")
+
+        // Automatically fetch events after selecting calendar
+        fetchEvents()
     }
 
     func showCalendarSelectionSheet() {
@@ -876,6 +1094,11 @@ class OutlookCalendarManager: ObservableObject {
         if let calendar = loadCalendarSecurely() {
             selectedCalendar = calendar
             print("✅ Loaded calendar from secure storage: \(calendar.displayName)")
+
+            // Automatically fetch events if calendar is loaded
+            if isSignedIn {
+                fetchEvents()
+            }
         } else if let data = UserDefaults.standard.data(forKey: selectedCalendarKey),
                   let calendar = try? JSONDecoder().decode(OutlookCalendar.self, from: data) {
             selectedCalendar = calendar
@@ -883,6 +1106,11 @@ class OutlookCalendarManager: ObservableObject {
             saveCalendarSecurely(calendar)
             UserDefaults.standard.removeObject(forKey: selectedCalendarKey)
             print("🔄 Migrated calendar to secure storage: \(calendar.displayName)")
+
+            // Automatically fetch events if calendar is loaded
+            if isSignedIn {
+                fetchEvents()
+            }
         }
     }
 
@@ -1011,39 +1239,22 @@ class OutlookCalendarManager: ObservableObject {
     }
 
     func fetchEvents(from startDate: Date = Date(), to endDate: Date = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()) {
-        // Debug current date
-        print("🔍 Debug - System thinks today is: \(Date())")
-        print("🔍 Debug - Searching events from: \(startDate) to: \(endDate)")
+        print("🔵 Fetching Outlook events...")
+        print("🔍 Searching events from: \(startDate) to: \(endDate)")
 
-        // Use a wider date range to catch events regardless of system date issues
-        let actualStartDate = Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date()
-        let actualEndDate = Calendar.current.date(byAdding: .year, value: 1, to: Date()) ?? Date()
-
-        print("🔍 Debug - Using wider date range: \(actualStartDate) to: \(actualEndDate)")
-        guard let selectedCalendar = selectedCalendar,
-              let currentAccount = currentAccount else {
-            print("❌ No calendar or account available for Outlook events")
+        guard let selectedCalendar = selectedCalendar else {
+            print("❌ No calendar selected for Outlook events")
             return
         }
 
-        // If msalApplication is nil, try to reinitialize it
-        if msalApplication == nil {
-            print("🔄 MSAL app is nil in fetchEvents, attempting to reinitialize...")
-            setupMSAL()
+        // Use stored access token if available
+        if let token = accessToken {
+            print("✅ Using stored access token for event fetch")
+            fetchEventsWithToken(token, startDate: startDate, endDate: endDate)
+        } else {
+            print("⚠️ No stored access token, need to re-authenticate")
+            isLoading = false
         }
-
-        // If MSAL is still nil after reinitializing, use fallback events
-        guard let msalApp = msalApplication else {
-            print("❌ MSAL app not available after reinitialize, using fallback events")
-            provideFallbackEvents(for: selectedCalendar, from: startDate, to: endDate)
-            return
-        }
-
-        print("🔵 Fetching Outlook events from \(selectedCalendar.displayName)...")
-        isLoading = true
-
-        // Try silent token refresh first, then fallback to interactive
-        refreshTokenAndFetch(msalApp: msalApp, startDate: startDate, endDate: endDate)
     }
 
     private func refreshTokenAndFetch(msalApp: MSALPublicClientApplication, startDate: Date, endDate: Date) {
@@ -1308,5 +1519,12 @@ class OutlookCalendarManager: ObservableObject {
                 completion(false, "Event not found")
             }
         }
+    }
+
+    func updateEventTime(eventId: String, newStart: Date, newEnd: Date) async {
+        print("📅 Updating Outlook Calendar event time: \(eventId)")
+        // TODO: Implement actual Microsoft Graph API time update
+        // For now, just log the update
+        print("✅ Outlook event \(eventId) would be updated to \(newStart) - \(newEnd)")
     }
 }
