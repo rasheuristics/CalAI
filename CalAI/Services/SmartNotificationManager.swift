@@ -83,6 +83,11 @@ class SmartNotificationManager: NSObject, ObservableObject {
         print("🔵 Scheduling notification for '\(meetingInfo.title)'")
         print("   Type: \(meetingInfo.type)")
 
+        // Schedule universal 15-minute reminder if enabled
+        if preferences.enable15MinuteReminder {
+            schedule15MinuteReminder(meetingInfo: meetingInfo)
+        }
+
         // Schedule based on meeting type
         switch meetingInfo.type {
         case .physical(let location):
@@ -101,10 +106,26 @@ class SmartNotificationManager: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Universal 15-Minute Reminder
+
+    private func schedule15MinuteReminder(meetingInfo: MeetingInfo) {
+        let notificationTime = meetingInfo.startDate.addingTimeInterval(-15 * 60)
+
+        createAndScheduleNotification(
+            meetingInfo: meetingInfo,
+            notificationTime: notificationTime,
+            title: "Meeting in 15 Minutes",
+            body: "'\(meetingInfo.title)' starts in 15 minutes.",
+            categoryIdentifier: "FIFTEEN_MINUTE_REMINDER",
+            userInfo: ["meetingType": "15min_reminder"],
+            identifier: "15min_\(meetingInfo.title)_\(meetingInfo.startDate.timeIntervalSince1970)"
+        )
+    }
+
     // MARK: - Physical Meeting Notifications
 
     private func schedulePhysicalMeetingNotification(meetingInfo: MeetingInfo, location: String) {
-        guard preferences.enableTravelTimeCalculation else {
+        guard preferences.enableTravelTimeCalculation && preferences.enableTravelTimeReminder else {
             // If travel time calculation is disabled, use standard notification
             scheduleStandardNotification(meetingInfo: meetingInfo)
             return
@@ -153,7 +174,8 @@ class SmartNotificationManager: NSObject, ObservableObject {
                         "travelMinutes": travelMinutes,
                         "destinationLat": coordinate.latitude,
                         "destinationLon": coordinate.longitude
-                    ]
+                    ],
+                    identifier: "travel_\(meetingInfo.title)_\(meetingInfo.startDate.timeIntervalSince1970)"
                 )
             }
         }
@@ -162,21 +184,24 @@ class SmartNotificationManager: NSObject, ObservableObject {
     // MARK: - Virtual Meeting Notifications
 
     private func scheduleVirtualMeetingNotification(meetingInfo: MeetingInfo, link: String, platform: MeetingType.VirtualPlatform) {
-        let leadMinutes = preferences.virtualMeetingLeadMinutes
-        let notificationTime = meetingInfo.startDate.addingTimeInterval(-TimeInterval(leadMinutes * 60))
+        // Schedule 5-minute join reminder if enabled
+        if preferences.enable5MinuteVirtualReminder {
+            let fiveMinNotificationTime = meetingInfo.startDate.addingTimeInterval(-5 * 60)
 
-        createAndScheduleNotification(
-            meetingInfo: meetingInfo,
-            notificationTime: notificationTime,
-            title: "Meeting Starting Soon",
-            body: "'\(meetingInfo.title)' starts in \(leadMinutes) minutes on \(platform.rawValue). Tap to join.",
-            categoryIdentifier: "VIRTUAL_MEETING",
-            userInfo: [
-                "meetingType": "virtual",
-                "meetingLink": link,
-                "platform": platform.rawValue
-            ]
-        )
+            createAndScheduleNotification(
+                meetingInfo: meetingInfo,
+                notificationTime: fiveMinNotificationTime,
+                title: "Join Meeting Now",
+                body: "'\(meetingInfo.title)' starts in 5 minutes on \(platform.rawValue). Tap to join.",
+                categoryIdentifier: "VIRTUAL_MEETING",
+                userInfo: [
+                    "meetingType": "virtual",
+                    "meetingLink": link,
+                    "platform": platform.rawValue
+                ],
+                identifier: "virtual_5min_\(meetingInfo.title)_\(meetingInfo.startDate.timeIntervalSince1970)"
+            )
+        }
     }
 
     // MARK: - Hybrid Meeting Notifications
@@ -226,7 +251,8 @@ class SmartNotificationManager: NSObject, ObservableObject {
         title: String,
         body: String,
         categoryIdentifier: String,
-        userInfo: [String: Any]
+        userInfo: [String: Any],
+        identifier: String? = nil
     ) {
         // Don't schedule if notification time is in the past
         guard notificationTime > Date() else {
@@ -251,10 +277,10 @@ class SmartNotificationManager: NSObject, ObservableObject {
         let timeInterval = notificationTime.timeIntervalSinceNow
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: timeInterval, repeats: false)
 
-        // Create unique identifier
-        let identifier = "meeting_\(meetingInfo.title)_\(meetingInfo.startDate.timeIntervalSince1970)"
+        // Use custom identifier or create unique one
+        let notificationIdentifier = identifier ?? "meeting_\(meetingInfo.title)_\(meetingInfo.startDate.timeIntervalSince1970)"
 
-        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+        let request = UNNotificationRequest(identifier: notificationIdentifier, content: content, trigger: trigger)
 
         notificationCenter.add(request) { error in
             if let error = error {

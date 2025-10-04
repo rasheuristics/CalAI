@@ -9,6 +9,11 @@ struct NotificationPreferences: Codable {
     // Virtual meeting settings
     var virtualMeetingLeadMinutes: Int = 5
 
+    // Multiple notification options
+    var enable15MinuteReminder: Bool = true  // Universal 15-min reminder for all meetings
+    var enableTravelTimeReminder: Bool = true  // "Leave now" for physical meetings
+    var enable5MinuteVirtualReminder: Bool = true  // "Join now" for virtual meetings
+
     // General settings
     var enableSmartNotifications: Bool = true
     var useHapticFeedback: Bool = true

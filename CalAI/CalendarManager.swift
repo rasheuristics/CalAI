@@ -275,9 +275,6 @@ class CalendarManager: ObservableObject {
         allEvents.append(contentsOf: cachedEvents)
         print("💾 Loaded \(cachedEvents.count) cached events from Core Data")
 
-        // Schedule smart notifications for upcoming events
-        scheduleSmartNotificationsForEvents(cachedEvents)
-
         // Add iOS events
         print("📅 Converting \(events.count) iOS events to unified events")
         let iosEvents = events.map { event in
@@ -367,6 +364,9 @@ class CalendarManager: ObservableObject {
         // Sort all events by start date
         unifiedEvents = allEvents.sorted { $0.startDate < $1.startDate }
         print("✅ Loaded \(unifiedEvents.count) unified events from all sources")
+
+        // Schedule smart notifications for all upcoming events
+        scheduleSmartNotificationsForEvents(unifiedEvents)
     }
 
     func refreshAllCalendars() {

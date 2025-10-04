@@ -116,6 +116,28 @@ struct NotificationSettingsView: View {
                     Text("Get notified before Zoom, Teams, or Google Meet calls so you have time to join.")
                 }
 
+                // Multiple Notification Options
+                Section {
+                    Toggle("15-Minute Reminder", isOn: $preferences.enable15MinuteReminder)
+                        .onChange(of: preferences.enable15MinuteReminder) { _ in
+                            savePreferences()
+                        }
+
+                    Toggle("Travel Time Alert", isOn: $preferences.enableTravelTimeReminder)
+                        .onChange(of: preferences.enableTravelTimeReminder) { _ in
+                            savePreferences()
+                        }
+
+                    Toggle("5-Minute Virtual Join Alert", isOn: $preferences.enable5MinuteVirtualReminder)
+                        .onChange(of: preferences.enable5MinuteVirtualReminder) { _ in
+                            savePreferences()
+                        }
+                } header: {
+                    Text("Notification Types")
+                } footer: {
+                    Text("15-min reminder applies to all meetings. Travel alert shows when to leave for physical meetings. 5-min alert reminds you to join virtual meetings.")
+                }
+
                 // Haptic Settings
                 Section {
                     Toggle("Haptic Feedback", isOn: $preferences.useHapticFeedback)
