@@ -6,6 +6,11 @@ import CoreLocation
 
 @main
 struct CalAIApp: App {
+    init() {
+        // Initialize crash reporting first
+        setupCrashReporting()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -60,5 +65,25 @@ struct CalAIApp: App {
                     }
                 }
         }
+    }
+
+    // MARK: - Crash Reporting Setup
+
+    private func setupCrashReporting() {
+        // Initialize crash reporter
+        let crashReporter = CrashReporter.shared
+
+        // Check user preference
+        let isEnabled = UserDefaults.standard.object(forKey: "crashReportingEnabled") as? Bool ?? true
+        crashReporter.setEnabled(isEnabled)
+
+        // Set app context
+        crashReporter.setCustomValue(Bundle.main.appVersion, forKey: "app_version")
+        crashReporter.setCustomValue(Bundle.main.buildNumber, forKey: "build_number")
+
+        // Log app launch
+        crashReporter.leaveBreadcrumb("App launched")
+
+        print("✅ Crash reporting initialized (enabled: \(isEnabled))")
     }
 }
