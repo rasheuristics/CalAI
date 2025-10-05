@@ -30,11 +30,7 @@ struct UnifiedEvent: Identifiable {
     }
 
     var sourceColor: Color {
-        switch source {
-        case .ios: return Color(red: 255/255, green: 107/255, blue: 107/255) // #FF6B6B
-        case .google: return Color(red: 244/255, green: 180/255, blue: 0/255) // #F4B400
-        case .outlook: return Color(red: 0/255, green: 120/255, blue: 212/255) // #0078D4
-        }
+        return DesignSystem.Colors.forCalendarSource(source)
     }
 
     var duration: String {
@@ -1528,6 +1524,11 @@ class CalendarManager: ObservableObject {
                 endDate: event.endDate
             )
         }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        print("🧹 CalendarManager deinitialized - observers removed")
     }
 }
 

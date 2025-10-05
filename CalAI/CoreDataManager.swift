@@ -431,6 +431,11 @@ class CoreDataManager: ObservableObject {
             return []
         }
     }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        print("🧹 CoreDataManager deinitialized - observers removed")
+    }
 }
 
 // MARK: - CalendarSource Extension

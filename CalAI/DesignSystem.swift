@@ -63,6 +63,22 @@ enum DesignSystem {
         static let slow = SwiftUI.Animation.easeInOut(duration: 0.5)
         static let spring = SwiftUI.Animation.spring(response: 0.35, dampingFraction: 0.8)
     }
+
+    // MARK: - Colors
+    enum Colors {
+        // Calendar source colors
+        static let iOSCalendar = Color(red: 255/255, green: 107/255, blue: 107/255) // #FF6B6B
+        static let googleCalendar = Color(red: 244/255, green: 180/255, blue: 0/255) // #F4B400
+        static let outlookCalendar = Color(red: 0/255, green: 120/255, blue: 212/255) // #0078D4
+
+        static func forCalendarSource(_ source: CalendarSource) -> Color {
+            switch source {
+            case .ios: return iOSCalendar
+            case .google: return googleCalendar
+            case .outlook: return outlookCalendar
+            }
+        }
+    }
 }
 
 // MARK: - Shadow Style

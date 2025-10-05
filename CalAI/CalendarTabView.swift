@@ -16,6 +16,8 @@ struct CalendarTabView: View {
     @State private var currentViewType: CalendarViewType = .day
     @State private var showingDatePicker = false
 
+    private let eventFilterService = EventFilterService()
+
     var body: some View {
         ZStack {
             // Transparent background to show main gradient
@@ -128,18 +130,7 @@ struct CalendarTabView: View {
     }
 
     private func unifiedEventsForDate(_ date: Date) -> [UnifiedEvent] {
-        let calendar = Calendar.current
-        return calendarManager.unifiedEvents.filter { event in
-            if event.isAllDay {
-                // For all-day events, check if this day is within the event's date range
-                let eventStartDay = calendar.startOfDay(for: event.startDate)
-                let eventEndDay = calendar.startOfDay(for: event.endDate)
-                let selectedDay = calendar.startOfDay(for: date)
-                return selectedDay >= eventStartDay && selectedDay <= eventEndDay
-            } else {
-                return calendar.isDate(event.startDate, inSameDayAs: date)
-            }
-        }
+        return eventFilterService.filterUnifiedEvents(calendarManager.unifiedEvents, for: date)
     }
 }
 
@@ -1049,6 +1040,7 @@ struct WeekViewWithCompressedTimeline: View {
     @ObservedObject var calendarManager: CalendarManager
 
     private let calendar = Calendar.current
+    private let eventFilterService = EventFilterService()
     @State private var dragTargetDay: Date? = nil // Track which day is being targeted by drag
     @State private var swipeDragOffset: CGFloat = 0 // Unified drag offset for both header and timeline
     @State private var isDragging = false
@@ -1375,32 +1367,14 @@ struct WeekViewWithCompressedTimeline: View {
 
     // Filter events for a specific date
     private func eventsForDate(_ date: Date) -> [UnifiedEvent] {
-        return events.filter { event in
-            if event.isAllDay {
-                // For all-day events, check if this day is within the event's date range
-                let eventStartDay = calendar.startOfDay(for: event.startDate)
-                let eventEndDay = calendar.startOfDay(for: event.endDate)
-                let selectedDay = calendar.startOfDay(for: date)
-                return selectedDay >= eventStartDay && selectedDay <= eventEndDay
-            } else {
-                // For timed events, use the same logic as Events tab
-                return calendar.isDate(event.startDate, inSameDayAs: date)
-            }
-        }
+        return eventFilterService.filterUnifiedEvents(events, for: date)
     }
 }
 
-// MARK: - Calendar Source Colors
-
+// MARK: - Calendar Source Colors (Deprecated - Use DesignSystem.Colors.forCalendarSource)
+// Kept for backward compatibility, delegates to DesignSystem
 func colorForCalendarSource(_ source: CalendarSource) -> Color {
-    switch source {
-    case .ios:
-        return Color(red: 255/255, green: 107/255, blue: 107/255) // #FF6B6B
-    case .google:
-        return Color(red: 244/255, green: 180/255, blue: 0/255) // #F4B400
-    case .outlook:
-        return Color(red: 0/255, green: 120/255, blue: 212/255) // #0078D4
-    }
+    return DesignSystem.Colors.forCalendarSource(source)
 }
 
 // MARK: - Compressed Day Timeline Implementation
@@ -1497,6 +1471,7 @@ struct CompressedDayTimelineView: View {
     @State private var expandedGaps: Set<UUID> = []
     @State private var currentTime = Date()
     @State private var allDayEvents_internal: [ClampedEvent] = []
+    @State private var currentTimeTimer: Timer?
 
     private let hourLabelWidth: CGFloat = 60
     private let calendar: Calendar = {
@@ -1504,6 +1479,7 @@ struct CompressedDayTimelineView: View {
         cal.timeZone = TimeZone.current
         return cal
     }()
+    private let eventFilterService = EventFilterService()
 
     init(date: Date, events: [CalendarEvent], fontManager: FontManager,
          pxPerMinute: CGFloat = 1.0, gapCollapseThresholdMin: Int = 30, collapsedGapHeight: CGFloat = 48,
@@ -1555,6 +1531,9 @@ struct CompressedDayTimelineView: View {
         .onAppear {
             buildSegments()
             startTimeTimer()
+        }
+        .onDisappear {
+            stopTimeTimer()
         }
         .onChange(of: date) { _ in
             // Clear ALL state and rebuild completely
@@ -2166,11 +2145,7 @@ struct DraggableEventView: View {
     }
 
     private func colorForCalendarSource(_ source: CalendarSource) -> Color {
-        switch source {
-        case .ios: return Color(red: 255/255, green: 107/255, blue: 107/255) // #FF6B6B
-        case .google: return Color(red: 244/255, green: 180/255, blue: 0/255) // #F4B400
-        case .outlook: return Color(red: 0/255, green: 120/255, blue: 212/255) // #0078D4
-        }
+        return DesignSystem.Colors.forCalendarSource(source)
     }
 
     private func formatTime(_ date: Date) -> String {
@@ -2229,10 +2204,15 @@ struct DraggableEventView: View {
 
     private func startTimeTimer() {
         if isToday {
-            Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+            currentTimeTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
                 currentTime = Date()
             }
         }
+    }
+
+    private func stopTimeTimer() {
+        currentTimeTimer?.invalidate()
+        currentTimeTimer = nil
     }
 
     // MARK: - Helper Functions
@@ -2266,21 +2246,7 @@ struct DraggableEventView: View {
     /// Filter events to only include those relevant for the specific day
     /// Uses the EXACT same logic as the Events tab: calendar.isDate(event.startDate, inSameDayAs: date)
     private func filterEventsForDay(events: [CalendarEvent], dayStart: Date, dayEnd: Date) -> [CalendarEvent] {
-        return events.filter { event in
-            if event.isAllDay {
-                // For all-day events, check if this day is within the event's date range
-                // Multi-day all-day events should appear on each day they span
-                let eventStartDay = calendar.startOfDay(for: event.start)
-                let eventEndDay = calendar.startOfDay(for: event.end)
-                let selectedDay = dayStart
-
-                return selectedDay >= eventStartDay && selectedDay <= eventEndDay
-            } else {
-                // For timed events, use EXACTLY the same logic as Events tab
-                // This is the exact line from eventsForDate(_ date: Date) in the Events tab
-                return calendar.isDate(event.start, inSameDayAs: dayStart)
-            }
-        }
+        return eventFilterService.filterCalendarEvents(events, dayStart: dayStart, dayEnd: dayEnd)
     }
 
     /// Core function to build segments from events and day boundaries

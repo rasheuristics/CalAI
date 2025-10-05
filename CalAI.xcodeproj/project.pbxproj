@@ -57,6 +57,8 @@
 		E19B7AB0C1854764084F7BC1CDE1E0F37 /* FontManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF423B70491E4DA49A127ADF0748A67E /* FontManager.swift */; };
 		E19B7AB0C1854764084F7BC1CDE1E0F38 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF423B70491E4DA49A127ADF0748A67F /* HapticManager.swift */; };
 		E19B7AB0C1854764084F7BC1CDE1E0F39 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF423B70491E4DA49A127ADF0748A680 /* DesignSystem.swift */; };
+		E19B7AB0C1854764084F7BC1CDE1E0F40 /* GestureHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF423B70491E4DA49A127ADF0748A681 /* GestureHandler.swift */; };
+		E19B7AB0C1854764084F7BC1CDE1E0F41 /* EventFilterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF423B70491E4DA49A127ADF0748A682 /* EventFilterService.swift */; };
 		EC53F5003F3842A6BE0E1AA3 /* CalendarSyncStatus+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D51096E4254421FB0650F02 /* CalendarSyncStatus+CoreDataClass.swift */; };
 		PYTO2L0DI6L5VO0LRWLD62LI /* CrossDeviceSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B9DY4NXHUMP8VJQ7UPL2TLQ /* CrossDeviceSyncManager.swift */; };
 /* End PBXBuildFile section */
@@ -101,6 +103,8 @@
 		BF423B70491E4DA49A127ADF0748A67E /* FontManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FontManager.swift; sourceTree = "<group>"; };
 		BF423B70491E4DA49A127ADF0748A67F /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
 		BF423B70491E4DA49A127ADF0748A680 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		BF423B70491E4DA49A127ADF0748A681 /* GestureHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureHandler.swift; sourceTree = "<group>"; };
+		BF423B70491E4DA49A127ADF0748A682 /* EventFilterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventFilterService.swift; sourceTree = "<group>"; };
 		C83CFAD08A20B4CCE575C9CE /* Services/SmartNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/SmartNotificationManager.swift; sourceTree = "<group>"; };
 		CD0F1CE4910EF893F2C790B2 /* Services/MeetingAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MeetingAnalyzer.swift; sourceTree = "<group>"; };
 		D83DAE93130B4923AE799767 /* ConflictResolutionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConflictResolutionManager.swift; sourceTree = "<group>"; };
@@ -169,6 +173,8 @@
 				BF423B70491E4DA49A127ADF0748A67E /* FontManager.swift */,
 				BF423B70491E4DA49A127ADF0748A67F /* HapticManager.swift */,
 				BF423B70491E4DA49A127ADF0748A680 /* DesignSystem.swift */,
+				BF423B70491E4DA49A127ADF0748A681 /* GestureHandler.swift */,
+				BF423B70491E4DA49A127ADF0748A682 /* EventFilterService.swift */,
 				APPEARANCE001234567890DEF /* AppearanceManager.swift */,
 				50745CA32E7CA8C9004D0243 /* CalendarManager.swift */,
 				50745CA52E7CA8D9004D0243 /* VoiceManager.swift */,
@@ -318,6 +324,8 @@
 				E19B7AB0C1854764084F7BC1CDE1E0F37 /* FontManager.swift in Sources */,
 				E19B7AB0C1854764084F7BC1CDE1E0F38 /* HapticManager.swift in Sources */,
 				E19B7AB0C1854764084F7BC1CDE1E0F39 /* DesignSystem.swift in Sources */,
+				E19B7AB0C1854764084F7BC1CDE1E0F40 /* GestureHandler.swift in Sources */,
+				E19B7AB0C1854764084F7BC1CDE1E0F41 /* EventFilterService.swift in Sources */,
 				APPEARANCE001234567890ABC /* AppearanceManager.swift in Sources */,
 				CA4F6786322C4F9D884CB41B /* CoreDataManager.swift in Sources */,
 				82E1EC0082914E87A8ED4417 /* SyncManager.swift in Sources */,
