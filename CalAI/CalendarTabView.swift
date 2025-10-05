@@ -23,6 +23,21 @@ struct CalendarTabView: View {
                 .ignoresSafeArea(.all)
 
             VStack(spacing: 0) {
+                // Error banner (if present)
+                if let error = calendarManager.errorState {
+                    ErrorBannerView(
+                        error: error,
+                        onRetry: {
+                            calendarManager.retryLastOperation()
+                        },
+                        onDismiss: {
+                            calendarManager.dismissError()
+                        }
+                    )
+                    .zIndex(1)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: calendarManager.errorState)
+                }
+
                 // Native iOS Calendar Header
                 iOSCalendarHeader(
                     selectedDate: $selectedDate,
@@ -46,7 +61,8 @@ struct CalendarTabView: View {
                         WeekViewWithCompressedTimeline(
                             selectedDate: $selectedDate,
                             events: calendarManager.unifiedEvents,
-                            fontManager: fontManager
+                            fontManager: fontManager,
+                            calendarManager: calendarManager
                         )
                     case .month:
                         MonthCalendarView(selectedDate: $selectedDate)
@@ -998,6 +1014,7 @@ struct WeekViewWithCompressedTimeline: View {
     @Binding var selectedDate: Date
     let events: [UnifiedEvent]
     @ObservedObject var fontManager: FontManager
+    @ObservedObject var calendarManager: CalendarManager
 
     private let calendar = Calendar.current
     @State private var dragTargetDay: Date? = nil // Track which day is being targeted by drag
@@ -1062,8 +1079,10 @@ struct WeekViewWithCompressedTimeline: View {
                 .id("\(nextDay.timeIntervalSince1970)")
                 .offset(x: UIScreen.main.bounds.width + swipeDragOffset)
             }
-            .onChange(of: selectedDate) { _ in
+            .onChange(of: selectedDate) { newDate in
                 // Force timeline rebuild when date changes
+                // Trigger lazy loading if approaching date boundaries
+                calendarManager.loadAdditionalMonthsIfNeeded(for: newDate)
             }
         }
         .simultaneousGesture(
@@ -1103,38 +1122,44 @@ struct WeekViewWithCompressedTimeline: View {
             // Passed midpoint - smoothly complete the transition
             if translation > 0 {
                 // Swiped right - slide to previous day
-                // Animate the current page sliding off to the right and new page sliding in from left
-                withAnimation(.spring(response: 0.6, dampingFraction: 0.8, blendDuration: 0)) {
+                // First half: animate current page sliding off
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0)) {
                     swipeDragOffset = screenWidth
                 }
 
-                // Update the date and reset offset after animation completes (without animation)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                // Mid-animation: update date (this triggers new page to appear)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     if let newDate = calendar.date(byAdding: .day, value: -1, to: selectedDate) {
                         selectedDate = newDate
                     }
-                    // Reset offset instantly (no animation) so new page appears in center
-                    swipeDragOffset = 0
+
+                    // Second half: animate new page sliding into center
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0)) {
+                        swipeDragOffset = 0
+                    }
                 }
             } else {
                 // Swiped left - slide to next day
-                // Animate the current page sliding off to the left and new page sliding in from right
-                withAnimation(.spring(response: 0.6, dampingFraction: 0.8, blendDuration: 0)) {
+                // First half: animate current page sliding off
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0)) {
                     swipeDragOffset = -screenWidth
                 }
 
-                // Update the date and reset offset after animation completes (without animation)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                // Mid-animation: update date (this triggers new page to appear)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     if let newDate = calendar.date(byAdding: .day, value: 1, to: selectedDate) {
                         selectedDate = newDate
                     }
-                    // Reset offset instantly (no animation) so new page appears in center
-                    swipeDragOffset = 0
+
+                    // Second half: animate new page sliding into center
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0)) {
+                        swipeDragOffset = 0
+                    }
                 }
             }
         } else {
             // Didn't pass threshold - slide back to current day
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.8, blendDuration: 0)) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85, blendDuration: 0)) {
                 swipeDragOffset = 0
             }
         }

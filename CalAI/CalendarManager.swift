@@ -49,9 +49,18 @@ class CalendarManager: ObservableObject {
     @Published var unifiedEvents: [UnifiedEvent] = []
     @Published var hasCalendarAccess = false
 
-    // Configurable date range for loading events (in months)
-    @Published var monthsBackToLoad: Int = 6  // Load 6 months in the past
-    @Published var monthsForwardToLoad: Int = 12  // Load 12 months in the future
+    // Error and loading states
+    @Published var errorState: AppError?
+    @Published var isLoading: Bool = false
+    @Published var lastSyncDate: Date?
+
+    // Lazy loading configuration
+    @Published var monthsBackToLoad: Int = 3  // Initial load: 3 months back
+    @Published var monthsForwardToLoad: Int = 3  // Initial load: 3 months forward
+
+    // Track loaded date ranges to avoid duplicate fetching
+    private var loadedRanges: Set<DateInterval> = []
+    private let maxCachedMonths: Int = 12  // Maximum months to keep in memory
 
     let eventStore = EKEventStore()
     private let coreDataManager = CoreDataManager.shared
@@ -256,28 +265,172 @@ class CalendarManager: ObservableObject {
 
     func loadEvents() {
         print("📅 loadEvents called, hasCalendarAccess: \(hasCalendarAccess)")
+
         guard hasCalendarAccess else {
             print("❌ No calendar access, cannot load events")
+            DispatchQueue.main.async {
+                self.errorState = .calendarAccessDenied
+                self.isLoading = false
+            }
             return
+        }
+
+        DispatchQueue.main.async {
+            self.isLoading = true
+            self.errorState = nil
         }
 
         let calendar = Calendar.current
         let startDate = calendar.date(byAdding: .month, value: -monthsBackToLoad, to: Date()) ?? Date()
         let endDate = calendar.date(byAdding: .month, value: monthsForwardToLoad, to: Date()) ?? Date()
 
+        loadEventsInRange(startDate: startDate, endDate: endDate)
+    }
+
+    /// Load events for a specific date range and track it
+    func loadEventsInRange(startDate: Date, endDate: Date) {
+        guard hasCalendarAccess else {
+            DispatchQueue.main.async {
+                self.errorState = .calendarAccessDenied
+                self.isLoading = false
+            }
+            return
+        }
+
+        // Check if this range is already loaded
+        let requestedRange = DateInterval(start: startDate, end: endDate)
+        if isRangeLoaded(requestedRange) {
+            print("📅 Range already loaded, skipping: \(startDate) to \(endDate)")
+            DispatchQueue.main.async {
+                self.isLoading = false
+            }
+            return
+        }
+
         print("📅 Loading iOS events from \(startDate) to \(endDate)")
         print("📅 Date range: \(monthsBackToLoad) months back, \(monthsForwardToLoad) months forward")
 
-        let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: nil)
-        let fetchedEvents = eventStore.events(matching: predicate)
+        do {
+            let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: nil)
+            let fetchedEvents = eventStore.events(matching: predicate)
 
-        print("📅 Found \(fetchedEvents.count) iOS Calendar events")
+            print("📅 Found \(fetchedEvents.count) iOS Calendar events in range")
 
-        DispatchQueue.main.async {
-            self.events = fetchedEvents.sorted { $0.startDate < $1.startDate }
-            print("📅 Sorted \(self.events.count) iOS events, now loading unified events")
-            self.loadAllUnifiedEvents()
+            DispatchQueue.main.async {
+                // Mark range as loaded
+                self.loadedRanges.insert(requestedRange)
+
+                // Merge new events with existing ones (avoid duplicates)
+                let newEvents = fetchedEvents.filter { newEvent in
+                    !self.events.contains { $0.eventIdentifier == newEvent.eventIdentifier }
+                }
+
+                self.events.append(contentsOf: newEvents)
+                self.events.sort { $0.startDate < $1.startDate }
+
+                print("📅 Added \(newEvents.count) new events, total: \(self.events.count)")
+
+                // Perform cache eviction if needed
+                self.evictOldEventsIfNeeded()
+
+                // Reload unified events
+                self.loadAllUnifiedEvents()
+
+                // Update success state
+                self.lastSyncDate = Date()
+                self.isLoading = false
+                self.errorState = nil
+            }
+        } catch {
+            print("❌ Error loading events: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                self.errorState = .failedToLoadEvents(error)
+                self.isLoading = false
+            }
         }
+    }
+
+    /// Check if a date range is already loaded
+    private func isRangeLoaded(_ range: DateInterval) -> Bool {
+        // Check if the requested range overlaps significantly with any loaded range
+        for loadedRange in loadedRanges {
+            if loadedRange.contains(range.start) && loadedRange.contains(range.end) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Load additional months when user navigates to dates outside current range
+    func loadAdditionalMonthsIfNeeded(for date: Date) {
+        let calendar = Calendar.current
+
+        // Calculate the currently loaded date range
+        guard let currentStart = calendar.date(byAdding: .month, value: -monthsBackToLoad, to: Date()),
+              let currentEnd = calendar.date(byAdding: .month, value: monthsForwardToLoad, to: Date()) else {
+            return
+        }
+
+        // Check if the requested date is near the boundaries
+        let threshold: TimeInterval = 7 * 24 * 60 * 60 // 1 week threshold
+
+        if date < currentStart.addingTimeInterval(threshold) {
+            // User is near the past boundary - load 3 more months back
+            print("📅 Loading additional months in the past")
+            if let newStart = calendar.date(byAdding: .month, value: -3, to: currentStart) {
+                loadEventsInRange(startDate: newStart, endDate: currentStart)
+            }
+        } else if date > currentEnd.addingTimeInterval(-threshold) {
+            // User is near the future boundary - load 3 more months forward
+            print("📅 Loading additional months in the future")
+            if let newEnd = calendar.date(byAdding: .month, value: 3, to: currentEnd) {
+                loadEventsInRange(startDate: currentEnd, endDate: newEnd)
+            }
+        }
+    }
+
+    /// Retry the last failed operation
+    func retryLastOperation() {
+        print("🔄 Retrying last failed operation")
+        errorState = nil
+        loadEvents()
+    }
+
+    /// Clear error state
+    func dismissError() {
+        errorState = nil
+    }
+
+    /// Evict old events from memory if cache exceeds maximum size
+    private func evictOldEventsIfNeeded() {
+        guard loadedRanges.count > maxCachedMonths else { return }
+
+        print("🗑️ Cache exceeds \(maxCachedMonths) months, evicting old events")
+
+        let calendar = Calendar.current
+        let now = Date()
+
+        // Calculate the retention window (keep events within maxCachedMonths/2 on each side of today)
+        let halfWindow = maxCachedMonths / 2
+        guard let retentionStart = calendar.date(byAdding: .month, value: -halfWindow, to: now),
+              let retentionEnd = calendar.date(byAdding: .month, value: halfWindow, to: now) else {
+            return
+        }
+
+        // Remove events outside retention window
+        let evictedCount = events.count
+        events = events.filter { event in
+            event.startDate >= retentionStart && event.startDate <= retentionEnd
+        }
+
+        print("🗑️ Evicted \(evictedCount - events.count) old events, \(events.count) remaining")
+
+        // Clean up loaded ranges outside retention window
+        loadedRanges = loadedRanges.filter { range in
+            range.end >= retentionStart && range.start <= retentionEnd
+        }
+
+        print("🗑️ Cleaned up loaded ranges, \(loadedRanges.count) ranges remaining")
     }
 
     func loadAllUnifiedEvents() {
