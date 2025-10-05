@@ -271,6 +271,7 @@ class CalendarManager: ObservableObject {
             DispatchQueue.main.async {
                 self.errorState = .calendarAccessDenied
                 self.isLoading = false
+                HapticManager.shared.error()
             }
             return
         }
@@ -293,6 +294,7 @@ class CalendarManager: ObservableObject {
             DispatchQueue.main.async {
                 self.errorState = .calendarAccessDenied
                 self.isLoading = false
+                HapticManager.shared.error()
             }
             return
         }
@@ -346,6 +348,7 @@ class CalendarManager: ObservableObject {
             DispatchQueue.main.async {
                 self.errorState = .failedToLoadEvents(error)
                 self.isLoading = false
+                HapticManager.shared.error()
             }
         }
     }
@@ -607,10 +610,6 @@ class CalendarManager: ObservableObject {
 
     var isSyncing: Bool {
         syncManager.isSyncing
-    }
-
-    var lastSyncDate: Date? {
-        syncManager.lastSyncDate
     }
 
     var syncErrors: [SyncError] {

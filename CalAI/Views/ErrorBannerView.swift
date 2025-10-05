@@ -5,14 +5,20 @@ struct ErrorBannerView: View {
     let onRetry: () -> Void
     let onDismiss: () -> Void
 
+    private func openSettings() {
+        if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(settingsURL)
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
             HStack {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundColor(.white)
                     .font(.title3)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxs) {
                     Text(error.title)
                         .font(.headline)
                         .foregroundColor(.white)
@@ -25,37 +31,74 @@ struct ErrorBannerView: View {
 
                 Spacer()
 
-                Button(action: onDismiss) {
+                Button(action: {
+                    HapticManager.shared.light()
+                    onDismiss()
+                }) {
                     Image(systemName: "xmark")
                         .foregroundColor(.white)
                         .font(.caption)
                 }
+                .accessibilityLabel("Dismiss error")
+                .accessibilityHint("Double tap to dismiss this error message")
             }
 
-            if error.isRetryable {
-                Button(action: onRetry) {
-                    HStack {
-                        Image(systemName: "arrow.clockwise")
-                        Text("Retry")
+            // Action buttons
+            HStack(spacing: DesignSystem.Spacing.sm) {
+                // Settings button for access denied errors
+                if case .calendarAccessDenied = error {
+                    Button(action: {
+                        HapticManager.shared.medium()
+                        openSettings()
+                    }) {
+                        HStack {
+                            Image(systemName: "gearshape.fill")
+                            Text("Open Settings")
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, DesignSystem.Spacing.md)
+                        .padding(.vertical, DesignSystem.Spacing.xs)
+                        .background(Color.white.opacity(0.2))
+                        .cornerRadius(DesignSystem.CornerRadius.sm)
                     }
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.2))
-                    .cornerRadius(8)
+                    .accessibilityLabel("Open Settings")
+                    .accessibilityHint("Double tap to open app settings")
+                }
+
+                // Retry button for retryable errors
+                if error.isRetryable {
+                    Button(action: {
+                        HapticManager.shared.medium()
+                        onRetry()
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Retry")
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, DesignSystem.Spacing.md)
+                        .padding(.vertical, DesignSystem.Spacing.xs)
+                        .background(Color.white.opacity(0.2))
+                        .cornerRadius(DesignSystem.CornerRadius.sm)
+                    }
+                    .accessibilityLabel("Retry")
+                    .accessibilityHint("Double tap to retry the failed operation")
                 }
             }
         }
-        .padding(16)
+        .padding(DesignSystem.Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.red.gradient)
+            RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.md)
+                .fill(LinearGradient(gradient: Gradient(colors: [Color.red, Color.red.opacity(0.8)]), startPoint: .topLeading, endPoint: .bottomTrailing))
         )
-        .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
-        .padding(.horizontal, 16)
+        .designSystemShadow(DesignSystem.Shadow.error)
+        .padding(.horizontal, DesignSystem.Spacing.md)
         .transition(.move(edge: .top).combined(with: .opacity))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Error: \(error.title)")
+        .accessibilityValue(error.message)
     }
 }
 

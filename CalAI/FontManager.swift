@@ -45,4 +45,10 @@ extension View {
     func dynamicFont(size: CGFloat, weight: Font.Weight = .regular, fontManager: FontManager) -> some View {
         self.font(fontManager.scaledSystemFont(size: size, weight: weight))
     }
+
+    // Support iOS Dynamic Type with custom sizes
+    func accessibleFont(size: CGFloat, weight: Font.Weight = .regular, relativeTo textStyle: Font.TextStyle = .body) -> some View {
+        self.font(.system(size: size, weight: weight, design: .default))
+            .dynamicTypeSize(.large ... .accessibility3)
+    }
 }

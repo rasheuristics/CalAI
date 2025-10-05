@@ -41,15 +41,19 @@ enum AppError: Identifiable, Equatable {
     var message: String {
         switch self {
         case .calendarAccessDenied:
-            return "Please grant calendar access in Settings to view your events."
+            return "Grant calendar permissions in Settings → CalAI → Calendars to view your events."
         case .failedToLoadEvents(let error):
-            return "Unable to load your calendar events. \(error.localizedDescription)"
+            let description = error.localizedDescription
+            return "Unable to load calendar events. Try refreshing or check your calendar permissions.\n\nDetails: \(description)"
         case .failedToSyncCalendar(let source, let error):
-            return "Unable to sync with \(source) Calendar. \(error.localizedDescription)"
+            let description = error.localizedDescription
+            return "Can't sync with \(source). Check your account connection in Settings.\n\nDetails: \(description)"
         case .networkError(let error):
-            return "Network connection issue. Please check your internet connection. \(error.localizedDescription)"
+            let description = error.localizedDescription
+            return "No internet connection. Connect to Wi-Fi or cellular data and try again.\n\nDetails: \(description)"
         case .unknownError(let error):
-            return "An unexpected error occurred. \(error.localizedDescription)"
+            let description = error.localizedDescription
+            return "Something unexpected happened. Try restarting the app.\n\nDetails: \(description)"
         }
     }
 

@@ -48,35 +48,49 @@ struct CalendarTabView: View {
 
                 // Main calendar content
                 Group {
-                    switch currentViewType {
-                    case .day:
-                        CompressedDayTimelineView(
-                            date: selectedDate, // Show selected day
-                            events: unifiedEventsForDate(selectedDate).map { TimelineEvent(from: $0) },
-                            fontManager: fontManager,
-                            isWeekView: false
-                        )
-                        .id("\(selectedDate.timeIntervalSince1970)") // Force recreation on date change
-                    case .week:
-                        WeekViewWithCompressedTimeline(
-                            selectedDate: $selectedDate,
-                            events: calendarManager.unifiedEvents,
-                            fontManager: fontManager,
-                            calendarManager: calendarManager
-                        )
-                    case .month:
-                        MonthCalendarView(selectedDate: $selectedDate)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    case .year:
-                        iOSYearView(
-                            selectedDate: $selectedDate,
-                            fontManager: fontManager,
-                            appearanceManager: appearanceManager,
-                            onMonthDoubleClick: { month in
-                                selectedDate = month
-                                currentViewType = .month
+                    if calendarManager.isLoading && calendarManager.unifiedEvents.isEmpty {
+                        // Show loading skeleton when initially loading
+                        LoadingSkeletonView()
+                    } else {
+                        switch currentViewType {
+                        case .day:
+                            let dayEvents = unifiedEventsForDate(selectedDate)
+                            if dayEvents.isEmpty && !calendarManager.isLoading {
+                                EmptyStateView(
+                                    icon: "calendar",
+                                    title: isToday(selectedDate) ? "No Events Today" : "No Events",
+                                    message: isToday(selectedDate) ? "Your calendar is clear for today." : "No events scheduled for this day."
+                                )
+                            } else {
+                                CompressedDayTimelineView(
+                                    date: selectedDate, // Show selected day
+                                    events: dayEvents.map { TimelineEvent(from: $0) },
+                                    fontManager: fontManager,
+                                    isWeekView: false
+                                )
+                                .id("\(selectedDate.timeIntervalSince1970)") // Force recreation on date change
                             }
-                        )
+                        case .week:
+                            WeekViewWithCompressedTimeline(
+                                selectedDate: $selectedDate,
+                                events: calendarManager.unifiedEvents,
+                                fontManager: fontManager,
+                                calendarManager: calendarManager
+                            )
+                        case .month:
+                            MonthCalendarView(selectedDate: $selectedDate)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        case .year:
+                            iOSYearView(
+                                selectedDate: $selectedDate,
+                                fontManager: fontManager,
+                                appearanceManager: appearanceManager,
+                                onMonthDoubleClick: { month in
+                                    selectedDate = month
+                                    currentViewType = .month
+                                }
+                            )
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -109,6 +123,10 @@ struct CalendarTabView: View {
     private let calendar = Calendar.current
 
     // MARK: - Helper Functions
+    private func isToday(_ date: Date) -> Bool {
+        calendar.isDateInToday(date)
+    }
+
     private func unifiedEventsForDate(_ date: Date) -> [UnifiedEvent] {
         let calendar = Calendar.current
         return calendarManager.unifiedEvents.filter { event in
@@ -137,18 +155,26 @@ struct iOSCalendarHeader: View {
             // Top bar with month/year and view switcher - exact iOS layout
             HStack {
                 // Month/Year button (tappable like iOS)
-                Button(action: { showingDatePicker = true }) {
+                Button(action: {
+                    HapticManager.shared.light()
+                    showingDatePicker = true
+                }) {
                     Text(monthYearText)
                         .scaledFont(.title3, fontManager: fontManager)
                         .foregroundColor(.primary)
                 }
+                .accessibilityLabel("Current date: \(monthYearText)")
+                .accessibilityHint("Double tap to open date picker")
 
                 Spacer()
 
                 // View switcher - exact iOS style
                 HStack(spacing: 0) {
                     ForEach(CalendarViewType.allCases, id: \.self) { viewType in
-                        Button(action: { currentViewType = viewType }) {
+                        Button(action: {
+                            HapticManager.shared.selection()
+                            currentViewType = viewType
+                        }) {
                             Text(viewType.rawValue.first?.uppercased() ?? "")
                                 .scaledFont(.footnote, fontManager: fontManager)
                                 .frame(width: 32, height: 32)
@@ -158,6 +184,9 @@ struct iOSCalendarHeader: View {
                                 )
                                 .foregroundColor(currentViewType == viewType ? .white : .blue)
                         }
+                        .accessibilityLabel("\(viewType.rawValue) view")
+                        .accessibilityHint("Switch to \(viewType.rawValue) calendar view")
+                        .accessibilityAddTraits(currentViewType == viewType ? .isSelected : [])
                     }
                 }
                 .background(
@@ -172,12 +201,15 @@ struct iOSCalendarHeader: View {
             // Navigation bar with Today button and arrows (hide arrows in week view)
             HStack {
                 Button("Today") {
+                    HapticManager.shared.medium()
                     withAnimation(.easeInOut(duration: 0.3)) {
                         selectedDate = Date()
                     }
                 }
                 .scaledFont(.callout, fontManager: fontManager)
                 .foregroundColor(.red)
+                .accessibilityLabel("Today")
+                .accessibilityHint("Jump to today's date")
 
                 Spacer()
 
@@ -1020,6 +1052,15 @@ struct WeekViewWithCompressedTimeline: View {
     @State private var dragTargetDay: Date? = nil // Track which day is being targeted by drag
     @State private var swipeDragOffset: CGFloat = 0 // Unified drag offset for both header and timeline
     @State private var isDragging = false
+    @State private var gestureDirection: GestureDirection = .none
+    @State private var isTransitioning = false // Prevent rapid swipes during transition
+    @State private var swipeProgress: CGFloat = 0 // 0 to 1 progress for visual feedback
+
+    enum GestureDirection {
+        case none
+        case horizontal
+        case vertical
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1058,6 +1099,7 @@ struct WeekViewWithCompressedTimeline: View {
                 )
                 .id("\(previousDay.timeIntervalSince1970)")
                 .offset(x: -UIScreen.main.bounds.width + swipeDragOffset)
+                .opacity(swipeDragOffset > 0 ? 0.3 + (swipeProgress * 0.7) : 1.0)
 
                 // Current day timeline
                 CompressedDayTimelineView(
@@ -1068,6 +1110,7 @@ struct WeekViewWithCompressedTimeline: View {
                 )
                 .id("\(selectedDate.timeIntervalSince1970)")
                 .offset(x: swipeDragOffset)
+                .scaleEffect(1.0 - (swipeProgress * 0.05)) // Subtle scale effect
 
                 // Next day timeline
                 CompressedDayTimelineView(
@@ -1078,6 +1121,7 @@ struct WeekViewWithCompressedTimeline: View {
                 )
                 .id("\(nextDay.timeIntervalSince1970)")
                 .offset(x: UIScreen.main.bounds.width + swipeDragOffset)
+                .opacity(swipeDragOffset < 0 ? 0.3 + (swipeProgress * 0.7) : 1.0)
             }
             .onChange(of: selectedDate) { newDate in
                 // Force timeline rebuild when date changes
@@ -1086,26 +1130,54 @@ struct WeekViewWithCompressedTimeline: View {
             }
         }
         .simultaneousGesture(
-            DragGesture(minimumDistance: 30)
+            DragGesture(minimumDistance: 20)
                 .onChanged { value in
-                    // Only trigger horizontal swipe if drag is more horizontal than vertical
+                    // Prevent gestures during transitions
+                    guard !isTransitioning else { return }
+
                     let horizontalAmount = abs(value.translation.width)
                     let verticalAmount = abs(value.translation.height)
 
-                    if horizontalAmount > verticalAmount && horizontalAmount > 30 {
+                    // Determine gesture direction on first movement
+                    if gestureDirection == .none && (horizontalAmount > 10 || verticalAmount > 10) {
+                        gestureDirection = horizontalAmount > verticalAmount ? .horizontal : .vertical
+                    }
+
+                    // Only process horizontal swipes
+                    if gestureDirection == .horizontal && horizontalAmount > 20 {
                         isDragging = true
-                        swipeDragOffset = value.translation.width
+
+                        // Apply rubber-band effect at extremes (dampen beyond full screen width)
+                        let screenWidth = UIScreen.main.bounds.width
+                        let rawOffset = value.translation.width
+                        let dampingFactor: CGFloat = 0.3 // Resistance beyond screen width
+
+                        if abs(rawOffset) > screenWidth {
+                            // Apply damping for over-scroll
+                            let excess = abs(rawOffset) - screenWidth
+                            let dampedExcess = excess * dampingFactor
+                            swipeDragOffset = rawOffset > 0 ? screenWidth + dampedExcess : -(screenWidth + dampedExcess)
+                        } else {
+                            swipeDragOffset = rawOffset
+                        }
+
+                        // Calculate progress (0 to 1) based on distance to threshold
+                        let threshold = screenWidth / 2
+                        swipeProgress = min(abs(value.translation.width) / threshold, 1.0)
                     }
                 }
                 .onEnded { value in
-                    let horizontalAmount = abs(value.translation.width)
-                    let verticalAmount = abs(value.translation.height)
+                    guard !isTransitioning else { return }
 
-                    if horizontalAmount > verticalAmount {
-                        handleSwipeDragEnd(translation: value.translation.width)
+                    if gestureDirection == .horizontal {
+                        handleSwipeDragEnd(translation: value.translation.width, predictedEndTranslation: value.predictedEndTranslation.width)
                     }
+
+                    // Reset gesture state
                     isDragging = false
                     swipeDragOffset = 0
+                    swipeProgress = 0
+                    gestureDirection = .none
                 }
         )
         .animation(.interactiveSpring(response: 0.5, dampingFraction: 0.8), value: swipeDragOffset)
@@ -1114,12 +1186,22 @@ struct WeekViewWithCompressedTimeline: View {
         }
     }
 
-    private func handleSwipeDragEnd(translation: CGFloat) {
+    private func handleSwipeDragEnd(translation: CGFloat, predictedEndTranslation: CGFloat) {
         let screenWidth = UIScreen.main.bounds.width
-        let threshold = screenWidth / 2 // Midpoint of screen
+        let distanceThreshold = screenWidth / 2 // Midpoint of screen
 
-        if abs(translation) > threshold {
-            // Passed midpoint - smoothly complete the transition
+        // Calculate velocity from predicted end translation
+        let velocity = abs(predictedEndTranslation - translation)
+        let velocityThreshold: CGFloat = 100 // Points per second threshold
+
+        // Quick swipe with high velocity requires less distance
+        let isQuickSwipe = velocity > velocityThreshold
+        let effectiveThreshold = isQuickSwipe ? screenWidth / 3 : distanceThreshold
+
+        if abs(translation) > effectiveThreshold {
+            // Passed threshold - smoothly complete the transition
+            isTransitioning = true
+            HapticManager.shared.light()
             if translation > 0 {
                 // Swiped right - slide to previous day
                 // First half: animate current page sliding off
@@ -1136,6 +1218,11 @@ struct WeekViewWithCompressedTimeline: View {
                     // Second half: animate new page sliding into center
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0)) {
                         swipeDragOffset = 0
+                    }
+
+                    // Re-enable gestures after transition
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        isTransitioning = false
                     }
                 }
             } else {
@@ -1155,12 +1242,23 @@ struct WeekViewWithCompressedTimeline: View {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0)) {
                         swipeDragOffset = 0
                     }
+
+                    // Re-enable gestures after transition
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        isTransitioning = false
+                    }
                 }
             }
         } else {
-            // Didn't pass threshold - slide back to current day
+            // Didn't pass threshold - slide back to current day with haptic feedback
+            HapticManager.shared.light()
             withAnimation(.spring(response: 0.4, dampingFraction: 0.85, blendDuration: 0)) {
                 swipeDragOffset = 0
+            }
+
+            // Reset transition flag after snap-back
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                isTransitioning = false
             }
         }
     }
