@@ -38,7 +38,8 @@ struct CalendarTabView: View {
                         CompressedDayTimelineView(
                             date: selectedDate, // Show selected day
                             events: unifiedEventsForDate(selectedDate).map { TimelineEvent(from: $0) },
-                            fontManager: fontManager
+                            fontManager: fontManager,
+                            isWeekView: false
                         )
                         .id("\(selectedDate.timeIntervalSince1970)") // Force recreation on date change
                     case .week:
@@ -152,7 +153,7 @@ struct iOSCalendarHeader: View {
             .padding(.horizontal, 16)
             .padding(.top, 8)
 
-            // Navigation bar with Today button and arrows - exact iOS style
+            // Navigation bar with Today button and arrows (hide arrows in week view)
             HStack {
                 Button("Today") {
                     withAnimation(.easeInOut(duration: 0.3)) {
@@ -164,17 +165,20 @@ struct iOSCalendarHeader: View {
 
                 Spacer()
 
-                HStack(spacing: 24) {
-                    Button(action: previousPeriod) {
-                        Image(systemName: "chevron.left")
-                            .scaledFont(.title2, fontManager: fontManager)
-                            .foregroundColor(.blue)
-                    }
+                // Only show arrows for Day, Month, and Year views (not Week)
+                if currentViewType != .week {
+                    HStack(spacing: 24) {
+                        Button(action: previousPeriod) {
+                            Image(systemName: "chevron.left")
+                                .scaledFont(.title2, fontManager: fontManager)
+                                .foregroundColor(.blue)
+                        }
 
-                    Button(action: nextPeriod) {
-                        Image(systemName: "chevron.right")
-                            .scaledFont(.title2, fontManager: fontManager)
-                            .foregroundColor(.blue)
+                        Button(action: nextPeriod) {
+                            Image(systemName: "chevron.right")
+                                .scaledFont(.title2, fontManager: fontManager)
+                                .foregroundColor(.blue)
+                        }
                     }
                 }
             }
@@ -515,7 +519,7 @@ struct iOSWeekView: View {
 
     private func dayOfWeekSymbol(for date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "E"
+        formatter.dateFormat = "EEEEE"
         return formatter.string(from: date).uppercased()
     }
 
@@ -996,47 +1000,182 @@ struct WeekViewWithCompressedTimeline: View {
     @ObservedObject var fontManager: FontManager
 
     private let calendar = Calendar.current
+    @State private var dragTargetDay: Date? = nil // Track which day is being targeted by drag
+    @State private var swipeDragOffset: CGFloat = 0 // Unified drag offset for both header and timeline
+    @State private var isDragging = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // Week day headers
-            HStack(spacing: 0) {
-                ForEach(weekDays, id: \.self) { day in
-                    VStack(spacing: 4) {
+            // Week day headers (stationary - no swipe movement)
+            VStack(spacing: 4) {
+                // Day names row (stationary)
+                HStack(spacing: 0) {
+                    ForEach(weekDays, id: \.self) { day in
                         Text(dayOfWeekSymbol(for: day))
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.secondary)
-
-                        Text("\(calendar.component(.day, from: day))")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(isSelected(day) ? .white : (isToday(day) ? .red : .primary))
-                            .frame(width: 28, height: 28)
-                            .background(
-                                Circle()
-                                    .fill(isSelected(day) ? Color.blue : (isToday(day) ? Color.red.opacity(0.1) : Color.clear))
-                            )
-                    }
-                    .frame(maxWidth: .infinity)
-                    .onTapGesture {
-                        selectedDate = day
+                            .frame(maxWidth: .infinity)
                     }
                 }
+
+                // Date numbers row (stationary)
+                HStack(spacing: 0) {
+                    ForEach(weekDays, id: \.self) { day in
+                        dateNumberView(for: day)
+                    }
+                }
+                .frame(height: 28)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .background(Color(.systemGray6))
 
-            // Selected day timeline
-            CompressedDayTimelineView(
-                date: selectedDate,
-                events: eventsForDate(selectedDate).map { TimelineEvent(from: $0) },
-                fontManager: fontManager
-            )
-            .id("\(selectedDate.timeIntervalSince1970)") // Force recreation
+            // Timeline carousel (3 days: prev, current, next)
+            ZStack {
+                // Previous day timeline
+                CompressedDayTimelineView(
+                    date: previousDay,
+                    events: eventsForDate(previousDay).map { TimelineEvent(from: $0) },
+                    fontManager: fontManager,
+                    isWeekView: true
+                )
+                .id("\(previousDay.timeIntervalSince1970)")
+                .offset(x: -UIScreen.main.bounds.width + swipeDragOffset)
+
+                // Current day timeline
+                CompressedDayTimelineView(
+                    date: selectedDate,
+                    events: eventsForDate(selectedDate).map { TimelineEvent(from: $0) },
+                    fontManager: fontManager,
+                    isWeekView: true
+                )
+                .id("\(selectedDate.timeIntervalSince1970)")
+                .offset(x: swipeDragOffset)
+
+                // Next day timeline
+                CompressedDayTimelineView(
+                    date: nextDay,
+                    events: eventsForDate(nextDay).map { TimelineEvent(from: $0) },
+                    fontManager: fontManager,
+                    isWeekView: true
+                )
+                .id("\(nextDay.timeIntervalSince1970)")
+                .offset(x: UIScreen.main.bounds.width + swipeDragOffset)
+            }
             .onChange(of: selectedDate) { _ in
                 // Force timeline rebuild when date changes
             }
         }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 30)
+                .onChanged { value in
+                    // Only trigger horizontal swipe if drag is more horizontal than vertical
+                    let horizontalAmount = abs(value.translation.width)
+                    let verticalAmount = abs(value.translation.height)
+
+                    if horizontalAmount > verticalAmount && horizontalAmount > 30 {
+                        isDragging = true
+                        swipeDragOffset = value.translation.width
+                    }
+                }
+                .onEnded { value in
+                    let horizontalAmount = abs(value.translation.width)
+                    let verticalAmount = abs(value.translation.height)
+
+                    if horizontalAmount > verticalAmount {
+                        handleSwipeDragEnd(translation: value.translation.width)
+                    }
+                    isDragging = false
+                    swipeDragOffset = 0
+                }
+        )
+        .animation(.interactiveSpring(response: 0.5, dampingFraction: 0.8), value: swipeDragOffset)
+        .onAppear {
+            setupDragListener()
+        }
+    }
+
+    private func handleSwipeDragEnd(translation: CGFloat) {
+        let screenWidth = UIScreen.main.bounds.width
+        let threshold = screenWidth / 2 // Midpoint of screen
+
+        if abs(translation) > threshold {
+            // Passed midpoint - smoothly complete the transition
+            if translation > 0 {
+                // Swiped right - slide to previous day
+                // Animate the current page sliding off to the right and new page sliding in from left
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.8, blendDuration: 0)) {
+                    swipeDragOffset = screenWidth
+                }
+
+                // Update the date and reset offset after animation completes (without animation)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    if let newDate = calendar.date(byAdding: .day, value: -1, to: selectedDate) {
+                        selectedDate = newDate
+                    }
+                    // Reset offset instantly (no animation) so new page appears in center
+                    swipeDragOffset = 0
+                }
+            } else {
+                // Swiped left - slide to next day
+                // Animate the current page sliding off to the left and new page sliding in from right
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.8, blendDuration: 0)) {
+                    swipeDragOffset = -screenWidth
+                }
+
+                // Update the date and reset offset after animation completes (without animation)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    if let newDate = calendar.date(byAdding: .day, value: 1, to: selectedDate) {
+                        selectedDate = newDate
+                    }
+                    // Reset offset instantly (no animation) so new page appears in center
+                    swipeDragOffset = 0
+                }
+            }
+        } else {
+            // Didn't pass threshold - slide back to current day
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.8, blendDuration: 0)) {
+                swipeDragOffset = 0
+            }
+        }
+    }
+
+    private func setupDragListener() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("WeekViewDragUpdate"),
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let dayChange = notification.userInfo?["dayChange"] as? Int {
+                // Calculate target day based on current selected date and day change
+                if let targetDay = calendar.date(byAdding: .day, value: dayChange, to: selectedDate) {
+                    dragTargetDay = targetDay
+                }
+            } else {
+                dragTargetDay = nil
+            }
+        }
+    }
+
+    private func isDragTarget(_ day: Date) -> Bool {
+        guard let dragTargetDay = dragTargetDay else { return false }
+        return calendar.isDate(day, inSameDayAs: dragTargetDay)
+    }
+
+    @ViewBuilder
+    private func dateNumberView(for day: Date) -> some View {
+        Text("\(calendar.component(.day, from: day))")
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundColor(isSelected(day) ? .white : (isToday(day) ? .red : .primary))
+            .frame(width: 28, height: 28)
+            .background(
+                Circle()
+                    .fill(isSelected(day) ? Color.blue : (isToday(day) ? Color.red.opacity(0.1) : Color.clear))
+            )
+            .frame(maxWidth: .infinity)
+            .onTapGesture {
+                selectedDate = day
+            }
     }
 
     private var weekDays: [Date] {
@@ -1055,9 +1194,51 @@ struct WeekViewWithCompressedTimeline: View {
         return dates
     }
 
+    private var previousWeekDays: [Date] {
+        guard let previousWeekDate = calendar.date(byAdding: .weekOfYear, value: -1, to: selectedDate),
+              let weekInterval = calendar.dateInterval(of: .weekOfYear, for: previousWeekDate) else {
+            return []
+        }
+
+        var dates: [Date] = []
+        var date = weekInterval.start
+
+        for _ in 0..<7 {
+            dates.append(date)
+            date = calendar.date(byAdding: .day, value: 1, to: date) ?? date
+        }
+
+        return dates
+    }
+
+    private var nextWeekDays: [Date] {
+        guard let nextWeekDate = calendar.date(byAdding: .weekOfYear, value: 1, to: selectedDate),
+              let weekInterval = calendar.dateInterval(of: .weekOfYear, for: nextWeekDate) else {
+            return []
+        }
+
+        var dates: [Date] = []
+        var date = weekInterval.start
+
+        for _ in 0..<7 {
+            dates.append(date)
+            date = calendar.date(byAdding: .day, value: 1, to: date) ?? date
+        }
+
+        return dates
+    }
+
+    private var previousDay: Date {
+        calendar.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
+    }
+
+    private var nextDay: Date {
+        calendar.date(byAdding: .day, value: 1, to: selectedDate) ?? selectedDate
+    }
+
     private func dayOfWeekSymbol(for date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "E"
+        formatter.dateFormat = "EEEEE"
         return formatter.string(from: date).uppercased()
     }
 
@@ -1091,11 +1272,11 @@ struct WeekViewWithCompressedTimeline: View {
 func colorForCalendarSource(_ source: CalendarSource) -> Color {
     switch source {
     case .ios:
-        return Color(red: 0/255, green: 122/255, blue: 255/255) // #007AFF - Apple's system blue
+        return Color(red: 255/255, green: 107/255, blue: 107/255) // #FF6B6B
     case .google:
-        return Color(red: 52/255, green: 168/255, blue: 83/255) // #34A853 - Google's brand green
+        return Color(red: 244/255, green: 180/255, blue: 0/255) // #F4B400
     case .outlook:
-        return Color(red: 255/255, green: 140/255, blue: 0/255) // #FF8C00 - Microsoft's Outlook orange
+        return Color(red: 0/255, green: 120/255, blue: 212/255) // #0078D4
     }
 }
 
@@ -1182,6 +1363,7 @@ struct CompressedDayTimelineView: View {
     let date: Date
     let events: [CalendarEvent]
     @ObservedObject var fontManager: FontManager
+    var isWeekView: Bool = false // New parameter to indicate week view mode
 
     // Tuning constants
     let pxPerMinute: CGFloat
@@ -1201,13 +1383,15 @@ struct CompressedDayTimelineView: View {
     }()
 
     init(date: Date, events: [CalendarEvent], fontManager: FontManager,
-         pxPerMinute: CGFloat = 1.0, gapCollapseThresholdMin: Int = 30, collapsedGapHeight: CGFloat = 48) {
+         pxPerMinute: CGFloat = 1.0, gapCollapseThresholdMin: Int = 30, collapsedGapHeight: CGFloat = 48,
+         isWeekView: Bool = false) {
         self.date = date
         self.events = events
         self.fontManager = fontManager
         self.pxPerMinute = pxPerMinute
         self.gapCollapseThresholdMin = gapCollapseThresholdMin
         self.collapsedGapHeight = collapsedGapHeight
+        self.isWeekView = isWeekView
     }
 
     var body: some View {
@@ -1273,7 +1457,7 @@ struct CompressedDayTimelineView: View {
             ForEach(Array(0...23), id: \.self) { hour in
                 HStack {
                     Text(formatTime(hourToDate(hour)))
-                        .dynamicFont(size: 12, fontManager: fontManager)
+                        .dynamicFont(size: 18, fontManager: fontManager)
                         .foregroundColor(.secondary)
                     Spacer()
                 }
@@ -1505,6 +1689,69 @@ struct CompressedDayTimelineView: View {
 
     @ViewBuilder
     private func eventView(event: CalendarEvent, lane: Int, width: CGFloat) -> some View {
+        DraggableEventView(
+            event: event,
+            lane: lane,
+            width: width,
+            pxPerMinute: pxPerMinute,
+            fontManager: fontManager,
+            isWeekView: isWeekView
+        )
+    }
+
+// MARK: - Draggable Event View
+struct DraggableEventView: View {
+    let event: CalendarEvent
+    let lane: Int
+    let width: CGFloat
+    let pxPerMinute: CGFloat
+    @ObservedObject var fontManager: FontManager
+    var isWeekView: Bool = false // New parameter for week view mode
+
+    @State private var dragOffset: CGFloat = 0
+    @State private var horizontalDragOffset: CGFloat = 0
+    @State private var isDragging = false
+    @State private var pressStartTime: Date?
+    @State private var longPressTimer: Timer?
+    @State private var isPressingDown = false
+    @State private var dragDirection: DragDirection = .undetermined
+    @State private var hasBeenMoved = false // Track if event was moved
+
+    enum DragDirection {
+        case undetermined
+        case vertical   // Time change
+        case horizontal // Day change (week view only)
+    }
+
+    // Calculate live preview times based on current drag
+    private var previewDates: (start: Date, end: Date) {
+        if isDragging && dragDirection == .vertical {
+            // Vertical drag - time change
+            let minutesPerPixel = 1.0 / pxPerMinute
+            let totalMinutes = dragOffset / pxPerMinute
+            let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+
+            let calendar = Calendar.current
+            let previewStart = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.start) ?? event.start
+            let previewEnd = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.end) ?? event.end
+            return (previewStart, previewEnd)
+        } else if isDragging && dragDirection == .horizontal && isWeekView {
+            // Horizontal drag - day change
+            let screenWidth = UIScreen.main.bounds.width
+            let dayWidth = screenWidth / 7.0
+            let dayChange = Int(round(horizontalDragOffset / dayWidth))
+
+            let calendar = Calendar.current
+            let previewStart = calendar.date(byAdding: .day, value: dayChange, to: event.start) ?? event.start
+            let previewEnd = calendar.date(byAdding: .day, value: dayChange, to: event.end) ?? event.end
+            return (previewStart, previewEnd)
+        } else {
+            // Not dragging or direction not determined - show original times
+            return (event.start, event.end)
+        }
+    }
+
+    var body: some View {
         let duration = event.end.timeIntervalSince(event.start)
         let height = max(CGFloat(duration / 60.0) * pxPerMinute, 40) // Minimum height of 40
         let maxLanes = 3
@@ -1544,9 +1791,10 @@ struct CompressedDayTimelineView: View {
                             .foregroundColor(.secondary)
                     }
 
-                    Text("\(formatTime(event.start)) - \(formatTime(event.end))")
+                    Text("\(formatTime(previewDates.start)) - \(formatTime(previewDates.end))")
                         .dynamicFont(size: 12, fontManager: fontManager)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(isDragging ? .blue : .secondary)
+                        .animation(.none, value: previewDates.start)
 
                     if let clampedEvent = event as? ClampedEvent, clampedEvent.isClampedEnd {
                         Text("...")
@@ -1587,12 +1835,227 @@ struct CompressedDayTimelineView: View {
                     .shadow(color: colorForCalendarSource(event.source).opacity(0.3), radius: 8, x: 0, y: 4)
             )
             .accessibilityLabel("\(event.title ?? "Untitled Event"), \(formatTime(event.start)) to \(formatTime(event.end))\(event.eventLocation.map { ", at \($0)" } ?? "")")
+            .scaleEffect(isDragging ? 1.02 : (isPressingDown ? 0.98 : 1.0))
+            .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
+            .offset(x: horizontalDragOffset, y: dragOffset)
+            .animation(.easeInOut(duration: 0.2), value: isDragging)
+            .animation(.easeInOut(duration: 0.1), value: isPressingDown)
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                .onChanged { value in
+                    // Start tracking press
+                    if pressStartTime == nil {
+                        pressStartTime = Date()
+                        isPressingDown = true
+                        print("👆 Touch started on: \(event.title ?? "Untitled")")
 
-            // Fill remaining space
+                        // Start timer for 1-second activation
+                        longPressTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
+                            if !isDragging {
+                                withAnimation {
+                                    isDragging = true
+                                }
+
+                                // If starting a new drag on a previously moved event, reset offsets
+                                if hasBeenMoved {
+                                    dragOffset = 0
+                                    horizontalDragOffset = 0
+                                    hasBeenMoved = false
+                                    print("🔄 Resetting parked event for new drag")
+                                }
+
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                                print("✅ Long press activated after 1s: \(event.title ?? "Untitled")")
+                            }
+                        }
+                    }
+
+                    // If activated, determine drag direction and allow dragging
+                    if isDragging {
+                        // Determine drag direction if not yet set
+                        if dragDirection == .undetermined {
+                            let absX = abs(value.translation.width)
+                            let absY = abs(value.translation.height)
+
+                            if absX > 10 || absY > 10 {
+                                if isWeekView && absX > absY {
+                                    dragDirection = .horizontal
+                                    print("📍 Horizontal drag mode (week view)")
+                                } else {
+                                    dragDirection = .vertical
+                                    print("📍 Vertical drag mode (time change)")
+                                }
+                            }
+                        }
+
+                        // Handle dragging based on direction
+                        if dragDirection == .horizontal && isWeekView {
+                            // Horizontal drag for day change with snapping
+                            let screenWidth = UIScreen.main.bounds.width
+                            let dayWidth = screenWidth / 7.0
+                            let dayChange = Int(round(value.translation.width / dayWidth))
+
+                            // Snap to day columns
+                            horizontalDragOffset = CGFloat(dayChange) * dayWidth
+
+                            // Broadcast current day change for header indicator
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("WeekViewDragUpdate"),
+                                object: nil,
+                                userInfo: ["dayChange": dayChange]
+                            )
+
+                            print("📍 Horizontal drag: \(value.translation.width) -> Snapped to day: \(dayChange)")
+                        } else if dragDirection == .vertical {
+                            // Vertical drag for time change with snapping
+                            let minutesPerPixel = 1.0 / pxPerMinute
+                            let totalMinutes = value.translation.height * minutesPerPixel
+                            let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+
+                            // Show snapped position while dragging
+                            dragOffset = snappedMinutes * pxPerMinute
+                            print("📍 Vertical drag: \(value.translation.height) -> Snapped: \(dragOffset)")
+                        }
+                    }
+                }
+                .onEnded { value in
+                    print("🔴 Touch ended")
+
+                    // Cancel timer if not yet activated
+                    longPressTimer?.invalidate()
+                    longPressTimer = nil
+
+                    if isDragging {
+                        if dragDirection == .horizontal && isWeekView {
+                            // Calculate day change based on horizontal movement
+                            let screenWidth = UIScreen.main.bounds.width
+                            let dayWidth = screenWidth / 7.0
+                            let dayChange = Int(round(value.translation.width / dayWidth))
+
+                            if dayChange != 0 {
+                                // Save the change to calendar and mark as moved
+                                handleHorizontalDragEnd(dayChange: dayChange)
+                                hasBeenMoved = true
+                                print("🎯 Event parked at new day: \(dayChange)")
+                                // Keep the offset - event stays parked until next drag
+                            } else {
+                                print("🎯 No day change, reverting")
+                                withAnimation {
+                                    horizontalDragOffset = 0
+                                }
+                            }
+                        } else if dragDirection == .vertical {
+                            // Handle vertical (time) dragging
+                            let minutesPerPixel = 1.0 / pxPerMinute
+                            let totalMinutes = value.translation.height * minutesPerPixel
+                            let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+
+                            if snappedMinutes != 0 {
+                                // Save the change to calendar and mark as moved
+                                handleVerticalDragEnd(snappedMinutes: snappedMinutes)
+                                hasBeenMoved = true
+                                print("🎯 Event parked at new time: \(snappedMinutes) minutes")
+                                // Keep the offset - event stays parked until next drag
+                            } else {
+                                print("🎯 No time change, reverting")
+                                withAnimation {
+                                    dragOffset = 0
+                                }
+                            }
+                        }
+                    }
+
+                    // Clear drag indicator from week view headers
+                    if isWeekView {
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("WeekViewDragUpdate"),
+                            object: nil,
+                            userInfo: nil
+                        )
+                    }
+
+                    // Reset drag state
+                    withAnimation {
+                        isDragging = false
+                        isPressingDown = false
+                        dragDirection = .undetermined
+                    }
+                    pressStartTime = nil
+                }
+            )
+
+            // Fill remaining space (not interactive)
             Spacer()
         }
         .frame(width: width, height: height)
     }
+
+    private func handleVerticalDragEnd(snappedMinutes: Double) {
+        print("🎯 Event time changed by \(snappedMinutes) minutes")
+
+        // Calculate new start and end times
+        let calendar = Calendar.current
+        guard let newStartDate = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.start),
+              let newEndDate = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.end) else {
+            print("❌ Failed to calculate new dates")
+            return
+        }
+
+        print("✅ New times: \(newStartDate) - \(newEndDate)")
+
+        // Save to the actual calendar source (EKEvent, Google, or Outlook)
+        saveEventTimeChange(eventId: event.id, newStart: newStartDate, newEnd: newEndDate, source: event.source)
+    }
+
+    private func handleHorizontalDragEnd(dayChange: Int) {
+        print("🎯 Event moved by \(dayChange) day(s)")
+
+        // Calculate new start and end dates by adding/subtracting days
+        let calendar = Calendar.current
+        guard let newStartDate = calendar.date(byAdding: .day, value: dayChange, to: event.start),
+              let newEndDate = calendar.date(byAdding: .day, value: dayChange, to: event.end) else {
+            print("❌ Failed to calculate new dates")
+            return
+        }
+
+        print("✅ Event moved to new day: \(newStartDate)")
+
+        // Save to the actual calendar source (EKEvent, Google, or Outlook)
+        saveEventTimeChange(eventId: event.id, newStart: newStartDate, newEnd: newEndDate, source: event.source)
+    }
+
+    private func saveEventTimeChange(eventId: String, newStart: Date, newEnd: Date, source: CalendarSource) {
+        // This needs access to CalendarManager or EventStore to save
+        // For now, we'll use NotificationCenter to notify the parent
+        NotificationCenter.default.post(
+            name: NSNotification.Name("UpdateEventTime"),
+            object: nil,
+            userInfo: [
+                "eventId": eventId,
+                "newStart": newStart,
+                "newEnd": newEnd,
+                "source": source
+            ]
+        )
+        print("📤 Posted notification to update event \(eventId)")
+    }
+
+    private func colorForCalendarSource(_ source: CalendarSource) -> Color {
+        switch source {
+        case .ios: return Color(red: 255/255, green: 107/255, blue: 107/255) // #FF6B6B
+        case .google: return Color(red: 244/255, green: 180/255, blue: 0/255) // #F4B400
+        case .outlook: return Color(red: 0/255, green: 120/255, blue: 212/255) // #0078D4
+        }
+    }
+
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h a"
+        return formatter.string(from: date)
+    }
+}
 
     @ViewBuilder
     private func nowMarkerView() -> some View {
@@ -1816,10 +2279,10 @@ struct CompressedDayTimelineView: View {
         }
     }
 
-    /// Format date as time string (e.g., "9:00 AM", "2:30 PM")
+    /// Format date as time string (e.g., "9 AM", "2 PM")
     private func formatTime(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
+        formatter.dateFormat = "h a"
         return formatter.string(from: date)
     }
 }
@@ -1830,6 +2293,12 @@ struct EventCardView: View {
     let lane: Int
     let hourHeight: CGFloat
     @ObservedObject var fontManager: FontManager
+
+    @State private var dragOffset: CGFloat = 0
+    @State private var isDragging = false
+    @State private var pressStartTime: Date?
+    @State private var longPressTimer: Timer?
+    @State private var isPressingDown = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1887,13 +2356,69 @@ struct EventCardView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(eventColor.opacity(0.1))
+                .fill(eventColor.opacity(isDragging ? 0.2 : (isPressingDown ? 0.15 : 0.1)))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(eventColor.opacity(0.3), lineWidth: 1)
+                        .stroke(eventColor.opacity(isDragging ? 0.6 : (isPressingDown ? 0.4 : 0.3)), lineWidth: isDragging ? 2 : 1)
                 )
         )
         .frame(height: eventHeight)
+        .scaleEffect(isDragging ? 1.02 : (isPressingDown ? 0.98 : 1.0))
+        .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
+        .offset(y: dragOffset)
+        .animation(.easeInOut(duration: 0.2), value: isDragging)
+        .animation(.easeInOut(duration: 0.1), value: isPressingDown)
+        .contentShape(Rectangle())
+        .allowsHitTesting(true)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                .onChanged { value in
+                    // Start tracking press
+                    if pressStartTime == nil {
+                        pressStartTime = Date()
+                        isPressingDown = true
+                        print("👆 Touch started")
+
+                        // Start timer for 2-second activation
+                        longPressTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
+                            if !isDragging {
+                                withAnimation {
+                                    isDragging = true
+                                }
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                                print("✅ Long press activated after 2s: \(event.title)")
+                            }
+                        }
+                    }
+
+                    // If activated, allow dragging
+                    if isDragging {
+                        dragOffset = value.translation.height
+                        print("📍 Dragging: \(value.translation.height)")
+                    }
+                }
+                .onEnded { value in
+                    print("🔴 Touch ended")
+
+                    // Cancel timer if not yet activated
+                    longPressTimer?.invalidate()
+                    longPressTimer = nil
+
+                    if isDragging {
+                        // Complete the drag
+                        handleDragEnd(translation: value.translation.height)
+                    }
+
+                    // Reset state
+                    withAnimation {
+                        isDragging = false
+                        dragOffset = 0
+                        isPressingDown = false
+                    }
+                    pressStartTime = nil
+                }
+        )
     }
 
     private var eventColor: Color {
@@ -1925,6 +2450,35 @@ struct EventCardView: View {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         return formatter.string(from: date)
+    }
+
+    private func handleDragEnd(translation: CGFloat) {
+        // Calculate minutes moved based on pixel translation
+        let minutesPerPixel = 1.0 // Assuming 1 pixel = 1 minute (adjust based on hourHeight)
+        let totalMinutes = translation * minutesPerPixel
+
+        // Snap to 15-minute increments
+        let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+
+        // Update event times
+        let calendar = Calendar.current
+        guard let newStartDate = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.startDate),
+              let newEndDate = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.endDate) else {
+            return
+        }
+
+        // Update the event
+        event.startDate = newStartDate
+        event.endDate = newEndDate
+
+        // Save the event
+        do {
+            let eventStore = EKEventStore()
+            try eventStore.save(event, span: .thisEvent)
+            print("✅ Event '\(event.title)' moved to new time: \(newStartDate)")
+        } catch {
+            print("❌ Failed to save event: \(error)")
+        }
     }
 }
 
@@ -2035,6 +2589,19 @@ struct GapChipView: View {
     private var durationText: String {
         formatDuration(duration)
     }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+
+        if hours > 0 && minutes > 0 {
+            return "\(hours)h \(minutes)m"
+        } else if hours > 0 {
+            return "\(hours)h"
+        } else {
+            return "\(minutes)m"
+        }
+    }
 }
 
 // MARK: - Now Marker View
@@ -2074,19 +2641,6 @@ struct NowMarkerView: View {
 }
 
 // MARK: - Helper Functions
-private func formatDuration(_ duration: TimeInterval) -> String {
-    let hours = Int(duration) / 3600
-    let minutes = (Int(duration) % 3600) / 60
-
-    if hours > 0 && minutes > 0 {
-        return "\(hours)h \(minutes)m"
-    } else if hours > 0 {
-        return "\(hours)h"
-    } else {
-        return "\(minutes)m"
-    }
-}
-
 // MARK: - iOS Date Picker Sheet
 struct iOSDatePicker: View {
     @Binding var selectedDate: Date

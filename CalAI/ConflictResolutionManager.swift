@@ -356,9 +356,9 @@ struct EventSummaryView: View {
 
     private func colorForSource(_ source: CalendarSource) -> Color {
         switch source {
-        case .ios: return Color(red: 0/255, green: 122/255, blue: 255/255)
-        case .google: return Color(red: 52/255, green: 168/255, blue: 83/255)
-        case .outlook: return Color(red: 255/255, green: 140/255, blue: 0/255)
+        case .ios: return Color(red: 255/255, green: 107/255, blue: 107/255) // #FF6B6B
+        case .google: return Color(red: 244/255, green: 180/255, blue: 0/255) // #F4B400
+        case .outlook: return Color(red: 0/255, green: 120/255, blue: 212/255) // #0078D4
         }
     }
 }

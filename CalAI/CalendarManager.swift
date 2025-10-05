@@ -1,6 +1,7 @@
 import Foundation
 import EventKit
 import Combine
+import SwiftUI
 
 enum CalendarSource {
     case ios
@@ -28,6 +29,14 @@ struct UnifiedEvent: Identifiable {
         }
     }
 
+    var sourceColor: Color {
+        switch source {
+        case .ios: return Color(red: 255/255, green: 107/255, blue: 107/255) // #FF6B6B
+        case .google: return Color(red: 244/255, green: 180/255, blue: 0/255) // #F4B400
+        case .outlook: return Color(red: 0/255, green: 120/255, blue: 212/255) // #0078D4
+        }
+    }
+
     var duration: String {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
@@ -39,6 +48,10 @@ class CalendarManager: ObservableObject {
     @Published var events: [EKEvent] = []
     @Published var unifiedEvents: [UnifiedEvent] = []
     @Published var hasCalendarAccess = false
+
+    // Configurable date range for loading events (in months)
+    @Published var monthsBackToLoad: Int = 6  // Load 6 months in the past
+    @Published var monthsForwardToLoad: Int = 12  // Load 12 months in the future
 
     let eventStore = EKEventStore()
     private let coreDataManager = CoreDataManager.shared
@@ -249,10 +262,11 @@ class CalendarManager: ObservableObject {
         }
 
         let calendar = Calendar.current
-        let startDate = calendar.date(byAdding: .month, value: -1, to: Date()) ?? Date()
-        let endDate = calendar.date(byAdding: .month, value: 1, to: Date()) ?? Date()
+        let startDate = calendar.date(byAdding: .month, value: -monthsBackToLoad, to: Date()) ?? Date()
+        let endDate = calendar.date(byAdding: .month, value: monthsForwardToLoad, to: Date()) ?? Date()
 
         print("📅 Loading iOS events from \(startDate) to \(endDate)")
+        print("📅 Date range: \(monthsBackToLoad) months back, \(monthsForwardToLoad) months forward")
 
         let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: nil)
         let fetchedEvents = eventStore.events(matching: predicate)

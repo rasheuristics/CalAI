@@ -153,52 +153,27 @@ struct VoiceInputButton: View {
     var onResponse: ((AICalendarResponse) -> Void)? = nil
 
     var body: some View {
-        VStack {
-            Button(action: {
-                if voiceManager.isListening {
-                    print("🔴 Voice button pressed - stopping listening")
-                    voiceManager.stopListening()
-                } else {
-                    print("🟢 Voice button pressed - starting listening")
-                    voiceManager.startListening { transcript in
-                        print("📝 Transcript received in VoiceInputButton: \(transcript)")
-                        onTranscript?(transcript)
-                        aiManager.processVoiceCommand(transcript) { result in
-                            print("🎯 AI processing completed with result: \(result.message)")
-                            calendarManager.handleAICalendarResponse(result)
-                            onResponse?(result)
-                        }
+        Button(action: {
+            if voiceManager.isListening {
+                print("🔴 Voice button pressed - stopping listening")
+                voiceManager.stopListening()
+            } else {
+                print("🟢 Voice button pressed - starting listening")
+                voiceManager.startListening { transcript in
+                    print("📝 Transcript received in VoiceInputButton: \(transcript)")
+                    onTranscript?(transcript)
+                    aiManager.processVoiceCommand(transcript) { result in
+                        print("🎯 AI processing completed with result: \(result.message)")
+                        calendarManager.handleAICalendarResponse(result)
+                        onResponse?(result)
                     }
                 }
-            }) {
-                Image(systemName: voiceManager.isListening ? "mic.fill" : "mic")
-                    .font(.system(size: 30))
-                    .foregroundColor(voiceManager.isListening ? .red : .white)
-                    .padding()
-                    .background(
-                        Circle()
-                            .fill(Color.white.opacity(appearanceManager.glassOpacity))
-                            .overlay(
-                                Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: voiceManager.isListening ?
-                                                [.red.opacity(0.8), .red.opacity(0.6)] :
-                                                [.blue.opacity(0.8), .blue.opacity(0.6)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                            )
-                            .shadow(color: voiceManager.isListening ? .red.opacity(0.3) : .blue.opacity(0.3), radius: 15, x: 0, y: 5)
-                    )
             }
-
-            Text(voiceManager.isListening ? "Listening..." : "Tap to speak")
-                .dynamicFont(size: 12, fontManager: fontManager)
-                .foregroundColor(.secondary)
+        }) {
+            Image(systemName: voiceManager.isListening ? "mic.fill" : "mic")
+                .font(.system(size: 24))
+                .foregroundColor(voiceManager.isListening ? .red : .blue)
         }
-        .padding(.bottom)
     }
 }
 

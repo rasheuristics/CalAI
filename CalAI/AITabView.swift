@@ -26,11 +26,46 @@ struct AITabView: View {
             VStack(spacing: 0) {
                 if conversationHistory.isEmpty {
                     VStack {
-                        Image(systemName: "brain.head.profile")
-                            .font(.system(size: 60))
-                            .foregroundColor(.blue)
-                            .padding(.top, 16)
-                            .padding(.bottom, 8)
+                        // AI Brain icon with mic next to it
+                        HStack(alignment: .bottom, spacing: 2) {
+                            // Mic icon positioned next to the brain's "mouth"
+                            VoiceInputButton(
+                                voiceManager: voiceManager,
+                                aiManager: aiManager,
+                                calendarManager: calendarManager,
+                                fontManager: fontManager,
+                                appearanceManager: appearanceManager,
+                                onTranscript: { transcript in
+                                    print("🗣️ Transcript received in AITabView: '\(transcript)'")
+                                    print("📝 Adding user message to conversation")
+                                    addUserMessage(transcript)
+                                },
+                                onResponse: { response in
+                                    print("🤖 AI response received in AITabView: \(response.message)")
+                                    if let command = response.command {
+                                        print("🎯 Response command: \(command.type)")
+                                        print("📅 Event title: \(command.title ?? "nil")")
+                                        print("⏰ Start date: \(command.startDate?.description ?? "nil")")
+                                    }
+
+                                    if response.requiresConfirmation {
+                                        print("⚠️ Response requires confirmation")
+                                        pendingResponse = response
+                                        showingConfirmation = true
+                                    } else {
+                                        addAIResponse(response)
+                                        executeAIAction(response)
+                                    }
+                                }
+                            )
+                            .offset(y: 2) // Move down to align top of mic with lips
+
+                            Image(systemName: "brain.head.profile")
+                                .font(.system(size: 60))
+                                .foregroundColor(.blue)
+                        }
+                        .padding(.top, 16)
+                        .padding(.bottom, 8)
 
                         Text("AI Assistant")
                             .dynamicFont(size: 28, weight: .bold, fontManager: fontManager)
@@ -133,44 +168,6 @@ struct AITabView: View {
                 }
             }
 
-            // Mic button at bottom center
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    VoiceInputButton(
-                        voiceManager: voiceManager,
-                        aiManager: aiManager,
-                        calendarManager: calendarManager,
-                        fontManager: fontManager,
-                        appearanceManager: appearanceManager,
-                        onTranscript: { transcript in
-                            print("🗣️ Transcript received in AITabView: '\(transcript)'")
-                            print("📝 Adding user message to conversation")
-                            addUserMessage(transcript)
-                        },
-                        onResponse: { response in
-                            print("🤖 AI response received in AITabView: \(response.message)")
-                            if let command = response.command {
-                                print("🎯 Response command: \(command.type)")
-                                print("📅 Event title: \(command.title ?? "nil")")
-                                print("⏰ Start date: \(command.startDate?.description ?? "nil")")
-                            }
-
-                            if response.requiresConfirmation {
-                                print("⚠️ Response requires confirmation")
-                                pendingResponse = response
-                                showingConfirmation = true
-                            } else {
-                                addAIResponse(response)
-                                executeAIAction(response)
-                            }
-                        }
-                    )
-                    Spacer()
-                }
-                .padding(.bottom, 20)
-            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("AvailabilityResult"))) { notification in
             if let message = notification.userInfo?["message"] as? String {
@@ -234,6 +231,16 @@ struct AITabView: View {
         let formType = getFormType(for: text)
 
         if let formType = formType {
+            // Add a message to trigger conversation view
+            let message = "📝 Opening \(text) form..."
+            let item = ConversationItem(
+                id: UUID(),
+                message: message,
+                isUser: false,
+                timestamp: Date()
+            )
+            conversationHistory.append(item)
+
             // Show inline form
             withAnimation(.easeInOut(duration: 0.3)) {
                 currentFormType = formType
@@ -266,6 +273,8 @@ struct AITabView: View {
             return .createEvent
         } else if lowerCommand.contains("update") && lowerCommand.contains("event") {
             return .updateEvent
+        } else if lowerCommand.contains("delete") && lowerCommand.contains("event") {
+            return .deleteEvent
         } else if lowerCommand.contains("schedule") && lowerCommand.contains("event") {
             return .createEvent
         } else if lowerCommand.contains("block") && lowerCommand.contains("time") {
@@ -280,6 +289,16 @@ struct AITabView: View {
         switch category {
         case .eventQueries:
             // Show Event Queries & Search form
+            // Add a message to trigger conversation view
+            let message = "🔍 Opening Event Search..."
+            let item = ConversationItem(
+                id: UUID(),
+                message: message,
+                isUser: false,
+                timestamp: Date()
+            )
+            conversationHistory.append(item)
+
             withAnimation(.easeInOut(duration: 0.3)) {
                 showingInlineForm = true
                 currentFormType = .eventQueries
@@ -392,6 +411,7 @@ struct ConversationBubble: View {
 enum InlineFormType {
     case createEvent
     case updateEvent
+    case deleteEvent
     case blockTime
     case scheduleEvent
     case eventQueries
@@ -570,10 +590,11 @@ struct CommandCategoryCard: View {
                     }
                 } else {
                     // Double tap for other categories - direct activation
+                    print("🔔 Double-tap detected on category: \(category.rawValue)")
                     onCategoryDoubleTap?(category)
                 }
             }
-            .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
+            .onLongPressGesture(minimumDuration: 0.05, maximumDistance: .infinity, pressing: { pressing in
                 isPressed = pressing
             }, perform: {})
 
@@ -753,11 +774,21 @@ struct InlineFormView: View {
     @State private var isAllDay = false
     @State private var location = ""
     @State private var notes = ""
+    @State private var eventURL = ""
     @State private var selectedCalendar: String = ""
     @State private var availableCalendars: [EKCalendar] = []
     @State private var showingEventSearch = false
     @State private var searchQuery = ""
     @State private var searchResults: [UnifiedEvent] = []
+    @State private var selectedRepeat: RepeatOption = .none
+    @State private var attendees: [EventAttendee] = []
+    @State private var newAttendeeEmail = ""
+    @State private var showingAttendeeInput = false
+    @State private var sendInvitations = true
+    @State private var attachments: [AttachmentItem] = []
+    @State private var showingDocumentPicker = false
+    @State private var showingLocationPicker = false
+    @State private var selectedEventForDelete: UnifiedEvent?
 
     var body: some View {
         NavigationView {
@@ -772,7 +803,14 @@ struct InlineFormView: View {
 
                         Spacer()
 
-                        if formType != .eventQueries {
+                        if formType == .deleteEvent {
+                            Button("Delete") {
+                                deleteEvent()
+                            }
+                            .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                            .foregroundColor(.red)
+                            .disabled(title.isEmpty)
+                        } else if formType != .eventQueries {
                             Button("Save") {
                                 saveEvent()
                             }
@@ -805,7 +843,107 @@ struct InlineFormView: View {
 
                     // Form fields
                     VStack(spacing: 16) {
-                        if formType == .eventQueries {
+                        if formType == .deleteEvent {
+                            // Event Search Interface for Delete
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Search Event to Delete")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+
+                                HStack {
+                                    TextField("Search events...", text: $searchQuery)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        .dynamicFont(size: 16, fontManager: fontManager)
+                                        .onChange(of: searchQuery) { query in
+                                            searchEvents(query)
+                                        }
+
+                                    Button("Search") {
+                                        searchEvents(searchQuery)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                }
+                            }
+
+                            // Search Results for Delete
+                            if !searchResults.isEmpty {
+                                ScrollView {
+                                    LazyVStack {
+                                        ForEach(searchResults) { event in
+                                            Button(action: {
+                                                selectEvent(event)
+                                            }) {
+                                                HStack {
+                                                    VStack(alignment: .leading) {
+                                                        Text(event.title)
+                                                            .font(.headline)
+                                                        Text(event.duration)
+                                                            .font(.caption)
+                                                            .foregroundColor(.secondary)
+                                                    }
+                                                    Spacer()
+                                                    Text(event.sourceLabel)
+                                                        .font(.caption2)
+                                                }
+                                                .padding(8)
+                                                .background(Color.gray.opacity(0.1))
+                                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                                            }
+                                            .buttonStyle(PlainButtonStyle())
+                                        }
+                                    }
+                                }
+                                .frame(maxHeight: 200)
+                            }
+
+                            // Selected event display
+                            if !title.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Selected Event")
+                                        .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                        .foregroundColor(.primary)
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(title)
+                                            .dynamicFont(size: 18, weight: .bold, fontManager: fontManager)
+
+                                        if !location.isEmpty {
+                                            HStack {
+                                                Image(systemName: "location.fill")
+                                                    .foregroundColor(.secondary)
+                                                    .font(.caption)
+                                                Text(location)
+                                                    .dynamicFont(size: 14, fontManager: fontManager)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+
+                                        HStack {
+                                            Image(systemName: "calendar")
+                                                .foregroundColor(.secondary)
+                                                .font(.caption)
+                                            Text("\(formatDate(startDate)) - \(formatDate(endDate))")
+                                                .dynamicFont(size: 14, fontManager: fontManager)
+                                                .foregroundColor(.secondary)
+                                        }
+
+                                        if !notes.isEmpty {
+                                            Text(notes)
+                                                .dynamicFont(size: 14, fontManager: fontManager)
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(3)
+                                        }
+                                    }
+                                    .padding(12)
+                                    .background(Color.red.opacity(0.1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                            }
+                        } else if formType == .eventQueries {
                             // Event Search Interface
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Search Events")
@@ -831,6 +969,40 @@ struct InlineFormView: View {
                                 }
                             }
 
+                            // Location Filter
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Location Filter")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+
+                                TextField("Filter by location", text: $location)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                            }
+
+                            // Calendar Selection
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Select Calendar")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+
+                                Picker("Select Calendar", selection: $selectedCalendar) {
+                                    Text("All Calendars").tag("")
+                                    Text("iOS Calendars").tag("ios")
+                                    Text("Google Calendar").tag("google")
+                                    Text("Outlook Calendar").tag("outlook")
+
+                                    if !availableCalendars.isEmpty {
+                                        Divider()
+                                        ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
+                                            Text(calendar.title)
+                                                .tag(calendar.calendarIdentifier)
+                                        }
+                                    }
+                                }
+                                .pickerStyle(MenuPickerStyle())
+                            }
+
                             // Date Range Filter
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Date Range")
@@ -854,17 +1026,6 @@ struct InlineFormView: View {
                                             .datePickerStyle(.compact)
                                     }
                                 }
-                            }
-
-                            // Location Filter
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Location Filter")
-                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                                    .foregroundColor(.primary)
-
-                                TextField("Filter by location", text: $location)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .dynamicFont(size: 16, fontManager: fontManager)
                             }
 
                             // Search Results
@@ -986,15 +1147,36 @@ struct InlineFormView: View {
                         }
 
                         if formType != .eventQueries {
-                            // Location field (moved under title)
+                            // Location field
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Location")
                                     .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
                                     .foregroundColor(.primary)
 
-                                TextField("Enter location", text: $location)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                Button(action: {
+                                    showingLocationPicker = true
+                                }) {
+                                    HStack {
+                                        if location.isEmpty {
+                                            Text("Add location")
+                                                .dynamicFont(size: 16, fontManager: fontManager)
+                                                .foregroundColor(.secondary)
+                                        } else {
+                                            Text(location)
+                                                .dynamicFont(size: 16, fontManager: fontManager)
+                                                .foregroundColor(.blue)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.secondary)
+                                            .font(.caption)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                                    .background(Color.gray.opacity(0.1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                }
+                                .buttonStyle(PlainButtonStyle())
                             }
 
                             // Calendar selection
@@ -1028,32 +1210,201 @@ struct InlineFormView: View {
                                     .foregroundColor(.primary)
 
                                 Toggle("All Day", isOn: $isAllDay)
-                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                    .dynamicFont(size: 14, fontManager: fontManager)
 
                                 if !isAllDay {
                                     VStack(spacing: 12) {
                                         HStack {
                                             Text("Start:")
-                                                .dynamicFont(size: 14, fontManager: fontManager)
+                                                .dynamicFont(size: 12, fontManager: fontManager)
                                                 .frame(width: 50, alignment: .leading)
                                             DatePicker("", selection: $startDate, displayedComponents: [.date, .hourAndMinute])
                                                 .labelsHidden()
+                                                .scaleEffect(0.9)
                                         }
 
                                         HStack {
                                             Text("End:")
-                                                .dynamicFont(size: 14, fontManager: fontManager)
+                                                .dynamicFont(size: 12, fontManager: fontManager)
                                                 .frame(width: 50, alignment: .leading)
                                             DatePicker("", selection: $endDate, displayedComponents: [.date, .hourAndMinute])
                                                 .labelsHidden()
+                                                .scaleEffect(0.9)
                                         }
                                     }
                                 } else {
                                     DatePicker("Date", selection: $startDate, displayedComponents: [.date])
                                         .labelsHidden()
+                                        .scaleEffect(0.9)
                                 }
                             }
 
+                            // Repeat section
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Repeat")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+
+                                Picker("Repeat", selection: $selectedRepeat) {
+                                    ForEach(RepeatOption.allCases) { option in
+                                        Text(option.displayName)
+                                            .dynamicFont(size: 16, fontManager: fontManager)
+                                            .tag(option)
+                                    }
+                                }
+                                .pickerStyle(MenuPickerStyle())
+                            }
+
+                            // Attendees section
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Invites & Attendees")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+
+                                if attendees.isEmpty {
+                                    Button(action: {
+                                        showingAttendeeInput = true
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "person.badge.plus")
+                                                .foregroundColor(.blue)
+                                            Text("Add Attendees")
+                                                .dynamicFont(size: 16, fontManager: fontManager)
+                                                .foregroundColor(.blue)
+                                            Spacer()
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 10)
+                                        .background(Color.gray.opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    }
+                                } else {
+                                    VStack(spacing: 8) {
+                                        ForEach(attendees) { attendee in
+                                            HStack {
+                                                Image(systemName: "person.circle")
+                                                    .foregroundColor(.secondary)
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text(attendee.displayName)
+                                                        .dynamicFont(size: 16, fontManager: fontManager)
+                                                    Text(attendee.email)
+                                                        .dynamicFont(size: 12, fontManager: fontManager)
+                                                        .foregroundColor(.secondary)
+                                                }
+                                                Spacer()
+                                                Button(action: {
+                                                    removeAttendee(attendee)
+                                                }) {
+                                                    Image(systemName: "minus.circle.fill")
+                                                        .foregroundColor(.red)
+                                                }
+                                            }
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(Color.gray.opacity(0.1))
+                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                        }
+
+                                        Button(action: {
+                                            showingAttendeeInput = true
+                                        }) {
+                                            HStack {
+                                                Image(systemName: "plus")
+                                                    .foregroundColor(.blue)
+                                                Text("Add More")
+                                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                                    .foregroundColor(.blue)
+                                                Spacer()
+                                            }
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 10)
+                                            .background(Color.gray.opacity(0.1))
+                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                        }
+
+                                        Toggle("Send Invitations", isOn: $sendInvitations)
+                                            .dynamicFont(size: 16, fontManager: fontManager)
+                                    }
+                                }
+                            }
+
+                            // URL field
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("URL")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+
+                                TextField("Event URL", text: $eventURL)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                    .keyboardType(.URL)
+                                    .autocapitalization(.none)
+                            }
+
+                            // Attachments section
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Attachments")
+                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+
+                                if attachments.isEmpty {
+                                    Button(action: {
+                                        showingDocumentPicker = true
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "paperclip")
+                                                .foregroundColor(.blue)
+                                            Text("Add Attachment")
+                                                .dynamicFont(size: 16, fontManager: fontManager)
+                                                .foregroundColor(.blue)
+                                            Spacer()
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 10)
+                                        .background(Color.gray.opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    }
+                                } else {
+                                    VStack(spacing: 8) {
+                                        ForEach(attachments) { attachment in
+                                            HStack {
+                                                Image(systemName: "doc")
+                                                    .foregroundColor(.secondary)
+                                                Text(attachment.name)
+                                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                                Spacer()
+                                                Button(action: {
+                                                    removeAttachment(attachment)
+                                                }) {
+                                                    Image(systemName: "trash")
+                                                        .foregroundColor(.red)
+                                                }
+                                            }
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(Color.gray.opacity(0.1))
+                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                        }
+
+                                        Button(action: {
+                                            showingDocumentPicker = true
+                                        }) {
+                                            HStack {
+                                                Image(systemName: "plus")
+                                                    .foregroundColor(.blue)
+                                                Text("Add More")
+                                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                                    .foregroundColor(.blue)
+                                                Spacer()
+                                            }
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 10)
+                                            .background(Color.gray.opacity(0.1))
+                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                        }
+                                    }
+                                }
+                            }
 
                             // Notes field
                             VStack(alignment: .leading, spacing: 8) {
@@ -1061,10 +1412,12 @@ struct InlineFormView: View {
                                     .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
                                     .foregroundColor(.primary)
 
-                                TextField("Optional notes", text: $notes)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                TextEditor(text: $notes)
                                     .dynamicFont(size: 16, fontManager: fontManager)
-                                    .lineLimit(6)
+                                    .frame(minHeight: 100)
+                                    .padding(8)
+                                    .background(Color.gray.opacity(0.1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
                             }
                         }
                     }
@@ -1097,6 +1450,39 @@ struct InlineFormView: View {
                 endDate = calendar.date(byAdding: .day, value: 1, to: startDate) ?? startDate
             }
         }
+        .sheet(isPresented: $showingLocationPicker) {
+            LocationPickerView(
+                selectedLocation: $location,
+                fontManager: fontManager,
+                onLocationSelected: { selectedLocation in
+                    location = selectedLocation
+                    showingLocationPicker = false
+                },
+                onCancel: {
+                    showingLocationPicker = false
+                }
+            )
+        }
+        .sheet(isPresented: $showingAttendeeInput) {
+            AttendeeInputView(
+                newAttendeeEmail: $newAttendeeEmail,
+                onAdd: { email in
+                    addAttendee(email: email)
+                    showingAttendeeInput = false
+                },
+                onCancel: {
+                    newAttendeeEmail = ""
+                    showingAttendeeInput = false
+                }
+            )
+        }
+        .sheet(isPresented: $showingDocumentPicker) {
+            DocumentPicker { urls in
+                for url in urls {
+                    addAttachment(from: url)
+                }
+            }
+        }
     }
 
     private var formTitle: String {
@@ -1105,6 +1491,8 @@ struct InlineFormView: View {
             return "Create Event"
         case .updateEvent:
             return "Update Event"
+        case .deleteEvent:
+            return "Delete Event"
         case .blockTime:
             return "Block Time"
         case .eventQueries:
@@ -1118,6 +1506,8 @@ struct InlineFormView: View {
             return "Create a new calendar event with details"
         case .updateEvent:
             return "Update the selected calendar event"
+        case .deleteEvent:
+            return "Search and delete a calendar event"
         case .blockTime:
             return "Block time on your calendar"
         case .eventQueries:
@@ -1131,6 +1521,8 @@ struct InlineFormView: View {
             return "calendar.badge.plus"
         case .updateEvent:
             return "calendar.badge.clock"
+        case .deleteEvent:
+            return "calendar.badge.exclamationmark"
         case .blockTime:
             return "calendar.badge.minus"
         case .eventQueries:
@@ -1213,6 +1605,105 @@ struct InlineFormView: View {
         notes = event.description ?? ""
         searchQuery = event.title
         searchResults = []
+
+        // Store selected event for deletion
+        if formType == .deleteEvent {
+            selectedEventForDelete = event
+        }
+    }
+
+    private func addAttendee(email: String) {
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedEmail.isEmpty,
+              trimmedEmail.contains("@"),
+              !attendees.contains(where: { $0.email == trimmedEmail }) else {
+            return
+        }
+
+        let name = extractDisplayName(from: trimmedEmail)
+        let attendee = EventAttendee(email: trimmedEmail, name: name.isEmpty ? nil : name)
+        attendees.append(attendee)
+        newAttendeeEmail = ""
+    }
+
+    private func removeAttendee(_ attendee: EventAttendee) {
+        attendees.removeAll { $0.id == attendee.id }
+    }
+
+    private func extractDisplayName(from email: String) -> String {
+        let localPart = email.components(separatedBy: "@").first ?? ""
+        let nameParts = localPart.components(separatedBy: ".")
+
+        if nameParts.count >= 2 {
+            let firstName = nameParts[0].capitalized
+            let lastName = nameParts[1].capitalized
+            return "\(firstName) \(lastName)"
+        } else {
+            return localPart.capitalized
+        }
+    }
+
+    private func addAttachment(from url: URL) {
+        guard url.startAccessingSecurityScopedResource() else {
+            print("❌ Failed to access security scoped resource")
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let attachment = AttachmentItem(
+                name: url.lastPathComponent,
+                url: url,
+                data: data
+            )
+            attachments.append(attachment)
+        } catch {
+            print("❌ Failed to read attachment: \(error)")
+        }
+    }
+
+    private func removeAttachment(_ attachment: AttachmentItem) {
+        attachments.removeAll { $0.id == attachment.id }
+    }
+
+    private func deleteEvent() {
+        guard !title.isEmpty, let eventToDelete = selectedEventForDelete else {
+            print("⚠️ No event selected for deletion")
+            return
+        }
+
+        // Create CalendarCommand for deletion
+        let command = CalendarCommand(
+            type: .deleteEvent,
+            title: nil,
+            startDate: nil,
+            endDate: nil,
+            location: nil,
+            notes: nil,
+            eventId: eventToDelete.id
+        )
+
+        // Create AI response for processing
+        let response = AICalendarResponse(
+            message: "Event '\(title)' deleted successfully",
+            command: command,
+            requiresConfirmation: false,
+            confirmationMessage: nil
+        )
+
+        // Process through calendar manager
+        calendarManager.handleAICalendarResponse(response)
+
+        // Notify parent of success
+        onSave(true)
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }
 
