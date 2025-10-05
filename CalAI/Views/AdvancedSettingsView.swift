@@ -106,6 +106,15 @@ struct AdvancedSettingsView: View {
                     Label("Help & Accessibility", systemImage: "person.fill.questionmark")
                 }
 
+                // Privacy & Security
+                Section {
+                    NavigationLink(destination: CrashReportingSettingsView()) {
+                        Label("Crash Reporting", systemImage: "exclamationmark.triangle")
+                    }
+                } header: {
+                    Label("Privacy & Security", systemImage: "lock.shield")
+                }
+
                 // Advanced
                 Section {
                     NavigationLink(destination: DiagnosticsView()) {

@@ -3,6 +3,7 @@ import GoogleSignIn
 import MSAL
 import UserNotifications
 import CoreLocation
+import UIKit
 
 @main
 struct CalAIApp: App {
