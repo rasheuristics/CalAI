@@ -130,7 +130,20 @@ struct CalendarTabView: View {
     }
 
     private func unifiedEventsForDate(_ date: Date) -> [UnifiedEvent] {
-        return eventFilterService.filterUnifiedEvents(calendarManager.unifiedEvents, for: date)
+        let filtered = eventFilterService.filterUnifiedEvents(calendarManager.unifiedEvents, for: date)
+
+        // Remove duplicates - events with same id AND startDate (handles recurring events)
+        let unique = filtered.reduce(into: [UnifiedEvent]()) { result, event in
+            if !result.contains(where: { $0.id == event.id && $0.startDate == event.startDate }) {
+                result.append(event)
+            }
+        }
+
+        if filtered.count != unique.count {
+            print("🔍 unifiedEventsForDate: filtered \(filtered.count) -> unique \(unique.count) events for \(date)")
+        }
+
+        return unique
     }
 }
 
@@ -1194,52 +1207,32 @@ struct WeekViewWithCompressedTimeline: View {
             // Passed threshold - smoothly complete the transition
             isTransitioning = true
             HapticManager.shared.light()
+
+            // Update date first
             if translation > 0 {
-                // Swiped right - slide to previous day
-                // First half: animate current page sliding off
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0)) {
-                    swipeDragOffset = screenWidth
+                // Swiped right - go to previous day
+                if let newDate = calendar.date(byAdding: .day, value: -1, to: selectedDate) {
+                    selectedDate = newDate
                 }
-
-                // Mid-animation: update date (this triggers new page to appear)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    if let newDate = calendar.date(byAdding: .day, value: -1, to: selectedDate) {
-                        selectedDate = newDate
-                    }
-
-                    // Second half: animate new page sliding into center
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0)) {
-                        swipeDragOffset = 0
-                    }
-
-                    // Re-enable gestures after transition
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                        isTransitioning = false
-                    }
-                }
+                // Animate: old page was at 0, new page comes from left (-screenWidth), slides to 0
+                swipeDragOffset = -screenWidth
             } else {
-                // Swiped left - slide to next day
-                // First half: animate current page sliding off
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0)) {
-                    swipeDragOffset = -screenWidth
+                // Swiped left - go to next day
+                if let newDate = calendar.date(byAdding: .day, value: 1, to: selectedDate) {
+                    selectedDate = newDate
                 }
+                // Animate: old page was at 0, new page comes from right (+screenWidth), slides to 0
+                swipeDragOffset = screenWidth
+            }
 
-                // Mid-animation: update date (this triggers new page to appear)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    if let newDate = calendar.date(byAdding: .day, value: 1, to: selectedDate) {
-                        selectedDate = newDate
-                    }
+            // Animate new page sliding smoothly into center
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.75, blendDuration: 0)) {
+                swipeDragOffset = 0
+            }
 
-                    // Second half: animate new page sliding into center
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0)) {
-                        swipeDragOffset = 0
-                    }
-
-                    // Re-enable gestures after transition
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                        isTransitioning = false
-                    }
-                }
+            // Re-enable gestures after full transition
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                isTransitioning = false
             }
         } else {
             // Didn't pass threshold - slide back to current day with haptic feedback
@@ -1367,7 +1360,20 @@ struct WeekViewWithCompressedTimeline: View {
 
     // Filter events for a specific date
     private func eventsForDate(_ date: Date) -> [UnifiedEvent] {
-        return eventFilterService.filterUnifiedEvents(events, for: date)
+        let filtered = eventFilterService.filterUnifiedEvents(events, for: date)
+
+        // Remove duplicates - events with same id AND startDate (handles recurring events)
+        let unique = filtered.reduce(into: [UnifiedEvent]()) { result, event in
+            if !result.contains(where: { $0.id == event.id && $0.startDate == event.startDate }) {
+                result.append(event)
+            }
+        }
+
+        if filtered.count != unique.count {
+            print("🔍 eventsForDate: filtered \(filtered.count) -> unique \(unique.count) events for \(date)")
+        }
+
+        return unique
     }
 }
 
@@ -1558,14 +1564,34 @@ struct CompressedDayTimelineView: View {
         VStack(spacing: 0) {
             ForEach(Array(0...23), id: \.self) { hour in
                 HStack {
-                    Text(formatTime(hourToDate(hour)))
-                        .dynamicFont(size: 18, fontManager: fontManager)
-                        .foregroundColor(.secondary)
+                    formattedTimeView(hourToDate(hour))
                     Spacer()
                 }
                 .frame(width: hourLabelWidth, height: CGFloat(60 * pxPerMinute))
             }
         }
+    }
+
+    @ViewBuilder
+    private func formattedTimeView(_ date: Date) -> some View {
+        let components = formatTimeComponents(date)
+        HStack(spacing: 2) {
+            Text(components.hour)
+                .dynamicFont(size: 18, fontManager: fontManager)
+                .foregroundColor(.secondary)
+            Text(components.period)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func formatTimeComponents(_ date: Date) -> (hour: String, period: String) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h"
+        let hour = formatter.string(from: date)
+        formatter.dateFormat = "a"
+        let period = formatter.string(from: date)
+        return (hour, period)
     }
 
     @ViewBuilder
@@ -2251,8 +2277,17 @@ struct DraggableEventView: View {
 
     /// Core function to build segments from events and day boundaries
     private func buildSegments(events: [CalendarEvent], dayStart: Date, dayEnd: Date) -> [TimelineSegment] {
+        // Remove duplicates - events with same id AND startDate (handles recurring events properly)
+        let uniqueEvents = events.reduce(into: [CalendarEvent]()) { result, event in
+            if !result.contains(where: { $0.id == event.id && $0.start == event.start }) {
+                result.append(event)
+            }
+        }
+
+        print("📊 buildSegments: input \(events.count) events, unique \(uniqueEvents.count) events")
+
         // Events are already filtered by filterEventsForDay, so separate all-day from timed
-        let allDayEvents = events.filter { $0.isAllDay }.map { event in
+        let allDayEvents = uniqueEvents.filter { $0.isAllDay }.map { event in
             ClampedEvent(
                 id: event.id,
                 title: event.title,
@@ -2266,7 +2301,7 @@ struct DraggableEventView: View {
         }.sorted { $0.title ?? "" < $1.title ?? "" }
 
         // Filter timed events (events are already filtered by filterEventsForDay)
-        let timedEvents = events.filter { !$0.isAllDay }.map { event in
+        let timedEvents = uniqueEvents.filter { !$0.isAllDay }.map { event in
             // Keep original event times for proper positioning, only clamp end if needed
             let actualStart = event.start
             let clampedEnd = min(event.end, dayEnd)

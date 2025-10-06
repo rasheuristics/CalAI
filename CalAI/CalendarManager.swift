@@ -113,12 +113,52 @@ class CalendarManager: ObservableObject {
         case .ios:
             // Update iOS/EventKit event
             if let event = eventStore.event(withIdentifier: eventId) {
+                let oldStart = event.startDate
                 event.startDate = newStart
                 event.endDate = newEnd
                 do {
                     try eventStore.save(event, span: .thisEvent)
                     print("✅ iOS event updated: \(event.title ?? "Untitled")")
-                    loadEvents() // Refresh the unified events list
+
+                    // Use MainActor to ensure UI updates happen atomically on main thread
+                    DispatchQueue.main.async {
+                        // Notify observers that changes are about to happen
+                        self.objectWillChange.send()
+
+                        // Update in-place in events array (match by identifier AND old start date)
+                        if let index = self.events.firstIndex(where: {
+                            $0.eventIdentifier == eventId && $0.startDate == oldStart
+                        }) {
+                            self.events[index] = event
+                            print("📝 Updated event in events array at index \(index)")
+                        }
+
+                        // Update in-place in unifiedEvents array
+                        if let unifiedIndex = self.unifiedEvents.firstIndex(where: {
+                            $0.id == eventId && $0.startDate == oldStart && $0.source == .ios
+                        }) {
+                            self.unifiedEvents[unifiedIndex] = UnifiedEvent(
+                                id: eventId,
+                                title: event.title ?? "Untitled",
+                                startDate: newStart,
+                                endDate: newEnd,
+                                location: event.location,
+                                description: event.notes,
+                                isAllDay: event.isAllDay,
+                                source: .ios,
+                                organizer: event.organizer?.name,
+                                originalEvent: event
+                            )
+                            print("📝 Updated event in unifiedEvents array at index \(unifiedIndex)")
+                        }
+
+                        // Sort events by start date
+                        self.events.sort { $0.startDate < $1.startDate }
+                        self.unifiedEvents.sort { $0.startDate < $1.startDate }
+
+                        print("🔔 Notified all observers of event time change")
+                    }
+
                 } catch {
                     print("❌ Failed to save iOS event: \(error)")
                 }
@@ -128,18 +168,14 @@ class CalendarManager: ObservableObject {
             // Update Google Calendar event
             Task {
                 await googleCalendarManager?.updateEventTime(eventId: eventId, newStart: newStart, newEnd: newEnd)
-                await MainActor.run {
-                    loadEvents()
-                }
+                // Google events will be updated through the observer
             }
 
         case .outlook:
             // Update Outlook event
             Task {
                 await outlookCalendarManager?.updateEventTime(eventId: eventId, newStart: newStart, newEnd: newEnd)
-                await MainActor.run {
-                    loadEvents()
-                }
+                // Outlook events will be updated through the observer
             }
         }
     }
@@ -272,6 +308,9 @@ class CalendarManager: ObservableObject {
             return
         }
 
+        // Refresh EventKit sources to get latest data (including recurring events)
+        eventStore.refreshSourcesIfNecessary()
+
         DispatchQueue.main.async {
             self.isLoading = true
             self.errorState = nil
@@ -309,18 +348,38 @@ class CalendarManager: ObservableObject {
         print("📅 Date range: \(monthsBackToLoad) months back, \(monthsForwardToLoad) months forward")
 
         do {
+            // Get all available calendars for debugging
+            let allCalendars = eventStore.calendars(for: .event)
+            print("📅 Available calendars: \(allCalendars.count)")
+            for calendar in allCalendars {
+                print("   - \(calendar.title) (type: \(calendar.type.rawValue), source: \(calendar.source.title))")
+            }
+
             let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: nil)
             let fetchedEvents = eventStore.events(matching: predicate)
 
-            print("📅 Found \(fetchedEvents.count) iOS Calendar events in range")
+            let recurringCount = fetchedEvents.filter { $0.hasRecurrenceRules }.count
+            print("📅 Found \(fetchedEvents.count) iOS Calendar events in range (\(recurringCount) recurring)")
+
+            // Debug: Show sample of fetched events
+            if !fetchedEvents.isEmpty {
+                print("📅 Sample events:")
+                for event in fetchedEvents.prefix(5) {
+                    print("   - \(event.title ?? "No title") | \(event.startDate) | Calendar: \(event.calendar?.title ?? "Unknown")")
+                }
+            }
 
             DispatchQueue.main.async {
                 // Mark range as loaded
                 self.loadedRanges.insert(requestedRange)
 
                 // Merge new events with existing ones (avoid duplicates)
+                // For recurring events, check both eventIdentifier AND startDate
                 let newEvents = fetchedEvents.filter { newEvent in
-                    !self.events.contains { $0.eventIdentifier == newEvent.eventIdentifier }
+                    !self.events.contains { existingEvent in
+                        existingEvent.eventIdentifier == newEvent.eventIdentifier &&
+                        existingEvent.startDate == newEvent.startDate
+                    }
                 }
 
                 self.events.append(contentsOf: newEvents)
@@ -462,8 +521,13 @@ class CalendarManager: ObservableObject {
         coreDataManager.saveEvents(iosEvents, syncStatus: .synced)
 
         // Merge with existing events, avoiding duplicates
+        // For recurring events, check both id AND startDate to allow multiple occurrences
         for iosEvent in iosEvents {
-            if !allEvents.contains(where: { $0.id == iosEvent.id && $0.source == iosEvent.source }) {
+            if !allEvents.contains(where: {
+                $0.id == iosEvent.id &&
+                $0.source == iosEvent.source &&
+                $0.startDate == iosEvent.startDate
+            }) {
                 allEvents.append(iosEvent)
             }
         }
@@ -490,8 +554,13 @@ class CalendarManager: ObservableObject {
             coreDataManager.saveEvents(googleEvents, syncStatus: .synced)
 
             // Merge with existing events, avoiding duplicates
+            // For recurring events, check both id AND startDate to allow multiple occurrences
             for googleEvent in googleEvents {
-                if !allEvents.contains(where: { $0.id == googleEvent.id && $0.source == googleEvent.source }) {
+                if !allEvents.contains(where: {
+                    $0.id == googleEvent.id &&
+                    $0.source == googleEvent.source &&
+                    $0.startDate == googleEvent.startDate
+                }) {
                     allEvents.append(googleEvent)
                 }
             }
@@ -519,8 +588,13 @@ class CalendarManager: ObservableObject {
             coreDataManager.saveEvents(outlookEvents, syncStatus: .synced)
 
             // Merge with existing events, avoiding duplicates
+            // For recurring events, check both id AND startDate to allow multiple occurrences
             for outlookEvent in outlookEvents {
-                if !allEvents.contains(where: { $0.id == outlookEvent.id && $0.source == outlookEvent.source }) {
+                if !allEvents.contains(where: {
+                    $0.id == outlookEvent.id &&
+                    $0.source == outlookEvent.source &&
+                    $0.startDate == outlookEvent.startDate
+                }) {
                     allEvents.append(outlookEvent)
                 }
             }

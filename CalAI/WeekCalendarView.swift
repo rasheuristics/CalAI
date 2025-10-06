@@ -23,9 +23,7 @@ struct WeekCalendarView: View {
                     // Hour labels
                     ForEach(displayHours, id: \.self) { hour in
                         HStack {
-                            Text(formatHour(hour))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            formattedHourView(hour)
                             Spacer()
                         }
                         .frame(height: hourHeight * zoomScale)
@@ -137,15 +135,28 @@ struct WeekCalendarView: View {
         }
     }
 
-    private func formatHour(_ hour: Int) -> String {
+    @ViewBuilder
+    private func formattedHourView(_ hour: Int) -> some View {
+        let components = formatHourComponents(hour)
+        HStack(spacing: 2) {
+            Text(components.hour)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text(components.period)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func formatHourComponents(_ hour: Int) -> (hour: String, period: String) {
         if hour == 0 {
-            return "12 AM"
+            return ("12", "AM")
         } else if hour < 12 {
-            return "\(hour) AM"
+            return ("\(hour)", "AM")
         } else if hour == 12 {
-            return "12 PM"
+            return ("12", "PM")
         } else {
-            return "\(hour - 12) PM"
+            return ("\(hour - 12)", "PM")
         }
     }
 
