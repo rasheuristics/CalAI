@@ -1061,6 +1061,16 @@ struct WeekViewWithCompressedTimeline: View {
     @State private var isTransitioning = false // Prevent rapid swipes during transition
     @State private var swipeProgress: CGFloat = 0 // 0 to 1 progress for visual feedback
 
+    // Week expansion state
+    @State private var isWeekExpanded = false
+    @State private var weekExpansionDragOffset: CGFloat = 0
+    private let collapsedHeaderHeight: CGFloat = 72
+    private let expandedHeaderHeight: CGFloat = 292
+
+    private var weekHeaderHeight: CGFloat {
+        return isWeekExpanded ? expandedHeaderHeight : collapsedHeaderHeight
+    }
+
     enum GestureDirection {
         case none
         case horizontal
@@ -1068,71 +1078,50 @@ struct WeekViewWithCompressedTimeline: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Week day headers (stationary - no swipe movement)
-            VStack(spacing: 4) {
-                // Day names row (stationary)
+        ZStack(alignment: .top) {
+            // Timeline view (always rendered, overlaid by expanded calendar)
+            VStack(spacing: 0) {
+                // Spacer for week header
+                Color.clear
+                    .frame(height: weekHeaderHeight)
+
+                weekTimelineView()
+            }
+
+            // Expandable week header - overlays timeline when expanded
+            VStack(spacing: 0) {
+                // Day names row (always visible)
                 HStack(spacing: 0) {
-                    ForEach(weekDays, id: \.self) { day in
-                        Text(dayOfWeekSymbol(for: day))
+                    ForEach(0..<7, id: \.self) { dayIndex in
+                        Text(Calendar.current.shortWeekdaySymbols[dayIndex])
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.secondary)
                             .frame(maxWidth: .infinity)
                     }
                 }
+                .padding(.vertical, 4)
+                .background(Color(.systemGray6))
 
-                // Date numbers row (stationary)
-                HStack(spacing: 0) {
-                    ForEach(weekDays, id: \.self) { day in
-                        dateNumberView(for: day)
+                // Date grid - 1 row when collapsed, 5 rows when expanded
+                VStack(spacing: 0) {
+                    ForEach(0..<(isWeekExpanded ? 5 : 1), id: \.self) { weekIndex in
+                        HStack(spacing: 0) {
+                            ForEach(0..<7, id: \.self) { dayIndex in
+                                if let date = dateForExpandableGrid(week: weekIndex, day: dayIndex) {
+                                    expandableDateCell(for: date, isInCurrentWeek: weekIndex == (isWeekExpanded ? 2 : 0))
+                                }
+                            }
+                        }
+                        .frame(height: 44)
                     }
                 }
-                .frame(height: 28)
+                .background(Color(.systemGray6))
+
+                // Draggable handle (attached to bottom of week header)
+                weekExpansionHandleView()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
             .background(Color(.systemGray6))
-
-            // Timeline carousel (3 days: prev, current, next)
-            ZStack {
-                // Previous day timeline
-                CompressedDayTimelineView(
-                    date: previousDay,
-                    events: eventsForDate(previousDay).map { TimelineEvent(from: $0) },
-                    fontManager: fontManager,
-                    isWeekView: true
-                )
-                .id("\(previousDay.timeIntervalSince1970)")
-                .offset(x: -UIScreen.main.bounds.width + swipeDragOffset)
-                .opacity(swipeDragOffset > 0 ? 0.3 + (swipeProgress * 0.7) : 1.0)
-
-                // Current day timeline
-                CompressedDayTimelineView(
-                    date: selectedDate,
-                    events: eventsForDate(selectedDate).map { TimelineEvent(from: $0) },
-                    fontManager: fontManager,
-                    isWeekView: true
-                )
-                .id("\(selectedDate.timeIntervalSince1970)")
-                .offset(x: swipeDragOffset)
-                .scaleEffect(1.0 - (swipeProgress * 0.05)) // Subtle scale effect
-
-                // Next day timeline
-                CompressedDayTimelineView(
-                    date: nextDay,
-                    events: eventsForDate(nextDay).map { TimelineEvent(from: $0) },
-                    fontManager: fontManager,
-                    isWeekView: true
-                )
-                .id("\(nextDay.timeIntervalSince1970)")
-                .offset(x: UIScreen.main.bounds.width + swipeDragOffset)
-                .opacity(swipeDragOffset < 0 ? 0.3 + (swipeProgress * 0.7) : 1.0)
-            }
-            .onChange(of: selectedDate) { newDate in
-                // Force timeline rebuild when date changes
-                // Trigger lazy loading if approaching date boundaries
-                calendarManager.loadAdditionalMonthsIfNeeded(for: newDate)
-            }
+            .shadow(color: Color.black.opacity(isWeekExpanded ? 0.1 : 0), radius: 8, x: 0, y: 4)
         }
         .simultaneousGesture(
             DragGesture(minimumDistance: 20)
@@ -1374,6 +1363,212 @@ struct WeekViewWithCompressedTimeline: View {
         }
 
         return unique
+    }
+
+    // MARK: - Week View Components
+
+    @ViewBuilder
+    private func weekTimelineView() -> some View {
+        // Timeline carousel (3 days: prev, current, next)
+        ZStack {
+            // Previous day timeline
+            CompressedDayTimelineView(
+                date: previousDay,
+                events: eventsForDate(previousDay).map { TimelineEvent(from: $0) },
+                fontManager: fontManager,
+                isWeekView: true
+            )
+            .id("\(previousDay.timeIntervalSince1970)")
+            .offset(x: -UIScreen.main.bounds.width + swipeDragOffset)
+            .opacity(swipeDragOffset > 0 ? 0.3 + (swipeProgress * 0.7) : 1.0)
+
+            // Current day timeline
+            CompressedDayTimelineView(
+                date: selectedDate,
+                events: eventsForDate(selectedDate).map { TimelineEvent(from: $0) },
+                fontManager: fontManager,
+                isWeekView: true
+            )
+            .id("\(selectedDate.timeIntervalSince1970)")
+            .offset(x: swipeDragOffset)
+            .scaleEffect(1.0 - (swipeProgress * 0.05)) // Subtle scale effect
+
+            // Next day timeline
+            CompressedDayTimelineView(
+                date: nextDay,
+                events: eventsForDate(nextDay).map { TimelineEvent(from: $0) },
+                fontManager: fontManager,
+                isWeekView: true
+            )
+            .id("\(nextDay.timeIntervalSince1970)")
+            .offset(x: UIScreen.main.bounds.width + swipeDragOffset)
+            .opacity(swipeDragOffset < 0 ? 0.3 + (swipeProgress * 0.7) : 1.0)
+        }
+        .onChange(of: selectedDate) { newDate in
+            // Force timeline rebuild when date changes
+            // Trigger lazy loading if approaching date boundaries
+            calendarManager.loadAdditionalMonthsIfNeeded(for: newDate)
+        }
+    }
+
+    @ViewBuilder
+    private func expandableDateCell(for date: Date, isInCurrentWeek: Bool) -> some View {
+        let dayNumber = calendar.component(.day, from: date)
+        let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
+        let isToday = calendar.isDate(date, inSameDayAs: Date())
+
+        Text("\(dayNumber)")
+            .font(.system(size: 18, weight: isInCurrentWeek ? .semibold : .regular))
+            .foregroundColor(
+                isSelected ? .white :
+                isToday ? .red :
+                .primary
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                ZStack {
+                    if isSelected {
+                        Circle()
+                            .fill(Color.blue)
+                            .frame(width: 32, height: 32)
+                    } else if isToday {
+                        Circle()
+                            .fill(Color.red.opacity(0.1))
+                            .frame(width: 32, height: 32)
+                    }
+
+                    if isInCurrentWeek && !isSelected && !isToday {
+                        Circle()
+                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                            .frame(width: 32, height: 32)
+                    }
+                }
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selectedDate = date
+                HapticManager.shared.light()
+            }
+    }
+
+    private func dateForExpandableGrid(week: Int, day: Int) -> Date? {
+        // When collapsed: show current week (week index 0 = current week)
+        // When expanded: show 5 weeks (week index 2 = current week, with 2 before and 2 after)
+        let weekOffset = isWeekExpanded ? (week - 2) : 0
+
+        guard let targetWeekStart = calendar.date(byAdding: .weekOfYear, value: weekOffset, to: currentWeekStartDate) else {
+            return nil
+        }
+
+        return calendar.date(byAdding: .day, value: day, to: targetWeekStart)
+    }
+
+    @ViewBuilder
+    private func weekExpansionHandleView() -> some View {
+        VStack(spacing: 0) {
+            // Chevron indicator (down when collapsed to show you can expand down, up when expanded to show you can collapse up)
+            Image(systemName: isWeekExpanded ? "chevron.up" : "chevron.down")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.top, 8)
+
+            // Draggable handle
+            RoundedRectangle(cornerRadius: 2.5)
+                .fill(Color.secondary.opacity(0.3))
+                .frame(width: 36, height: 5)
+                .padding(.top, 6)
+                .padding(.bottom, 8)
+        }
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemGray6))
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    let verticalMovement = value.translation.height
+
+                    if isWeekExpanded {
+                        // Swipe up to collapse
+                        if verticalMovement < 0 {
+                            weekExpansionDragOffset = max(verticalMovement, -100)
+                        }
+                    } else {
+                        // Swipe down to expand
+                        if verticalMovement > 0 {
+                            weekExpansionDragOffset = min(verticalMovement, 100)
+                        }
+                    }
+                }
+                .onEnded { value in
+                    let verticalMovement = value.translation.height
+                    let threshold: CGFloat = 60
+
+                    if isWeekExpanded {
+                        // Check if swiped up enough to collapse
+                        if verticalMovement < -threshold {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                isWeekExpanded = false
+                                weekExpansionDragOffset = 0
+                            }
+                            HapticManager.shared.light()
+                        } else {
+                            // Snap back to expanded
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                weekExpansionDragOffset = 0
+                            }
+                        }
+                    } else {
+                        // Check if swiped down enough to expand
+                        if verticalMovement > threshold {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                isWeekExpanded = true
+                                weekExpansionDragOffset = 0
+                            }
+                            HapticManager.shared.light()
+                        } else {
+                            // Snap back to collapsed
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                weekExpansionDragOffset = 0
+                            }
+                        }
+                    }
+                }
+        )
+        .onTapGesture {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                isWeekExpanded.toggle()
+            }
+            HapticManager.shared.light()
+        }
+    }
+
+    // Helper properties for expanded view
+    private var currentWeekStartDate: Date {
+        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: selectedDate) else {
+            return selectedDate
+        }
+        return weekInterval.start
+    }
+
+}
+
+// MARK: - Corner Radius Extension for specific corners
+extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
+
+struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
     }
 }
 
