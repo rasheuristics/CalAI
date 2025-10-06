@@ -8,6 +8,9 @@ struct DayCalendarView: View {
     @Binding var offset: CGSize
 
     @State private var scrollOffset: CGFloat = 0
+    @State private var draggedEvent: EKEvent?
+    @State private var dragOffset: CGFloat = 0
+    @State private var isDragging = false
     private let hourHeight: CGFloat = 60
     private let hours = Array(0...23)
 
@@ -72,8 +75,18 @@ struct DayCalendarView: View {
                             // Timed events positioned by time
                             ZStack(alignment: .topLeading) {
                                 ForEach(timedEvents, id: \.eventIdentifier) { event in
-                                    DayEventView(event: event, hourHeight: hourHeight * zoomScale)
-                                        .offset(y: eventOffset(for: event))
+                                    DayEventView(
+                                        event: event,
+                                        hourHeight: hourHeight * zoomScale,
+                                        isDragging: draggedEvent?.eventIdentifier == event.eventIdentifier,
+                                        onDragChanged: { value in
+                                            handleDragChanged(event: event, value: value)
+                                        },
+                                        onDragEnded: { value in
+                                            handleDragEnded(event: event, value: value)
+                                        }
+                                    )
+                                    .offset(y: draggedEvent?.eventIdentifier == event.eventIdentifier ? eventOffset(for: event) + dragOffset : eventOffset(for: event))
                                 }
                             }
                             .frame(height: CGFloat(hours.count) * hourHeight * zoomScale)
@@ -127,6 +140,54 @@ struct DayCalendarView: View {
         let minute = calendar.component(.minute, from: event.startDate)
         return CGFloat(hour) * hourHeight * zoomScale + (CGFloat(minute) / 60.0) * hourHeight * zoomScale
     }
+
+    private func handleDragChanged(event: EKEvent, value: DragGesture.Value) {
+        if draggedEvent == nil {
+            draggedEvent = event
+        }
+        dragOffset = value.translation.height
+    }
+
+    private func handleDragEnded(event: EKEvent, value: DragGesture.Value) {
+        guard let draggedEvent = draggedEvent else { return }
+
+        // Calculate new position with 15-minute snapping
+        let totalOffset = eventOffset(for: event) + dragOffset
+        let minutesPerPixel = 60.0 / (hourHeight * zoomScale)
+        let totalMinutes = totalOffset * minutesPerPixel
+
+        // Snap to 15-minute increments
+        let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+
+        // Calculate time shift
+        let calendar = Calendar.current
+        let originalHour = calendar.component(.hour, from: event.startDate)
+        let originalMinute = calendar.component(.minute, from: event.startDate)
+        let originalTotalMinutes = Double(originalHour * 60 + originalMinute)
+        let minuteShift = snappedMinutes - originalTotalMinutes
+
+        // Update event times
+        if let newStartDate = calendar.date(byAdding: .minute, value: Int(minuteShift), to: event.startDate),
+           let newEndDate = calendar.date(byAdding: .minute, value: Int(minuteShift), to: event.endDate ?? event.startDate) {
+
+            // Update the event
+            event.startDate = newStartDate
+            event.endDate = newEndDate
+
+            // Save the event
+            do {
+                let eventStore = EKEventStore()
+                try eventStore.save(event, span: .thisEvent)
+                print("✅ Event moved to new time: \(newStartDate)")
+            } catch {
+                print("❌ Failed to save event: \(error)")
+            }
+        }
+
+        // Reset drag state
+        self.draggedEvent = nil
+        self.dragOffset = 0
+    }
 }
 
 struct DayHeaderCell: View {
@@ -169,6 +230,12 @@ struct DayHeaderCell: View {
 struct DayEventView: View {
     let event: EKEvent
     let hourHeight: CGFloat
+    let isDragging: Bool
+    let onDragChanged: (DragGesture.Value) -> Void
+    let onDragEnded: (DragGesture.Value) -> Void
+
+    @GestureState private var isDetectingLongPress = false
+    @State private var completedLongPress = false
 
     var body: some View {
         HStack {
@@ -194,10 +261,39 @@ struct DayEventView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
-        .background(Color(event.calendar?.cgColor ?? CGColor(red: 0, green: 0, blue: 1, alpha: 1)).opacity(0.2))
+        .background(
+            Color(event.calendar?.cgColor ?? CGColor(red: 0, green: 0, blue: 1, alpha: 1))
+                .opacity(isDragging ? 0.4 : 0.2)
+        )
         .cornerRadius(4)
         .frame(height: eventHeight)
         .padding(.horizontal, 4)
+        .scaleEffect(isDragging ? 1.05 : 1.0)
+        .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
+        .animation(.easeInOut(duration: 0.2), value: isDragging)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 2.0)
+                .updating($isDetectingLongPress) { currentState, gestureState, transaction in
+                    gestureState = currentState
+                }
+                .onEnded { finished in
+                    self.completedLongPress = finished
+                }
+        )
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    if completedLongPress {
+                        onDragChanged(value)
+                    }
+                }
+                .onEnded { value in
+                    if completedLongPress {
+                        onDragEnded(value)
+                        completedLongPress = false
+                    }
+                }
+        )
     }
 
     private var eventHeight: CGFloat {

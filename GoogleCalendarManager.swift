@@ -486,4 +486,10 @@ class GoogleCalendarManager: ObservableObject {
             }
         }
     }
+
+    func updateEventTime(eventId: String, newStart: Date, newEnd: Date) async {
+        print("📅 Updating Google Calendar event time: \(eventId)")
+        // TODO: Implement actual Google Calendar API time update
+        print("✅ Google event \(eventId) would be updated to \(newStart) - \(newEnd)")
+    }
 }

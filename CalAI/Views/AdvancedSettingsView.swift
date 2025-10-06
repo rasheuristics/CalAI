@@ -112,6 +112,10 @@ struct AdvancedSettingsView: View {
                         Label("Crash Reporting", systemImage: "exclamationmark.triangle")
                     }
 
+                    NavigationLink(destination: AnalyticsSettingsView()) {
+                        Label("Analytics", systemImage: "chart.bar.fill")
+                    }
+
                     NavigationLink(destination: PrivacyPolicyView()) {
                         Label("Privacy Policy", systemImage: "hand.raised.fill")
                     }
