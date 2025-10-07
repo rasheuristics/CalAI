@@ -122,22 +122,24 @@ class CalendarManager: ObservableObject {
 
                     // Use MainActor to ensure UI updates happen atomically on main thread
                     DispatchQueue.main.async {
-                        // Notify observers that changes are about to happen
-                        self.objectWillChange.send()
-
-                        // Update in-place in events array (match by identifier AND old start date)
-                        if let index = self.events.firstIndex(where: {
+                        // Update events array - create new array to trigger SwiftUI updates
+                        var updatedEvents = self.events
+                        if let index = updatedEvents.firstIndex(where: {
                             $0.eventIdentifier == eventId && $0.startDate == oldStart
                         }) {
-                            self.events[index] = event
+                            updatedEvents[index] = event
+                            self.events = updatedEvents.sorted { $0.startDate < $1.startDate }
                             print("📝 Updated event in events array at index \(index)")
+                        } else {
+                            print("⚠️ Could not find event in events array: \(eventId), oldStart: \(oldStart)")
                         }
 
-                        // Update in-place in unifiedEvents array
-                        if let unifiedIndex = self.unifiedEvents.firstIndex(where: {
+                        // Update unifiedEvents array - create new array to trigger SwiftUI updates
+                        var updatedUnified = self.unifiedEvents
+                        if let unifiedIndex = updatedUnified.firstIndex(where: {
                             $0.id == eventId && $0.startDate == oldStart && $0.source == .ios
                         }) {
-                            self.unifiedEvents[unifiedIndex] = UnifiedEvent(
+                            let updatedEvent = UnifiedEvent(
                                 id: eventId,
                                 title: event.title ?? "Untitled",
                                 startDate: newStart,
@@ -149,12 +151,18 @@ class CalendarManager: ObservableObject {
                                 organizer: event.organizer?.name,
                                 originalEvent: event
                             )
+                            updatedUnified[unifiedIndex] = updatedEvent
+                            self.unifiedEvents = updatedUnified.sorted { $0.startDate < $1.startDate }
                             print("📝 Updated event in unifiedEvents array at index \(unifiedIndex)")
+                            print("🔄 New startDate: \(newStart)")
+                            print("✅ COMPLETE SAVE:")
+                            print("   ✓ Event card will show new time (via savedMinutesOffset)")
+                            print("   ✓ Calendar views updated (via refreshTrigger)")
+                            print("   ✓ Events tab updated (via @ObservedObject calendarManager)")
+                            print("   ✓ iOS calendar saved to EventKit")
+                        } else {
+                            print("⚠️ Could not find event in unifiedEvents array: \(eventId), oldStart: \(oldStart)")
                         }
-
-                        // Sort events by start date
-                        self.events.sort { $0.startDate < $1.startDate }
-                        self.unifiedEvents.sort { $0.startDate < $1.startDate }
 
                         print("🔔 Notified all observers of event time change")
                     }
@@ -168,14 +176,78 @@ class CalendarManager: ObservableObject {
             // Update Google Calendar event
             Task {
                 await googleCalendarManager?.updateEventTime(eventId: eventId, newStart: newStart, newEnd: newEnd)
-                // Google events will be updated through the observer
+
+                // Also update local unifiedEvents array immediately for UI responsiveness
+                DispatchQueue.main.async {
+                    var updatedUnified = self.unifiedEvents
+                    if let unifiedIndex = updatedUnified.firstIndex(where: {
+                        $0.id == eventId && $0.source == .google
+                    }) {
+                        let oldEvent = updatedUnified[unifiedIndex]
+                        let updatedEvent = UnifiedEvent(
+                            id: eventId,
+                            title: oldEvent.title,
+                            startDate: newStart,
+                            endDate: newEnd,
+                            location: oldEvent.location,
+                            description: oldEvent.description,
+                            isAllDay: oldEvent.isAllDay,
+                            source: .google,
+                            organizer: oldEvent.organizer,
+                            originalEvent: oldEvent.originalEvent
+                        )
+                        updatedUnified[unifiedIndex] = updatedEvent
+                        self.unifiedEvents = updatedUnified.sorted { $0.startDate < $1.startDate }
+                        print("📝 Updated Google event in unifiedEvents array at index \(unifiedIndex)")
+                        print("🔄 New startDate: \(newStart)")
+                        print("✅ COMPLETE SAVE:")
+                        print("   ✓ Event card will show new time (via savedMinutesOffset)")
+                        print("   ✓ Calendar views updated (via refreshTrigger)")
+                        print("   ✓ Events tab updated (via @ObservedObject calendarManager)")
+                        print("   ✓ Google calendar API called (background)")
+                    } else {
+                        print("⚠️ Could not find Google event in unifiedEvents array: \(eventId)")
+                    }
+                }
             }
 
         case .outlook:
             // Update Outlook event
             Task {
                 await outlookCalendarManager?.updateEventTime(eventId: eventId, newStart: newStart, newEnd: newEnd)
-                // Outlook events will be updated through the observer
+
+                // Also update local unifiedEvents array immediately for UI responsiveness
+                DispatchQueue.main.async {
+                    var updatedUnified = self.unifiedEvents
+                    if let unifiedIndex = updatedUnified.firstIndex(where: {
+                        $0.id == eventId && $0.source == .outlook
+                    }) {
+                        let oldEvent = updatedUnified[unifiedIndex]
+                        let updatedEvent = UnifiedEvent(
+                            id: eventId,
+                            title: oldEvent.title,
+                            startDate: newStart,
+                            endDate: newEnd,
+                            location: oldEvent.location,
+                            description: oldEvent.description,
+                            isAllDay: oldEvent.isAllDay,
+                            source: .outlook,
+                            organizer: oldEvent.organizer,
+                            originalEvent: oldEvent.originalEvent
+                        )
+                        updatedUnified[unifiedIndex] = updatedEvent
+                        self.unifiedEvents = updatedUnified.sorted { $0.startDate < $1.startDate }
+                        print("📝 Updated Outlook event in unifiedEvents array at index \(unifiedIndex)")
+                        print("🔄 New startDate: \(newStart)")
+                        print("✅ COMPLETE SAVE:")
+                        print("   ✓ Event card will show new time (via savedMinutesOffset)")
+                        print("   ✓ Calendar views updated (via refreshTrigger)")
+                        print("   ✓ Events tab updated (via @ObservedObject calendarManager)")
+                        print("   ✓ Outlook calendar API called (background)")
+                    } else {
+                        print("⚠️ Could not find Outlook event in unifiedEvents array: \(eventId)")
+                    }
+                }
             }
         }
     }

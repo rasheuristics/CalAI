@@ -68,7 +68,8 @@ struct CalendarTabView: View {
                                     date: selectedDate, // Show selected day
                                     events: dayEvents.map { TimelineEvent(from: $0) },
                                     fontManager: fontManager,
-                                    isWeekView: false
+                                    isWeekView: false,
+                                    refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined()
                                 )
                                 .id("\(selectedDate.timeIntervalSince1970)") // Force recreation on date change
                             }
@@ -1376,7 +1377,8 @@ struct WeekViewWithCompressedTimeline: View {
                 date: previousDay,
                 events: eventsForDate(previousDay).map { TimelineEvent(from: $0) },
                 fontManager: fontManager,
-                isWeekView: true
+                isWeekView: true,
+                refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined()
             )
             .id("\(previousDay.timeIntervalSince1970)")
             .offset(x: -UIScreen.main.bounds.width + swipeDragOffset)
@@ -1387,7 +1389,8 @@ struct WeekViewWithCompressedTimeline: View {
                 date: selectedDate,
                 events: eventsForDate(selectedDate).map { TimelineEvent(from: $0) },
                 fontManager: fontManager,
-                isWeekView: true
+                isWeekView: true,
+                refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined()
             )
             .id("\(selectedDate.timeIntervalSince1970)")
             .offset(x: swipeDragOffset)
@@ -1398,7 +1401,8 @@ struct WeekViewWithCompressedTimeline: View {
                 date: nextDay,
                 events: eventsForDate(nextDay).map { TimelineEvent(from: $0) },
                 fontManager: fontManager,
-                isWeekView: true
+                isWeekView: true,
+                refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined()
             )
             .id("\(nextDay.timeIntervalSince1970)")
             .offset(x: UIScreen.main.bounds.width + swipeDragOffset)
@@ -1662,6 +1666,7 @@ struct CompressedDayTimelineView: View {
     let events: [CalendarEvent]
     @ObservedObject var fontManager: FontManager
     var isWeekView: Bool = false // New parameter to indicate week view mode
+    var refreshTrigger: String = "" // Trigger to force rebuild when events change
 
     // Tuning constants
     let pxPerMinute: CGFloat
@@ -1684,8 +1689,9 @@ struct CompressedDayTimelineView: View {
 
     init(date: Date, events: [CalendarEvent], fontManager: FontManager,
          pxPerMinute: CGFloat = 1.0, gapCollapseThresholdMin: Int = 30, collapsedGapHeight: CGFloat = 48,
-         isWeekView: Bool = false) {
+         isWeekView: Bool = false, refreshTrigger: String = "") {
         self.date = date
+        self.refreshTrigger = refreshTrigger
         self.events = events
         self.fontManager = fontManager
         self.pxPerMinute = pxPerMinute
@@ -1746,6 +1752,16 @@ struct CompressedDayTimelineView: View {
 
             // Force immediate rebuild on main thread
             DispatchQueue.main.async {
+                buildSegments()
+            }
+        }
+        .onChange(of: refreshTrigger) { newValue in
+            // Rebuild segments when events change (triggered by parent)
+            print("📊 Refresh trigger changed, rebuilding segments")
+            print("   New trigger: \(newValue.prefix(100))...")
+
+            // Small delay to allow drag animations to complete before rebuilding
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 buildSegments()
             }
         }
@@ -2039,6 +2055,8 @@ struct DraggableEventView: View {
     @State private var isPressingDown = false
     @State private var dragDirection: DragDirection = .undetermined
     @State private var hasBeenMoved = false // Track if event was moved
+    @State private var savedMinutesOffset: Int = 0 // Minutes offset after drag ends
+    @State private var savedDayOffset: Int = 0 // Day offset after drag ends
 
     enum DragDirection {
         case undetermined
@@ -2046,30 +2064,52 @@ struct DraggableEventView: View {
         case horizontal // Day change (week view only)
     }
 
-    // Calculate live preview times based on current drag
+    // Calculate live preview times based on current drag OR saved offset
     private var previewDates: (start: Date, end: Date) {
+        let calendar = Calendar.current
+
         if isDragging && dragDirection == .vertical {
-            // Vertical drag - time change
+            // DRAGGING: Vertical drag - time change (live preview)
             let minutesPerPixel = 1.0 / pxPerMinute
             let totalMinutes = dragOffset / pxPerMinute
             let snappedMinutes = round(totalMinutes / 15.0) * 15.0
 
-            let calendar = Calendar.current
             let previewStart = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.start) ?? event.start
             let previewEnd = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.end) ?? event.end
+
+            // Debug: Print preview times
+            print("🕐 Preview (dragging): \(formatTime(previewStart)) to \(formatTime(previewEnd)) (offset: \(snappedMinutes) min)")
+
             return (previewStart, previewEnd)
         } else if isDragging && dragDirection == .horizontal && isWeekView {
-            // Horizontal drag - day change
+            // DRAGGING: Horizontal drag - day change (live preview)
             let screenWidth = UIScreen.main.bounds.width
             let dayWidth = screenWidth / 7.0
             let dayChange = Int(round(horizontalDragOffset / dayWidth))
 
-            let calendar = Calendar.current
             let previewStart = calendar.date(byAdding: .day, value: dayChange, to: event.start) ?? event.start
             let previewEnd = calendar.date(byAdding: .day, value: dayChange, to: event.end) ?? event.end
             return (previewStart, previewEnd)
+        } else if hasBeenMoved {
+            // NOT DRAGGING but HAS BEEN MOVED: Show saved offset until view refreshes
+            var previewStart = event.start
+            var previewEnd = event.end
+
+            if savedMinutesOffset != 0 {
+                previewStart = calendar.date(byAdding: .minute, value: savedMinutesOffset, to: previewStart) ?? previewStart
+                previewEnd = calendar.date(byAdding: .minute, value: savedMinutesOffset, to: previewEnd) ?? previewEnd
+            }
+
+            if savedDayOffset != 0 {
+                previewStart = calendar.date(byAdding: .day, value: savedDayOffset, to: previewStart) ?? previewStart
+                previewEnd = calendar.date(byAdding: .day, value: savedDayOffset, to: previewEnd) ?? previewEnd
+            }
+
+            print("🕐 Preview (saved): \(formatTime(previewStart)) to \(formatTime(previewEnd)) (minutes: \(savedMinutesOffset), days: \(savedDayOffset))")
+
+            return (previewStart, previewEnd)
         } else {
-            // Not dragging or direction not determined - show original times
+            // PRISTINE: Not dragging and never moved - show actual event times
             return (event.start, event.end)
         }
     }
@@ -2114,7 +2154,7 @@ struct DraggableEventView: View {
                             .foregroundColor(.secondary)
                     }
 
-                    Text("\(formatTime(previewDates.start)) - \(formatTime(previewDates.end))")
+                    Text("\(formatTime(previewDates.start)) to \(formatTime(previewDates.end))")
                         .dynamicFont(size: 12, fontManager: fontManager)
                         .foregroundColor(isDragging ? .blue : .secondary)
                         .animation(.none, value: previewDates.start)
@@ -2280,7 +2320,8 @@ struct DraggableEventView: View {
                                 handleVerticalDragEnd(snappedMinutes: snappedMinutes)
                                 hasBeenMoved = true
                                 print("🎯 Event parked at new time: \(snappedMinutes) minutes")
-                                // Keep the offset - event stays parked until next drag
+                                // KEEP dragOffset - event stays visually parked until segments rebuild with updated event
+                                // DO NOT reset dragOffset here!
                             } else {
                                 print("🎯 No time change, reverting")
                                 withAnimation {
@@ -2328,7 +2369,11 @@ struct DraggableEventView: View {
 
         print("✅ New times: \(newStartDate) - \(newEndDate)")
 
+        // Save offset to keep displaying updated time until view refreshes
+        savedMinutesOffset = Int(snappedMinutes)
+
         // Save to the actual calendar source (EKEvent, Google, or Outlook)
+        // CalendarManager will update the events array, triggering a view rebuild
         saveEventTimeChange(eventId: event.id, newStart: newStartDate, newEnd: newEndDate, source: event.source)
     }
 
@@ -2345,13 +2390,24 @@ struct DraggableEventView: View {
 
         print("✅ Event moved to new day: \(newStartDate)")
 
+        // Save offset to keep displaying updated position until view refreshes
+        savedDayOffset = dayChange
+
         // Save to the actual calendar source (EKEvent, Google, or Outlook)
+        // CalendarManager will update the events array, triggering a view rebuild
         saveEventTimeChange(eventId: event.id, newStart: newStartDate, newEnd: newEndDate, source: event.source)
     }
 
     private func saveEventTimeChange(eventId: String, newStart: Date, newEnd: Date, source: CalendarSource) {
         // This needs access to CalendarManager or EventStore to save
         // For now, we'll use NotificationCenter to notify the parent
+        print("📤 Posting notification to update event:")
+        print("   ID: \(eventId)")
+        print("   Original start: \(event.start)")
+        print("   New start: \(newStart)")
+        print("   New end: \(newEnd)")
+        print("   Source: \(source)")
+
         NotificationCenter.default.post(
             name: NSNotification.Name("UpdateEventTime"),
             object: nil,
@@ -2362,7 +2418,6 @@ struct DraggableEventView: View {
                 "source": source
             ]
         )
-        print("📤 Posted notification to update event \(eventId)")
     }
 
     private func colorForCalendarSource(_ source: CalendarSource) -> Color {
@@ -2371,7 +2426,7 @@ struct DraggableEventView: View {
 
     private func formatTime(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "h a"
+        formatter.dateFormat = "h:mm a"  // Format: 6:00 PM
         return formatter.string(from: date)
     }
 }
@@ -2598,10 +2653,10 @@ struct DraggableEventView: View {
         }
     }
 
-    /// Format date as time string (e.g., "9 AM", "2 PM")
+    /// Format date as time string (e.g., "6:00 PM", "9:00 AM")
     private func formatTime(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "h a"
+        formatter.dateFormat = "h:mm a"  // Format: 6:00 PM
         return formatter.string(from: date)
     }
 }
@@ -2618,6 +2673,8 @@ struct EventCardView: View {
     @State private var pressStartTime: Date?
     @State private var longPressTimer: Timer?
     @State private var isPressingDown = false
+    @State private var draggedStartTime: Date?
+    @State private var draggedEndTime: Date?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -2636,7 +2693,7 @@ struct EventCardView: View {
                 HStack {
                     Text(timeRangeText)
                         .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(isDragging ? .primary : .secondary)
 
                     Spacer()
 
@@ -2685,6 +2742,7 @@ struct EventCardView: View {
         .scaleEffect(isDragging ? 1.02 : (isPressingDown ? 0.98 : 1.0))
         .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
         .offset(y: dragOffset)
+        .animation(isDragging ? .interactiveSpring() : .none, value: dragOffset) // Smooth during drag, instant when released
         .animation(.easeInOut(duration: 0.2), value: isDragging)
         .animation(.easeInOut(duration: 0.1), value: isPressingDown)
         .contentShape(Rectangle())
@@ -2714,7 +2772,23 @@ struct EventCardView: View {
                     // If activated, allow dragging
                     if isDragging {
                         dragOffset = value.translation.height
-                        print("📍 Dragging: \(value.translation.height)")
+
+                        // Calculate new time in 15-minute increments while dragging
+                        let minutesPerPixel = 60.0 / hourHeight // Based on hourHeight
+                        let totalMinutes = value.translation.height * minutesPerPixel
+
+                        // Snap to 15-minute increments
+                        let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+
+                        // Update dragged times
+                        let calendar = Calendar.current
+                        if let newStartDate = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.startDate),
+                           let newEndDate = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.endDate) {
+                            draggedStartTime = newStartDate
+                            draggedEndTime = newEndDate
+                        }
+
+                        print("📍 Dragging: \(value.translation.height), New time: \(snappedMinutes) min")
                     }
                 }
                 .onEnded { value in
@@ -2734,6 +2808,8 @@ struct EventCardView: View {
                         isDragging = false
                         dragOffset = 0
                         isPressingDown = false
+                        draggedStartTime = nil
+                        draggedEndTime = nil
                     }
                     pressStartTime = nil
                 }
@@ -2755,13 +2831,18 @@ struct EventCardView: View {
         if event.isAllDay {
             return formatDate(event.startDate)
         } else {
-            return "\(formatTime(event.startDate)) - \(formatTime(event.endDate))"
+            // Show dragged time if currently dragging, otherwise show original time
+            if isDragging, let draggedStart = draggedStartTime, let draggedEnd = draggedEndTime {
+                return "\(formatTime(draggedStart)) to \(formatTime(draggedEnd))"
+            } else {
+                return "\(formatTime(event.startDate)) to \(formatTime(event.endDate))"
+            }
         }
     }
 
     private func formatTime(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.timeStyle = .short
+        formatter.dateFormat = "h:mm a"  // Format: 6:00 PM
         return formatter.string(from: date)
     }
 

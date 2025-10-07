@@ -132,6 +132,10 @@ class OutlookCalendarManager: ObservableObject {
     private let scopes = ["https://graph.microsoft.com/Calendars.Read", "https://graph.microsoft.com/User.Read"]
     private var accessToken: String? // Store access token for API calls
 
+    // Track events with pending API updates to prevent overwriting during fetch
+    private var pendingUpdates: [String: OutlookEvent] = [:] // eventId -> updated event
+    private let pendingUpdatesQueue = DispatchQueue(label: "com.calai.outlook.pendingUpdates")
+
     init() {
         print("🔍 Debug - OutlookCalendarManager init called")
         setupMSAL()
@@ -1401,7 +1405,7 @@ class OutlookCalendarManager: ObservableObject {
                         print("🔍 Debug - API returned empty events array - calendar may be empty or permissions issue")
                     }
 
-                    let outlookEvents = eventsData.value.compactMap { graphEvent -> OutlookEvent? in
+                    let fetchedEvents = eventsData.value.compactMap { graphEvent -> OutlookEvent? in
                         guard let startDateTime = graphEvent.start?.dateTime,
                               let endDateTime = graphEvent.end?.dateTime else {
                             print("🔍 Debug - Skipping event with missing dates: \(graphEvent.subject ?? "No title")")
@@ -1446,8 +1450,39 @@ class OutlookCalendarManager: ObservableObject {
                         )
                     }
 
-                    self?.outlookEvents = outlookEvents
-                    print("✅ Fetched \(outlookEvents.count) Outlook events")
+                    // SMART MERGE: Preserve events with pending updates, use fetched data for others
+                    let mergedEvents: [OutlookEvent] = self?.pendingUpdatesQueue.sync {
+                        guard let pending = self?.pendingUpdates, !pending.isEmpty else {
+                            // No pending updates, use fetched events as-is
+                            print("✅ No pending updates, using fetched events directly")
+                            return fetchedEvents
+                        }
+
+                        print("🔄 Merging \(fetchedEvents.count) fetched events with \(pending.count) pending updates")
+
+                        var merged = fetchedEvents.map { fetchedEvent -> OutlookEvent in
+                            // If this event has a pending update, use the pending version
+                            if let pendingEvent = pending[fetchedEvent.id] {
+                                print("🔒 Preserving pending update for: \(pendingEvent.title)")
+                                return pendingEvent
+                            }
+                            return fetchedEvent
+                        }
+
+                        // Add any pending events that weren't in the fetched results
+                        // (shouldn't happen normally, but handles edge cases)
+                        for (eventId, pendingEvent) in pending {
+                            if !merged.contains(where: { $0.id == eventId }) {
+                                print("➕ Adding pending event not in fetched results: \(pendingEvent.title)")
+                                merged.append(pendingEvent)
+                            }
+                        }
+
+                        return merged
+                    } ?? fetchedEvents
+
+                    self?.outlookEvents = mergedEvents
+                    print("✅ Fetched \(fetchedEvents.count) Outlook events, merged to \(mergedEvents.count) total events")
                 }
             }
         }
@@ -1523,8 +1558,102 @@ class OutlookCalendarManager: ObservableObject {
 
     func updateEventTime(eventId: String, newStart: Date, newEnd: Date) async {
         print("📅 Updating Outlook Calendar event time: \(eventId)")
-        // TODO: Implement actual Microsoft Graph API time update
-        // For now, just log the update
-        print("✅ Outlook event \(eventId) would be updated to \(newStart) - \(newEnd)")
+
+        // Create updated event first
+        var updatedEvent: OutlookEvent?
+
+        // Update local array immediately for UI responsiveness
+        await MainActor.run { [weak self] in
+            if let index = self?.outlookEvents.firstIndex(where: { $0.id == eventId }) {
+                let oldEvent = self?.outlookEvents[index]
+                if let old = oldEvent {
+                    // Create new event with updated times (struct properties are immutable)
+                    let newEvent = OutlookEvent(
+                        id: old.id,
+                        title: old.title,
+                        startDate: newStart,
+                        endDate: newEnd,
+                        location: old.location,
+                        description: old.description,
+                        calendarId: old.calendarId,
+                        organizer: old.organizer
+                    )
+                    updatedEvent = newEvent
+                    self?.outlookEvents[index] = newEvent
+
+                    // Track this update as pending
+                    self?.pendingUpdatesQueue.sync {
+                        self?.pendingUpdates[eventId] = newEvent
+                    }
+                    print("✅ Local Outlook event updated: \(newEvent.title)")
+                    print("🔒 Event marked as pending update: \(eventId)")
+                }
+            }
+        }
+
+        // Use stored access token if available
+        guard let token = accessToken else {
+            print("⚠️ No access token available for Outlook update - using local update only")
+            return
+        }
+
+        // Make actual Microsoft Graph API PATCH request
+        let urlString = "https://graph.microsoft.com/v1.0/me/events/\(eventId)"
+        guard let url = URL(string: urlString) else {
+            print("❌ Invalid URL for event update")
+            return
+        }
+
+        // Format dates in ISO 8601 format for Microsoft Graph API
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+
+        let startString = isoFormatter.string(from: newStart)
+        let endString = isoFormatter.string(from: newEnd)
+
+        // Create PATCH request body
+        let requestBody: [String: Any] = [
+            "start": [
+                "dateTime": startString,
+                "timeZone": TimeZone.current.identifier
+            ],
+            "end": [
+                "dateTime": endString,
+                "timeZone": TimeZone.current.identifier
+            ]
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: requestBody) else {
+            print("❌ Failed to serialize JSON for event update")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    print("✅ Outlook event \(eventId) successfully updated to \(newStart) - \(newEnd)")
+
+                    // Remove from pending updates - save completed successfully
+                    pendingUpdatesQueue.sync {
+                        pendingUpdates.removeValue(forKey: eventId)
+                    }
+                    print("🔓 Event removed from pending updates: \(eventId)")
+                } else {
+                    print("⚠️ Outlook event update returned status code: \(httpResponse.statusCode)")
+                    // Keep in pending updates on failure
+                }
+            }
+        } catch {
+            print("❌ Failed to update Outlook event: \(error.localizedDescription)")
+            // Keep in pending updates on error
+        }
     }
 }

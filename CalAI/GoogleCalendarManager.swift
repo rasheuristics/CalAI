@@ -27,6 +27,10 @@ class GoogleCalendarManager: ObservableObject {
     @Published var isLoading = false
     @Published var googleEvents: [GoogleEvent] = []
 
+    // Track events with pending API updates to prevent overwriting during fetch
+    private var pendingUpdates: [String: GoogleEvent] = [:] // eventId -> updated event
+    private let pendingUpdatesQueue = DispatchQueue(label: "com.calai.google.pendingUpdates")
+
     // private let calendarService = GTLRCalendarService()
 
     init() {
@@ -307,7 +311,7 @@ class GoogleCalendarManager: ObservableObject {
         // Simulate Google Calendar API call to fetch events
         // In real implementation: GET https://www.googleapis.com/calendar/v3/calendars/primary/events
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            let simulatedEvents = [
+            let fetchedEvents = [
                 GoogleEvent(
                     id: "google_event_1",
                     title: "Morning Workout",
@@ -340,9 +344,39 @@ class GoogleCalendarManager: ObservableObject {
                 )
             ]
 
-            self?.googleEvents = simulatedEvents
+            // SMART MERGE: Preserve events with pending updates, use fetched data for others
+            let mergedEvents: [GoogleEvent] = self?.pendingUpdatesQueue.sync {
+                guard let pending = self?.pendingUpdates, !pending.isEmpty else {
+                    // No pending updates, use fetched events as-is
+                    print("✅ No pending updates, using fetched events directly")
+                    return fetchedEvents
+                }
+
+                print("🔄 Merging \(fetchedEvents.count) fetched events with \(pending.count) pending updates")
+
+                var merged = fetchedEvents.map { fetchedEvent -> GoogleEvent in
+                    // If this event has a pending update, use the pending version
+                    if let pendingEvent = pending[fetchedEvent.id] {
+                        print("🔒 Preserving pending update for: \(pendingEvent.title)")
+                        return pendingEvent
+                    }
+                    return fetchedEvent
+                }
+
+                // Add any pending events that weren't in the fetched results
+                for (eventId, pendingEvent) in pending {
+                    if !merged.contains(where: { $0.id == eventId }) {
+                        print("➕ Adding pending event not in fetched results: \(pendingEvent.title)")
+                        merged.append(pendingEvent)
+                    }
+                }
+
+                return merged
+            } ?? fetchedEvents
+
+            self?.googleEvents = mergedEvents
             self?.isLoading = false
-            print("✅ Fetched \(simulatedEvents.count) Google Calendar events")
+            print("✅ Fetched \(fetchedEvents.count) Google Calendar events, merged to \(mergedEvents.count) total events")
         }
     }
 
@@ -371,8 +405,116 @@ class GoogleCalendarManager: ObservableObject {
 
     func updateEventTime(eventId: String, newStart: Date, newEnd: Date) async {
         print("📅 Updating Google Calendar event time: \(eventId)")
-        // TODO: Implement actual Google Calendar API time update
-        // For now, just log the update
-        print("✅ Google event \(eventId) would be updated to \(newStart) - \(newEnd)")
+
+        // Update local array immediately for UI responsiveness
+        await MainActor.run { [weak self] in
+            if let index = self?.googleEvents.firstIndex(where: { $0.id == eventId }) {
+                let oldEvent = self?.googleEvents[index]
+                if let old = oldEvent {
+                    // Create new event with updated times (struct properties are immutable)
+                    let newEvent = GoogleEvent(
+                        id: old.id,
+                        title: old.title,
+                        startDate: newStart,
+                        endDate: newEnd,
+                        location: old.location,
+                        description: old.description,
+                        calendarId: old.calendarId,
+                        organizer: old.organizer
+                    )
+                    self?.googleEvents[index] = newEvent
+
+                    // Track this update as pending
+                    self?.pendingUpdatesQueue.sync {
+                        self?.pendingUpdates[eventId] = newEvent
+                    }
+                    print("✅ Local Google event updated: \(newEvent.title)")
+                    print("🔒 Event marked as pending update: \(eventId)")
+                }
+            }
+        }
+
+        // Get access token from current user
+        guard let user = GIDSignIn.sharedInstance.currentUser else {
+            print("⚠️ No Google user signed in - using local update only")
+            return
+        }
+
+        let accessToken = user.accessToken.tokenString
+
+        // Find the calendar ID for this event
+        guard let event = googleEvents.first(where: { $0.id == eventId }) else {
+            print("❌ Could not find event to get calendar ID")
+            return
+        }
+
+        let calendarId = event.calendarId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? "primary"
+
+        // Make actual Google Calendar API PATCH request
+        let urlString = "https://www.googleapis.com/calendar/v3/calendars/\(calendarId)/events/\(eventId)"
+        guard let url = URL(string: urlString) else {
+            print("❌ Invalid URL for Google event update")
+            return
+        }
+
+        // Format dates in RFC 3339 format for Google Calendar API
+        let rfc3339Formatter = ISO8601DateFormatter()
+        rfc3339Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let startString = rfc3339Formatter.string(from: newStart)
+        let endString = rfc3339Formatter.string(from: newEnd)
+
+        // Create PATCH request body
+        let requestBody: [String: Any] = [
+            "start": [
+                "dateTime": startString,
+                "timeZone": TimeZone.current.identifier
+            ],
+            "end": [
+                "dateTime": endString,
+                "timeZone": TimeZone.current.identifier
+            ]
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: requestBody) else {
+            print("❌ Failed to serialize JSON for Google event update")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    print("✅ Google event \(eventId) successfully updated to \(newStart) - \(newEnd)")
+
+                    // Parse response to get updated event data
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        print("📊 Updated event response: \(json)")
+                    }
+
+                    // Remove from pending updates - save completed successfully
+                    pendingUpdatesQueue.sync {
+                        pendingUpdates.removeValue(forKey: eventId)
+                    }
+                    print("🔓 Event removed from pending updates: \(eventId)")
+                } else {
+                    print("⚠️ Google event update returned status code: \(httpResponse.statusCode)")
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("Response: \(responseString)")
+                    }
+                    // Keep in pending updates on failure
+                }
+            }
+        } catch {
+            print("❌ Failed to update Google event: \(error.localizedDescription)")
+            // Keep in pending updates on error
+        }
     }
 }
