@@ -3,7 +3,7 @@ import EventKit
 import Combine
 import SwiftUI
 
-enum CalendarSource {
+enum CalendarSource: Equatable {
     case ios
     case google
     case outlook
@@ -868,18 +868,38 @@ class CalendarManager: ObservableObject {
     }
 
     func deleteEvent(_ event: EKEvent) {
-        print("🗑️ Deleting event: \(event.title ?? "Untitled")")
+        print("🗑️ Deleting iOS event: \(event.title ?? "Untitled")")
+        print("📍 Event ID: \(event.eventIdentifier ?? "nil")")
+        print("📍 Event calendar: \(event.calendar?.title ?? "nil")")
+
         guard hasCalendarAccess else {
             print("❌ No calendar access for event deletion")
             return
         }
 
+        let eventId = event.eventIdentifier
+
         do {
             try eventStore.remove(event, span: .thisEvent)
-            print("✅ Event deleted successfully")
+            print("✅ iOS event deleted successfully from iOS Calendar")
+
+            // Also delete from Core Data cache
+            if let eventId = eventId {
+                coreDataManager.permanentlyDeleteEvent(eventId: eventId, source: .ios)
+                print("✅ Deleted from Core Data cache")
+            }
+
+            print("🔄 Reloading iOS events...")
             loadEvents()
+
+            // Force refresh unified events after a short delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                print("🔄 Reloading unified events after iOS deletion...")
+                self.loadAllUnifiedEvents()
+            }
         } catch {
-            print("❌ Error deleting event: \(error)")
+            print("❌ Error deleting iOS event: \(error)")
+            print("❌ Error details: \(error.localizedDescription)")
         }
     }
 

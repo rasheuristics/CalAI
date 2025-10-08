@@ -403,6 +403,85 @@ class GoogleCalendarManager: ObservableObject {
         }
     }
 
+    public func deleteEvent(eventId: String) async -> Bool {
+        print("🗑️ Deleting Google Calendar event: \(eventId)")
+
+        // Find the calendar ID before deleting
+        var calendarId: String?
+        var eventTitle: String?
+        await MainActor.run { [weak self] in
+            if let index = self?.googleEvents.firstIndex(where: { $0.id == eventId }) {
+                let deletedEvent = self?.googleEvents[index]
+                calendarId = deletedEvent?.calendarId
+                eventTitle = deletedEvent?.title
+                print("📍 Found event to delete: \(eventTitle ?? "Unknown")")
+            }
+
+            // Also remove from pending updates if it exists
+            self?.pendingUpdatesQueue.sync {
+                self?.pendingUpdates.removeValue(forKey: eventId)
+            }
+        }
+
+        // Get access token from current user
+        guard let user = GIDSignIn.sharedInstance.currentUser else {
+            print("⚠️ No Google user signed in - cannot delete from server")
+            return false
+        }
+
+        let accessToken = user.accessToken.tokenString
+
+        // Use the calendar ID we found, or default to primary
+        let calId = (calendarId?.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)) ?? "primary"
+
+        // Make actual Google Calendar API DELETE request
+        let urlString = "https://www.googleapis.com/calendar/v3/calendars/\(calId)/events/\(eventId)"
+        guard let url = URL(string: urlString) else {
+            print("❌ Invalid URL for Google event deletion")
+            return false
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 DELETE response status: \(httpResponse.statusCode)")
+
+                // Log response body for debugging
+                if let responseString = String(data: data, encoding: .utf8), !responseString.isEmpty {
+                    print("📄 Response body: \(responseString)")
+                }
+
+                if httpResponse.statusCode == 204 || httpResponse.statusCode == 200 {
+                    print("✅ Google event '\(eventTitle ?? eventId)' successfully deleted from server (status: \(httpResponse.statusCode))")
+
+                    // Remove from local array AFTER successful server deletion
+                    await MainActor.run { [weak self] in
+                        if let index = self?.googleEvents.firstIndex(where: { $0.id == eventId }) {
+                            self?.googleEvents.remove(at: index)
+                            print("✅ Removed event from local array at index \(index)")
+                        } else {
+                            print("⚠️ Event not found in local array: \(eventId)")
+                        }
+                    }
+                    return true
+                } else {
+                    print("⚠️ Google event deletion returned status code: \(httpResponse.statusCode)")
+                    return false
+                }
+            }
+            return false
+        } catch {
+            print("❌ Failed to delete Google event: \(error.localizedDescription)")
+            print("❌ Error details: \(error)")
+            return false
+        }
+    }
+
     func updateEventTime(eventId: String, newStart: Date, newEnd: Date) async {
         print("📅 Updating Google Calendar event time: \(eventId)")
 

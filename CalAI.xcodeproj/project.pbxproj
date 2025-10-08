@@ -69,7 +69,7 @@
 		020CC79B628E4F26B759D524 /* CalendarSyncStatus+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CalendarSyncStatus+CoreDataProperties.swift"; sourceTree = "<group>"; };
 		15B6F6C536014C07B84B54BD /* CoreDataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreDataManager.swift; sourceTree = "<group>"; };
 		4D51096E4254421FB0650F02 /* CalendarSyncStatus+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CalendarSyncStatus+CoreDataClass.swift"; sourceTree = "<group>"; };
-		505F673E2E81C75F00C188F0 /* OutlookCalendarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OutlookCalendarManager.swift; path = CalAI/OutlookCalendarManager.swift; sourceTree = "<group>"; };
+		505F673E2E81C75F00C188F0 /* OutlookCalendarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlookCalendarManager.swift; sourceTree = "<group>"; };
 		50745C922E7CA7C9004D0243 /* CalAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CalAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		50745C952E7CA7C9004D0243 /* CalAIApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalAIApp.swift; sourceTree = "<group>"; };
 		50745C972E7CA7C9004D0243 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -142,8 +142,6 @@
 		50745C892E7CA7C8004D0243 = {
 			isa = PBXGroup;
 			children = (
-				505F673E2E81C75F00C188F0 /* OutlookCalendarManager.swift */,
-				50745D0F2E80DAB3004D0243 /* GoogleCalendarManager.swift */,
 				50745C942E7CA7C9004D0243 /* CalAI */,
 				50745C932E7CA7C9004D0243 /* Products */,
 				50745D012E80B15C004D0243 /* AddEventView.swift */,
@@ -162,6 +160,8 @@
 		50745C942E7CA7C9004D0243 /* CalAI */ = {
 			isa = PBXGroup;
 			children = (
+				505F673E2E81C75F00C188F0 /* OutlookCalendarManager.swift */,
+				50745D0F2E80DAB3004D0243 /* GoogleCalendarManager.swift */,
 				507BC65D2E93255300885C43 /* CrashReportingSettingsView.swift */,
 				507BC65B2E93250F00885C43 /* CrashReporter.swift */,
 				ENTITLEMENTS001234567890 /* CalAI.entitlements */,

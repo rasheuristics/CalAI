@@ -129,7 +129,7 @@ class OutlookCalendarManager: ObservableObject {
 
     // MSAL Configuration
     private var msalApplication: MSALPublicClientApplication?
-    private let scopes = ["https://graph.microsoft.com/Calendars.Read", "https://graph.microsoft.com/User.Read"]
+    private let scopes = ["https://graph.microsoft.com/Calendars.ReadWrite", "https://graph.microsoft.com/User.Read"]
     private var accessToken: String? // Store access token for API calls
 
     // Track events with pending API updates to prevent overwriting during fetch
@@ -1553,6 +1553,86 @@ class OutlookCalendarManager: ObservableObject {
                 print("❌ Outlook Calendar event not found for update: \(event.id)")
                 completion(false, "Event not found")
             }
+        }
+    }
+
+    public func deleteEvent(eventId: String) async -> Bool {
+        print("🗑️ Deleting Outlook Calendar event: \(eventId)")
+
+        // Find the event title before deleting
+        var eventTitle: String?
+        await MainActor.run { [weak self] in
+            if let index = self?.outlookEvents.firstIndex(where: { $0.id == eventId }) {
+                let deletedEvent = self?.outlookEvents[index]
+                eventTitle = deletedEvent?.title
+                print("📍 Found event to delete: \(eventTitle ?? "Unknown")")
+            }
+
+            // Also remove from pending updates if it exists
+            self?.pendingUpdatesQueue.sync {
+                self?.pendingUpdates.removeValue(forKey: eventId)
+            }
+        }
+
+        // Use stored access token if available
+        guard let token = accessToken else {
+            print("⚠️ No access token available for Outlook deletion - cannot delete from server")
+            return false
+        }
+
+        // Make actual Microsoft Graph API DELETE request
+        // Outlook event IDs need to be URL encoded
+        guard let encodedEventId = eventId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            print("❌ Failed to encode event ID for deletion")
+            return false
+        }
+
+        let urlString = "https://graph.microsoft.com/v1.0/me/events/\(encodedEventId)"
+        guard let url = URL(string: urlString) else {
+            print("❌ Invalid URL for event deletion: \(urlString)")
+            return false
+        }
+
+        print("🌐 DELETE request URL: \(urlString)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 DELETE response status: \(httpResponse.statusCode)")
+
+                // Log response body for debugging
+                if let responseString = String(data: data, encoding: .utf8), !responseString.isEmpty {
+                    print("📄 Response body: \(responseString)")
+                }
+
+                if httpResponse.statusCode == 204 || httpResponse.statusCode == 200 {
+                    print("✅ Outlook event '\(eventTitle ?? eventId)' successfully deleted from server (status: \(httpResponse.statusCode))")
+
+                    // Remove from local array AFTER successful server deletion
+                    await MainActor.run { [weak self] in
+                        if let index = self?.outlookEvents.firstIndex(where: { $0.id == eventId }) {
+                            self?.outlookEvents.remove(at: index)
+                            print("✅ Removed event from local array at index \(index)")
+                        } else {
+                            print("⚠️ Event not found in local array: \(eventId)")
+                        }
+                    }
+                    return true
+                } else {
+                    print("⚠️ Outlook event deletion returned status code: \(httpResponse.statusCode)")
+                    return false
+                }
+            }
+            return false
+        } catch {
+            print("❌ Failed to delete Outlook event: \(error.localizedDescription)")
+            print("❌ Error details: \(error)")
+            return false
         }
     }
 

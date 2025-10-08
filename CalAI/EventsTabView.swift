@@ -108,9 +108,12 @@ struct EventsTabView: View {
                                 }
                                 .onDelete { indexSet in
                                     let eventsForDate = groupedUnifiedEvents[date] ?? []
+                                    print("🗑️ Delete triggered in unified view - \(indexSet.count) event(s)")
                                     for index in indexSet {
                                         if index < eventsForDate.count {
-                                            deleteUnifiedEvent(eventsForDate[index])
+                                            let event = eventsForDate[index]
+                                            print("🗑️ Deleting unified event at index \(index): \(event.title)")
+                                            deleteUnifiedEvent(event)
                                         }
                                     }
                                 }
@@ -149,7 +152,9 @@ struct EventsTabView: View {
                                     let eventsForDate = groupedEvents[date] ?? []
                                     for index in indexSet {
                                         if index < eventsForDate.count {
-                                            calendarManager.deleteEvent(eventsForDate[index])
+                                            let event = eventsForDate[index]
+                                            print("🗑️ Deleting iOS-only view event: \(event.title ?? "Untitled")")
+                                            calendarManager.deleteEvent(event)
                                         }
                                     }
                                 }
@@ -242,22 +247,63 @@ struct EventsTabView: View {
     }
 
     private func deleteUnifiedEvent(_ event: UnifiedEvent) {
+        // IMMEDIATELY remove from unified events to prevent SwiftUI List crash
+        // This gives instant UI feedback and prevents the count mismatch error
+        calendarManager.unifiedEvents.removeAll { $0.id == event.id && $0.source == event.source }
+
         switch event.source {
         case .ios:
             if let ekEvent = event.originalEvent as? EKEvent {
+                print("🗑️ Attempting to delete iOS event: \(event.title)")
                 calendarManager.deleteEvent(ekEvent)
+                // Note: CalendarManager.deleteEvent already handles:
+                // - Deletion from iOS Calendar (EventStore)
+                // - Deletion from Core Data cache
+                // - Reloading iOS events
+                // - Refreshing unified events
             }
         case .google:
-            // TODO: Implement Google Calendar event deletion
-            print("📅 Google Calendar event deletion not yet implemented")
-        case .outlook:
-            // TODO: Implement Outlook Calendar event deletion
-            print("📅 Outlook Calendar event deletion not yet implemented")
-        }
+            Task {
+                print("🗑️ Attempting to delete Google event: \(event.title)")
+                let success = await calendarManager.googleCalendarManager?.deleteEvent(eventId: event.id) ?? false
 
-        // Refresh the unified events after deletion
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            calendarManager.loadAllUnifiedEvents()
+                if success {
+                    print("✅ Google event deleted successfully, cleaning up cache and refreshing")
+                    await MainActor.run {
+                        // Delete from Core Data cache
+                        CoreDataManager.shared.permanentlyDeleteEvent(eventId: event.id, source: .google)
+                        // Refresh unified events to get final state from server
+                        calendarManager.loadAllUnifiedEvents()
+                    }
+                } else {
+                    print("❌ Failed to delete Google event, restoring to list")
+                    // Restore the event if deletion failed
+                    await MainActor.run {
+                        calendarManager.loadAllUnifiedEvents()
+                    }
+                }
+            }
+        case .outlook:
+            Task {
+                print("🗑️ Attempting to delete Outlook event: \(event.title)")
+                let success = await calendarManager.outlookCalendarManager?.deleteEvent(eventId: event.id) ?? false
+
+                if success {
+                    print("✅ Outlook event deleted successfully, cleaning up cache and refreshing")
+                    await MainActor.run {
+                        // Delete from Core Data cache
+                        CoreDataManager.shared.permanentlyDeleteEvent(eventId: event.id, source: .outlook)
+                        // Refresh unified events to get final state from server
+                        calendarManager.loadAllUnifiedEvents()
+                    }
+                } else {
+                    print("❌ Failed to delete Outlook event, restoring to list")
+                    // Restore the event if deletion failed
+                    await MainActor.run {
+                        calendarManager.loadAllUnifiedEvents()
+                    }
+                }
+            }
         }
     }
 }
