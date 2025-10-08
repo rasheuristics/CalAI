@@ -880,7 +880,7 @@ class CalendarManager: ObservableObject {
         let eventId = event.eventIdentifier
 
         do {
-            try eventStore.remove(event, span: .thisEvent)
+            try eventStore.remove(event, span: .thisEvent, commit: true)
             print("✅ iOS event deleted successfully from iOS Calendar")
 
             // Also delete from Core Data cache
@@ -889,13 +889,22 @@ class CalendarManager: ObservableObject {
                 print("✅ Deleted from Core Data cache")
             }
 
-            print("🔄 Reloading iOS events...")
-            loadEvents()
+            // CRITICAL: Clear BOTH the loaded ranges cache AND the events array
+            // The cache prevents re-fetching, and the old events array has stale data
+            loadedRanges.removeAll()
+            events.removeAll()
+            print("🗑️ Cleared loaded ranges cache and events array to force fresh fetch")
 
-            // Force refresh unified events after a short delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                print("🔄 Reloading unified events after iOS deletion...")
-                self.loadAllUnifiedEvents()
+            print("🔄 Reloading iOS events...")
+            // Add a small delay before reloading to ensure EventStore has processed the deletion
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                self.loadEvents()
+
+                // Force refresh unified events after iOS events are reloaded
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    print("🔄 Reloading unified events after iOS deletion...")
+                    self.loadAllUnifiedEvents()
+                }
             }
         } catch {
             print("❌ Error deleting iOS event: \(error)")
