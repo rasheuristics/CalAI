@@ -5,6 +5,7 @@ import AVFoundation
 class VoiceManager: NSObject, ObservableObject {
     @Published var isListening = false
     @Published var hasRecordingPermission = false
+    @Published var currentTranscript = "" // Real-time transcript updates
 
     private var audioEngine = AVAudioEngine()
     private var speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -12,6 +13,7 @@ class VoiceManager: NSObject, ObservableObject {
     private var recognitionTask: SFSpeechRecognitionTask?
 
     private var completionHandler: ((String) -> Void)?
+    private var partialTranscriptHandler: ((String) -> Void)?
     private var latestTranscript = ""
 
     override init() {
@@ -59,7 +61,7 @@ class VoiceManager: NSObject, ObservableObject {
         }
     }
 
-    func startListening(completion: @escaping (String) -> Void) {
+    func startListening(onPartialTranscript: ((String) -> Void)? = nil, completion: @escaping (String) -> Void) {
         print("🎙️ Starting listening process...")
         print("📋 Checking permissions - hasRecordingPermission: \(hasRecordingPermission)")
 
@@ -80,6 +82,12 @@ class VoiceManager: NSObject, ObservableObject {
 
         print("✅ All permissions and requirements met")
         completionHandler = completion
+        partialTranscriptHandler = onPartialTranscript
+
+        // Clear previous transcript
+        DispatchQueue.main.async {
+            self.currentTranscript = ""
+        }
 
         // Cancel previous task
         print("🔄 Canceling previous recognition task...")
@@ -143,6 +151,12 @@ class VoiceManager: NSObject, ObservableObject {
                 // Only update if we have a non-empty transcript or no previous transcript
                 if !newTranscript.isEmpty || (self?.latestTranscript.isEmpty ?? true) {
                     self?.latestTranscript = newTranscript
+
+                    // Update published property for real-time display
+                    DispatchQueue.main.async {
+                        self?.currentTranscript = newTranscript
+                        self?.partialTranscriptHandler?(newTranscript)
+                    }
                 }
 
                 if result.isFinal {
@@ -204,7 +218,12 @@ class VoiceManager: NSObject, ObservableObject {
         recognitionRequest = nil
         recognitionTask = nil
 
-        // Don't clear transcript immediately, let delayed processing use it
+        // Clear published transcript immediately
+        DispatchQueue.main.async {
+            self.currentTranscript = ""
+        }
+
+        // Don't clear latestTranscript immediately, let delayed processing use it
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.latestTranscript = ""
         }

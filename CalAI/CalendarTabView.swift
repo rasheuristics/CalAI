@@ -15,6 +15,8 @@ struct CalendarTabView: View {
     @State private var selectedDate = Date()
     @State private var currentViewType: CalendarViewType = .day
     @State private var showingDatePicker = false
+    @State private var selectedEventForDetail: UnifiedEvent? = nil
+    @State private var showEventDetail = false
 
     private let eventFilterService = EventFilterService()
 
@@ -69,7 +71,14 @@ struct CalendarTabView: View {
                                     events: dayEvents.map { TimelineEvent(from: $0) },
                                     fontManager: fontManager,
                                     isWeekView: false,
-                                    refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined()
+                                    refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined(),
+                                    onEventTap: { calendarEvent in
+                                        // Find the corresponding UnifiedEvent
+                                        if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == calendarEvent.id }) {
+                                            selectedEventForDetail = unifiedEvent
+                                            showEventDetail = true
+                                        }
+                                    }
                                 )
                                 .id("\(selectedDate.timeIntervalSince1970)") // Force recreation on date change
                             }
@@ -78,7 +87,14 @@ struct CalendarTabView: View {
                                 selectedDate: $selectedDate,
                                 events: calendarManager.unifiedEvents,
                                 fontManager: fontManager,
-                                calendarManager: calendarManager
+                                calendarManager: calendarManager,
+                                onEventTap: { calendarEvent in
+                                    // Find the corresponding UnifiedEvent
+                                    if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == calendarEvent.id }) {
+                                        selectedEventForDetail = unifiedEvent
+                                        showEventDetail = true
+                                    }
+                                }
                             )
                         case .month:
                             MonthCalendarView(selectedDate: $selectedDate)
@@ -97,6 +113,15 @@ struct CalendarTabView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .sheet(isPresented: $showEventDetail) {
+            if let event = selectedEventForDetail {
+                EventDetailView(
+                    calendarManager: calendarManager,
+                    fontManager: fontManager,
+                    event: event
+                )
             }
         }
         .onAppear {
@@ -906,22 +931,22 @@ struct YearMonthCard: View {
                 HStack(spacing: 0) {
                     ForEach(weekdaySymbols, id: \.self) { day in
                         Text(day)
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(.secondary)
-                            .frame(width: 16, height: 14)
+                            .frame(width: 20, height: 18)
                     }
                 }
 
                 // Calendar days
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(16), spacing: 0), count: 7), spacing: 2) {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(20), spacing: 0), count: 7), spacing: 2) {
                     ForEach(monthDates, id: \.self) { date in
                         Button(action: {
                             selectedDate = date
                         }) {
                             Text(dayText(for: date))
-                                .font(.system(size: 9, weight: .medium))
+                                .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(textColor(for: date))
-                                .frame(width: 16, height: 16)
+                                .frame(width: 20, height: 20)
                                 .background(
                                     Circle()
                                         .fill(backgroundFill(for: date))
@@ -1014,7 +1039,7 @@ struct YearMonthCard: View {
     private func textColor(for date: Date) -> Color {
         if isSelected(date) {
             return .white
-        } else if isToday(date) {
+        } else if isToday(date) && isCurrentMonth(date) {
             return .blue
         } else if isCurrentMonth(date) {
             return .black
@@ -1026,7 +1051,7 @@ struct YearMonthCard: View {
     private func backgroundFill(for date: Date) -> Color {
         if isSelected(date) {
             return .blue
-        } else if isToday(date) {
+        } else if isToday(date) && isCurrentMonth(date) {
             return .blue.opacity(0.1)
         } else {
             return .clear
@@ -1034,7 +1059,8 @@ struct YearMonthCard: View {
     }
 
     private func isSelected(_ date: Date) -> Bool {
-        calendar.isDate(date, inSameDayAs: selectedDate)
+        // Only show selection if the date matches AND it's in the current month card
+        calendar.isDate(date, inSameDayAs: selectedDate) && isCurrentMonth(date)
     }
 
     private func isToday(_ date: Date) -> Bool {
@@ -1052,6 +1078,7 @@ struct WeekViewWithCompressedTimeline: View {
     let events: [UnifiedEvent]
     @ObservedObject var fontManager: FontManager
     @ObservedObject var calendarManager: CalendarManager
+    var onEventTap: ((CalendarEvent) -> Void)? = nil
 
     private let calendar = Calendar.current
     private let eventFilterService = EventFilterService()
@@ -1378,7 +1405,8 @@ struct WeekViewWithCompressedTimeline: View {
                 events: eventsForDate(previousDay).map { TimelineEvent(from: $0) },
                 fontManager: fontManager,
                 isWeekView: true,
-                refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined()
+                refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined(),
+                onEventTap: onEventTap
             )
             .id("\(previousDay.timeIntervalSince1970)")
             .offset(x: -UIScreen.main.bounds.width + swipeDragOffset)
@@ -1390,7 +1418,8 @@ struct WeekViewWithCompressedTimeline: View {
                 events: eventsForDate(selectedDate).map { TimelineEvent(from: $0) },
                 fontManager: fontManager,
                 isWeekView: true,
-                refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined()
+                refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined(),
+                onEventTap: onEventTap
             )
             .id("\(selectedDate.timeIntervalSince1970)")
             .offset(x: swipeDragOffset)
@@ -1402,7 +1431,8 @@ struct WeekViewWithCompressedTimeline: View {
                 events: eventsForDate(nextDay).map { TimelineEvent(from: $0) },
                 fontManager: fontManager,
                 isWeekView: true,
-                refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined()
+                refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined(),
+                onEventTap: onEventTap
             )
             .id("\(nextDay.timeIntervalSince1970)")
             .offset(x: UIScreen.main.bounds.width + swipeDragOffset)
@@ -1667,6 +1697,7 @@ struct CompressedDayTimelineView: View {
     @ObservedObject var fontManager: FontManager
     var isWeekView: Bool = false // New parameter to indicate week view mode
     var refreshTrigger: String = "" // Trigger to force rebuild when events change
+    var onEventTap: ((CalendarEvent) -> Void)? = nil // Callback for event tap
 
     // Tuning constants
     let pxPerMinute: CGFloat
@@ -1689,7 +1720,7 @@ struct CompressedDayTimelineView: View {
 
     init(date: Date, events: [CalendarEvent], fontManager: FontManager,
          pxPerMinute: CGFloat = 1.0, gapCollapseThresholdMin: Int = 30, collapsedGapHeight: CGFloat = 48,
-         isWeekView: Bool = false, refreshTrigger: String = "") {
+         isWeekView: Bool = false, refreshTrigger: String = "", onEventTap: ((CalendarEvent) -> Void)? = nil) {
         self.date = date
         self.refreshTrigger = refreshTrigger
         self.events = events
@@ -1698,6 +1729,7 @@ struct CompressedDayTimelineView: View {
         self.gapCollapseThresholdMin = gapCollapseThresholdMin
         self.collapsedGapHeight = collapsedGapHeight
         self.isWeekView = isWeekView
+        self.onEventTap = onEventTap
     }
 
     var body: some View {
@@ -2034,7 +2066,8 @@ struct CompressedDayTimelineView: View {
             width: width,
             pxPerMinute: pxPerMinute,
             fontManager: fontManager,
-            isWeekView: isWeekView
+            isWeekView: isWeekView,
+            onEventTap: onEventTap
         )
     }
 
@@ -2046,6 +2079,7 @@ struct DraggableEventView: View {
     let pxPerMinute: CGFloat
     @ObservedObject var fontManager: FontManager
     var isWeekView: Bool = false // New parameter for week view mode
+    var onEventTap: ((CalendarEvent) -> Void)? = nil // Callback for event tap
 
     @State private var dragOffset: CGFloat = 0
     @State private var horizontalDragOffset: CGFloat = 0
@@ -2329,6 +2363,10 @@ struct DraggableEventView: View {
                                 }
                             }
                         }
+                    } else if pressStartTime != nil {
+                        // User lifted finger before 1s - treat as tap
+                        onEventTap?(event)
+                        print("👆 Event tapped: \(event.title ?? "Untitled")")
                     }
 
                     // Clear drag indicator from week view headers

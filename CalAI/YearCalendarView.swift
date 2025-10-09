@@ -55,7 +55,7 @@ struct YearMonthGroupView: View {
                     selectedDate: $selectedDate,
                     appearanceManager: appearanceManager
                 )
-                .frame(height: 160)
+                .frame(height: 180)
                 .onTapGesture {
                     selectedDate = month
                 }
@@ -83,9 +83,9 @@ struct YearMonthView: View {
             HStack(spacing: 2) {
                 ForEach(weekdayHeaders, id: \.self) { weekday in
                     Text(weekday)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 16)
+                        .frame(maxWidth: .infinity, minHeight: 20)
                 }
             }
             .padding(.horizontal, 8)
@@ -99,7 +99,7 @@ struct YearMonthView: View {
                         month: month,
                         appearanceManager: appearanceManager
                     )
-                    .frame(width: 16, height: 16)
+                    .frame(width: 20, height: 20)
                 }
             }
             .padding(.horizontal, 8)
@@ -166,18 +166,18 @@ struct YearDayCell: View {
             if isToday {
                 Circle()
                     .fill(Color.blue)
-                    .frame(width: 14, height: 14)
+                    .frame(width: 18, height: 18)
             } else if isSelected {
                 Circle()
                     .stroke(Color.blue, lineWidth: 1)
-                    .frame(width: 14, height: 14)
+                    .frame(width: 18, height: 18)
             }
 
             Text("\(calendar.component(.day, from: date))")
-                .font(.system(size: 9, weight: isToday ? .bold : .medium))
+                .font(.system(size: 13, weight: isToday ? .bold : .semibold))
                 .foregroundColor(textColor)
         }
-        .frame(width: 16, height: 16)
+        .frame(width: 20, height: 20)
         .onTapGesture {
             selectedDate = date
         }

@@ -11,6 +11,7 @@ struct AITabView: View {
     @State private var isProcessing = false
     @State private var pendingResponse: AICalendarResponse?
     @State private var showingConfirmation = false
+    @State private var showConversationWindow = false
 
     // Inline form states
     @State private var showingInlineForm = false
@@ -24,136 +25,97 @@ struct AITabView: View {
                 .ignoresSafeArea(.all)
 
             VStack(spacing: 0) {
-                if conversationHistory.isEmpty {
-                    VStack {
-                        // AI Brain icon with mic next to it
-                        HStack(alignment: .bottom, spacing: 2) {
-                            // Mic icon positioned next to the brain's "mouth"
-                            VoiceInputButton(
-                                voiceManager: voiceManager,
-                                aiManager: aiManager,
-                                calendarManager: calendarManager,
-                                fontManager: fontManager,
-                                appearanceManager: appearanceManager,
-                                onTranscript: { transcript in
-                                    print("🗣️ Transcript received in AITabView: '\(transcript)'")
-                                    print("📝 Adding user message to conversation")
-                                    addUserMessage(transcript)
-                                },
-                                onResponse: { response in
-                                    print("🤖 AI response received in AITabView: \(response.message)")
-                                    if let command = response.command {
-                                        print("🎯 Response command: \(command.type)")
-                                        print("📅 Event title: \(command.title ?? "nil")")
-                                        print("⏰ Start date: \(command.startDate?.description ?? "nil")")
-                                    }
+                // Main content area
+                ZStack(alignment: .bottom) {
+                    // Command cards (collapse when conversation shows)
+                    if !showConversationWindow {
+                        VStack {
+                            Text("AI Assistant")
+                                .dynamicFont(size: 28, weight: .bold, fontManager: fontManager)
+                                .padding(.top, 16)
 
-                                    if response.requiresConfirmation {
-                                        print("⚠️ Response requires confirmation")
-                                        pendingResponse = response
-                                        showingConfirmation = true
-                                    } else {
-                                        addAIResponse(response)
-                                        executeAIAction(response)
-                                    }
+                            Text("Try saying something like:")
+                                .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+                                .padding(.top, 8)
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                ForEach(CommandCategory.allCases, id: \.self) { category in
+                                    CommandCategoryCard(
+                                        category: category,
+                                        fontManager: fontManager,
+                                        appearanceManager: appearanceManager,
+                                        onCommandSelected: { command in
+                                            executeExampleCommand(command)
+                                        },
+                                        onCategoryDoubleTap: { tappedCategory in
+                                            handleCategoryDoubleTap(tappedCategory)
+                                        }
+                                    )
                                 }
-                            )
-                            .offset(y: 2) // Move down to align top of mic with lips
-
-                            Image(systemName: "brain.head.profile")
-                                .font(.system(size: 60))
-                                .foregroundColor(.blue)
-                        }
-                        .padding(.top, 16)
-                        .padding(.bottom, 8)
-
-                        Text("AI Assistant")
-                            .dynamicFont(size: 28, weight: .bold, fontManager: fontManager)
-
-                        Text("Try saying something like:")
-                            .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+                            }
+                            .padding(.horizontal)
                             .padding(.top, 8)
 
-                        HStack {
-                            Image(systemName: "hand.tap")
-                                .foregroundColor(.blue)
-                                .font(.caption2)
-                            Text("Double-tap any command to execute")
-                                .dynamicFont(size: 12, fontManager: fontManager)
-                                .foregroundColor(.blue)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.blue.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            ForEach(CommandCategory.allCases, id: \.self) { category in
-                                CommandCategoryCard(
-                                    category: category,
-                                    fontManager: fontManager,
-                                    appearanceManager: appearanceManager,
-                                    onCommandSelected: { command in
-                                        executeExampleCommand(command)
-                                    },
-                                    onCategoryDoubleTap: { tappedCategory in
-                                        handleCategoryDoubleTap(tappedCategory)
-                                    }
-                                )
-                            }
+                            Spacer()
                         }
                         .padding(.horizontal)
-                        .padding(.top, 8)
-
-                        Spacer()
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
                     }
-                    .padding(.horizontal)
-                } else {
-                    if showingInlineForm {
-                        // Show inline form
-                        InlineFormView(
-                            formType: currentFormType ?? .createEvent,
-                            calendarManager: calendarManager,
-                            fontManager: fontManager,
-                            eventToEdit: selectedEventForEdit,
-                            onSave: { success in
-                                if success {
-                                    showingInlineForm = false
-                                    currentFormType = nil
-                                    selectedEventForEdit = nil
 
-                                    // Add success message to conversation
-                                    let successMessage = "✅ Event saved successfully!"
-                                    let item = ConversationItem(
-                                        id: UUID(),
-                                        message: successMessage,
-                                        isUser: false,
-                                        timestamp: Date()
-                                    )
-                                    conversationHistory.append(item)
+                    // Conversation window (slides up from bottom)
+                    if showConversationWindow {
+                        ConversationWindow(
+                            conversationHistory: $conversationHistory,
+                            voiceManager: voiceManager,
+                            isProcessing: isProcessing,
+                            fontManager: fontManager,
+                            appearanceManager: appearanceManager,
+                            onDismiss: {
+                                // Stop any active listening
+                                if voiceManager.isListening {
+                                    voiceManager.stopListening()
                                 }
-                            },
-                            onCancel: {
+                                // Close conversation window
+                                withAnimation(.easeInOut(duration: 0.4)) {
+                                    showConversationWindow = false
+                                }
+                            }
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+
+                // Inline form (shown when needed)
+                if showingInlineForm {
+                    InlineFormView(
+                        formType: currentFormType ?? .createEvent,
+                        calendarManager: calendarManager,
+                        fontManager: fontManager,
+                        eventToEdit: selectedEventForEdit,
+                        onSave: { success in
+                            if success {
                                 showingInlineForm = false
                                 currentFormType = nil
                                 selectedEventForEdit = nil
+
+                                // Add success message to conversation
+                                let successMessage = "✅ Event saved successfully!"
+                                let item = ConversationItem(
+                                    id: UUID(),
+                                    message: successMessage,
+                                    isUser: false,
+                                    timestamp: Date()
+                                )
+                                conversationHistory.append(item)
                             }
-                        )
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                    } else {
-                        ScrollView {
-                            LazyVStack(spacing: 12) {
-                                ForEach(conversationHistory, id: \.id) { item in
-                                    ConversationBubble(item: item, fontManager: fontManager, appearanceManager: appearanceManager)
-                                }
-                            }
-                            .padding(.top, 8)
-                            .padding(.horizontal)
+                        },
+                        onCancel: {
+                            showingInlineForm = false
+                            currentFormType = nil
+                            selectedEventForEdit = nil
                         }
-                        .refreshable {
-                            clearConversation()
-                        }
-                    }
+                    )
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
 
                 if isProcessing {
@@ -166,6 +128,42 @@ struct AITabView: View {
                     }
                     .padding(.bottom, 8)
                 }
+
+                // Persistent Voice Footer (always visible)
+                PersistentVoiceFooter(
+                    voiceManager: voiceManager,
+                    aiManager: aiManager,
+                    calendarManager: calendarManager,
+                    fontManager: fontManager,
+                    appearanceManager: appearanceManager,
+                    onTranscript: { transcript in
+                        print("🗣️ Transcript received in AITabView: '\(transcript)'")
+                        print("📝 Adding user message to conversation")
+                        addUserMessage(transcript)
+                    },
+                    onResponse: { response in
+                        print("🤖 AI response received in AITabView: \(response.message)")
+                        if let command = response.command {
+                            print("🎯 Response command: \(command.type)")
+                            print("📅 Event title: \(command.title ?? "nil")")
+                            print("⏰ Start date: \(command.startDate?.description ?? "nil")")
+                        }
+
+                        if response.requiresConfirmation {
+                            print("⚠️ Response requires confirmation")
+                            pendingResponse = response
+                            showingConfirmation = true
+                        } else {
+                            addAIResponse(response)
+                            executeAIAction(response)
+                        }
+                    },
+                    onStartListening: {
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            showConversationWindow = true
+                        }
+                    }
+                )
             }
 
         }
@@ -339,7 +337,7 @@ struct AITabView: View {
     }
 }
 
-struct ConversationItem {
+struct ConversationItem: Identifiable {
     let id: UUID
     let message: String
     let isUser: Bool
@@ -572,7 +570,7 @@ struct CommandCategoryCard: View {
                         .font(.caption)
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 } else {
-                    Image(systemName: "hand.tap")
+                    Image(systemName: "hand.point.up.left.fill")
                         .foregroundColor(.blue)
                         .font(.caption2)
                 }
@@ -582,15 +580,15 @@ struct CommandCategoryCard: View {
             .background(headerBackground)
             .scaleEffect(isPressed ? 0.98 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: isPressed)
-            .onTapGesture(count: category == .eventManagement ? 1 : 2) {
+            .onTapGesture {
                 if category == .eventManagement {
                     // Single tap for Event Management - toggle expansion
                     withAnimation(.easeInOut(duration: 0.2)) {
                         isExpanded.toggle()
                     }
                 } else {
-                    // Double tap for other categories - direct activation
-                    print("🔔 Double-tap detected on category: \(category.rawValue)")
+                    // Single tap for other categories - direct activation
+                    print("🔔 Single-tap detected on category: \(category.rawValue)")
                     onCategoryDoubleTap?(category)
                 }
             }
@@ -702,8 +700,8 @@ struct CommandItem: View {
         )
         .scaleEffect(isPressed ? 0.96 : 1.0)
         .animation(.easeInOut(duration: 0.1), value: isPressed)
-        .onTapGesture(count: 2) {
-            print("👆👆 Double-tap detected on command: '\(text)'")
+        .onTapGesture {
+            print("👆 Single-tap detected on command: '\(text)'")
             onDoubleTap()
         }
         .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
@@ -748,8 +746,8 @@ struct ExampleCommand: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .scaleEffect(isPressed ? 0.95 : 1.0)
         .animation(.easeInOut(duration: 0.1), value: isPressed)
-        .onTapGesture(count: 2) {
-            print("👆👆 Double-tap detected on example command: '\(text)'")
+        .onTapGesture {
+            print("👆 Single-tap detected on example command: '\(text)'")
             onDoubleTap?(text)
         }
         .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
@@ -1704,6 +1702,207 @@ struct InlineFormView: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - Persistent Voice Footer
+
+struct PersistentVoiceFooter: View {
+    @ObservedObject var voiceManager: VoiceManager
+    @ObservedObject var aiManager: AIManager
+    @ObservedObject var calendarManager: CalendarManager
+    @ObservedObject var fontManager: FontManager
+    @ObservedObject var appearanceManager: AppearanceManager
+    let onTranscript: (String) -> Void
+    let onResponse: (AICalendarResponse) -> Void
+    let onStartListening: () -> Void
+
+    @State private var isListening = false
+
+    var body: some View {
+        HStack {
+            Spacer()
+
+            // Mic Icon - color reversal when active (no animation)
+            Button(action: {
+                startVoiceRecording()
+            }) {
+                ZStack {
+                    // Circle background
+                    Circle()
+                        .fill(isListening ? Color.white : Color.blue)
+                        .frame(width: 44, height: 44)
+
+                    // Mic icon
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(isListening ? .blue : .white)
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+
+            Spacer()
+        }
+        .padding(.vertical, 10)
+        .frame(maxWidth: 200)
+        .background(
+            RoundedRectangle(cornerRadius: 25)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 25)
+                        .fill(Color.blue.opacity(appearanceManager.blueAccentOpacity * 0.3))
+                )
+                .shadow(color: .black.opacity(appearanceManager.shadowOpacity), radius: 8, x: 0, y: -4)
+        )
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 8)
+    }
+
+    private func startVoiceRecording() {
+        if voiceManager.isListening {
+            print("🔴 Stopping voice recording from persistent footer")
+            voiceManager.stopListening()
+            isListening = false
+        } else {
+            print("🎤 Starting voice recording from persistent footer")
+            isListening = true
+            onStartListening() // Notify parent to show conversation window
+
+            voiceManager.startListening { transcript in
+                print("📝 Transcript received: \(transcript)")
+                isListening = false
+
+                // Add transcript to conversation history
+                onTranscript(transcript)
+
+                // Process with AI
+                aiManager.processVoiceCommand(transcript) { response in
+                    print("🤖 AI response: \(response.message)")
+                    onResponse(response)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Conversation Window
+
+struct ConversationWindow: View {
+    @Binding var conversationHistory: [ConversationItem]
+    @ObservedObject var voiceManager: VoiceManager
+    let isProcessing: Bool
+    let fontManager: FontManager
+    let appearanceManager: AppearanceManager
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Conversation content
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        // Display conversation history
+                        ForEach(conversationHistory) { item in
+                            ConversationLine(
+                                item: item,
+                                fontManager: fontManager
+                            )
+                            .id(item.id)
+                        }
+
+                        // Show current dictation with arrow cursor (live from VoiceManager)
+                        if !voiceManager.currentTranscript.isEmpty {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "arrowtriangle.right.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.gray)
+                                    .padding(.top, 6)
+
+                                Text(voiceManager.currentTranscript)
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+                            }
+                            .padding(.horizontal)
+                            .id("dictation")
+                        }
+
+                        // Processing indicator
+                        if isProcessing {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                Text("AI is thinking...")
+                                    .dynamicFont(size: 14, fontManager: fontManager)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                    .padding(.vertical, 16)
+                }
+                .onChange(of: conversationHistory.count) { _ in
+                    if let last = conversationHistory.last {
+                        withAnimation {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
+                    }
+                }
+                .onChange(of: voiceManager.currentTranscript) { _ in
+                    if !voiceManager.currentTranscript.isEmpty {
+                        withAnimation {
+                            proxy.scrollTo("dictation", anchor: .bottom)
+                        }
+                    }
+                }
+                .refreshable {
+                    // Pull down to dismiss
+                    onDismiss()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(Color.white.opacity(appearanceManager.glassOpacity * 0.8))
+                )
+                .shadow(color: .black.opacity(appearanceManager.shadowOpacity * 1.5), radius: 20, x: 0, y: -10)
+        )
+        .padding(.horizontal)
+        .padding(.bottom, 80) // Space for footer mic button
+    }
+}
+
+// MARK: - Conversation Line
+
+struct ConversationLine: View {
+    let item: ConversationItem
+    let fontManager: FontManager
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            if item.isUser {
+                // User input with arrow cursor
+                Image(systemName: "arrowtriangle.right.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(.gray)
+                    .padding(.top, 6)
+
+                Text(item.message)
+                    .dynamicFont(size: 16, fontManager: fontManager)
+                    .foregroundColor(.primary)
+            } else {
+                // AI response in blue
+                Text(item.message)
+                    .dynamicFont(size: 16, fontManager: fontManager)
+                    .foregroundColor(.blue)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal)
     }
 }
 
