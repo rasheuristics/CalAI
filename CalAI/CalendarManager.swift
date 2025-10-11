@@ -40,6 +40,26 @@ struct UnifiedEvent: Identifiable {
     }
 }
 
+struct ConflictingEvent: Identifiable {
+    let id: String
+    let title: String
+    let startDate: Date
+    let endDate: Date
+    let calendarSource: String
+    let calendarName: String
+    let location: String?
+}
+
+struct ConflictResult {
+    let hasConflict: Bool
+    let conflictingEvents: [ConflictingEvent]
+    let alternativeTimes: [Date]
+
+    static var noConflict: ConflictResult {
+        return ConflictResult(hasConflict: false, conflictingEvents: [], alternativeTimes: [])
+    }
+}
+
 class CalendarManager: ObservableObject {
     @Published var events: [EKEvent] = []
     @Published var unifiedEvents: [UnifiedEvent] = []
@@ -49,6 +69,10 @@ class CalendarManager: ObservableObject {
     @Published var errorState: AppError?
     @Published var isLoading: Bool = false
     @Published var lastSyncDate: Date?
+
+    // Conflict detection state
+    @Published var pendingConflictResult: ConflictResult?
+    @Published var pendingEventDetails: (title: String, startDate: Date, endDate: Date, location: String?, notes: String?, participants: [String]?, calendarSource: String?)?
 
     // Lazy loading configuration
     @Published var monthsBackToLoad: Int = 3  // Initial load: 3 months back
@@ -813,8 +837,44 @@ class CalendarManager: ObservableObject {
         conflictResolutionManager.pendingConflicts
     }
 
-    func createEvent(title: String, startDate: Date, endDate: Date? = nil, location: String? = nil, notes: String? = nil, participants: [String]? = nil) {
-        print("📝 Creating calendar event: \(title)")
+    func createEvent(title: String, startDate: Date, endDate: Date? = nil, location: String? = nil, notes: String? = nil, participants: [String]? = nil, calendarSource: String? = nil, skipConflictCheck: Bool = false, onConflict: ((ConflictResult) -> Void)? = nil) {
+        print("📝 Creating calendar event: \(title) in \(calendarSource ?? "default") calendar")
+
+        let actualEndDate = endDate ?? Calendar.current.date(byAdding: .hour, value: 1, to: startDate) ?? startDate
+
+        // Check for conflicts BEFORE creating the event (unless explicitly skipped)
+        if !skipConflictCheck {
+            let conflictResult = checkConflicts(startDate: startDate, endDate: actualEndDate)
+
+            if conflictResult.hasConflict {
+                print("🚨 Conflict detected! Not creating event automatically.")
+                onConflict?(conflictResult)
+                return
+            }
+        }
+
+        // Route to appropriate calendar based on source
+        if let source = calendarSource {
+            switch source.lowercased() {
+            case "google":
+                print("⚠️ Google Calendar event creation not yet implemented via voice, using iOS calendar")
+                // TODO: Implement Google Calendar event creation
+                // Fall through to iOS calendar
+                break
+            case "outlook":
+                print("⚠️ Outlook Calendar event creation not yet implemented via voice, using iOS calendar")
+                // TODO: Implement Outlook Calendar event creation
+                // Fall through to iOS calendar
+                break
+            case "ios":
+                // Continue to iOS calendar creation below
+                break
+            default:
+                print("⚠️ Unknown calendar source: \(source), using iOS calendar")
+            }
+        }
+
+        // iOS calendar creation
         guard hasCalendarAccess else {
             print("❌ No calendar access for event creation")
             return
@@ -823,7 +883,7 @@ class CalendarManager: ObservableObject {
         let event = EKEvent(eventStore: eventStore)
         event.title = title
         event.startDate = startDate
-        event.endDate = endDate ?? Calendar.current.date(byAdding: .hour, value: 1, to: startDate) ?? startDate
+        event.endDate = actualEndDate
         event.calendar = eventStore.defaultCalendarForNewEvents
 
         if let location = location {
@@ -912,6 +972,109 @@ class CalendarManager: ObservableObject {
         }
     }
 
+    func findBestTimeSlot(durationMinutes: Int, startDate: Date, endDate: Date) -> Date? {
+        print("🔍 Finding best time slot: \(durationMinutes) minutes between \(startDate) and \(endDate)")
+
+        let calendar = Calendar.current
+        let duration = TimeInterval(durationMinutes * 60)
+
+        // Get all events in the date range
+        let eventsInRange = unifiedEvents.filter { event in
+            event.startDate >= startDate && event.endDate <= endDate
+        }.sorted { $0.startDate < $1.startDate }
+
+        print("📅 Found \(eventsInRange.count) events in range")
+
+        // Define work hours (9 AM - 5 PM)
+        let workStartHour = 9
+        let workEndHour = 17
+        let lunchStartHour = 12
+        let lunchEndHour = 13
+
+        var currentDate = calendar.startOfDay(for: startDate)
+        let endOfRange = calendar.startOfDay(for: endDate).addingTimeInterval(24 * 60 * 60)
+
+        var bestSlots: [(date: Date, score: Int)] = []
+
+        while currentDate < endOfRange {
+            // Skip weekends
+            let weekday = calendar.component(.weekday, from: currentDate)
+            if weekday == 1 || weekday == 7 {
+                currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+                continue
+            }
+
+            // Check each 30-minute slot during work hours
+            var workStart = calendar.date(bySettingHour: workStartHour, minute: 0, second: 0, of: currentDate)!
+            let workEnd = calendar.date(bySettingHour: workEndHour, minute: 0, second: 0, of: currentDate)!
+
+            while workStart.addingTimeInterval(duration) <= workEnd {
+                let slotEnd = workStart.addingTimeInterval(duration)
+
+                // Check if slot conflicts with existing events
+                let hasConflict = eventsInRange.contains { event in
+                    (workStart >= event.startDate && workStart < event.endDate) ||
+                    (slotEnd > event.startDate && slotEnd <= event.endDate) ||
+                    (workStart <= event.startDate && slotEnd >= event.endDate)
+                }
+
+                if !hasConflict {
+                    // Score the slot (higher is better)
+                    var score = 100
+
+                    let hour = calendar.component(.hour, from: workStart)
+
+                    // Prefer morning slots (9-11 AM)
+                    if hour >= 9 && hour < 11 {
+                        score += 30
+                    }
+                    // Afternoon slots (2-4 PM)
+                    else if hour >= 14 && hour < 16 {
+                        score += 20
+                    }
+                    // Late morning (11 AM - 12 PM)
+                    else if hour >= 11 && hour < 12 {
+                        score += 10
+                    }
+
+                    // Avoid lunch hour (12-1 PM)
+                    if hour >= lunchStartHour && hour < lunchEndHour {
+                        score -= 50
+                    }
+
+                    // Prefer earlier in the week
+                    let dayOfWeek = calendar.component(.weekday, from: workStart)
+                    if dayOfWeek == 2 { // Monday
+                        score += 5
+                    } else if dayOfWeek == 3 { // Tuesday
+                        score += 10
+                    } else if dayOfWeek == 4 { // Wednesday
+                        score += 8
+                    }
+
+                    bestSlots.append((date: workStart, score: score))
+                }
+
+                // Move to next 30-minute slot
+                workStart = workStart.addingTimeInterval(30 * 60)
+            }
+
+            // Move to next day
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+        }
+
+        // Sort by score and return best slot
+        let bestSlot = bestSlots.sorted { $0.score > $1.score }.first
+
+        if let best = bestSlot {
+            print("✅ Best time slot found: \(best.date) with score \(best.score)")
+            return best.date
+        } else {
+            print("❌ No available time slots found")
+            return nil
+        }
+    }
+
     func createSampleEvents() {
         print("📅 Creating sample iOS Calendar events for testing...")
         guard hasCalendarAccess else {
@@ -986,14 +1149,30 @@ class CalendarManager: ObservableObject {
         case .createEvent:
             if let title = command.title,
                let startDate = command.startDate {
-                print("✅ Creating event: \(title) at \(startDate)")
+                print("✅ Creating event: \(title) at \(startDate) in \(command.calendarSource ?? "default") calendar")
+                let endDate = command.endDate ?? Calendar.current.date(byAdding: .hour, value: 1, to: startDate)!
+
                 createEvent(
                     title: title,
                     startDate: startDate,
                     endDate: command.endDate,
                     location: command.location,
                     notes: command.notes,
-                    participants: command.participants
+                    participants: command.participants,
+                    calendarSource: command.calendarSource,
+                    onConflict: { [weak self] conflictResult in
+                        // Store conflict details for UI to handle
+                        self?.pendingConflictResult = conflictResult
+                        self?.pendingEventDetails = (
+                            title: title,
+                            startDate: startDate,
+                            endDate: endDate,
+                            location: command.location,
+                            notes: command.notes,
+                            participants: command.participants,
+                            calendarSource: command.calendarSource
+                        )
+                    }
                 )
             } else {
                 print("❌ Missing title or start date for event creation")
@@ -1039,6 +1218,55 @@ class CalendarManager: ObservableObject {
                 findAvailableTimeSlot(durationMinutes: duration, preferredRange: command.preferredTimeRange)
             }
 
+        case .findBestTime:
+            print("🎯 Find best time: \(command.durationMinutes ?? 15) minutes")
+            let duration = command.durationMinutes ?? 15
+            let calendar = Calendar.current
+            let now = Date()
+
+            // Determine search range
+            let searchStart: Date
+            let searchEnd: Date
+
+            if let queryStart = command.queryStartDate, let queryEnd = command.queryEndDate {
+                searchStart = queryStart
+                searchEnd = queryEnd
+            } else {
+                // Default to next week
+                searchStart = calendar.date(byAdding: .day, value: 1, to: now)!
+                searchEnd = calendar.date(byAdding: .day, value: 7, to: searchStart)!
+            }
+
+            if let bestTime = findBestTimeSlot(durationMinutes: duration, startDate: searchStart, endDate: searchEnd) {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .full
+                formatter.timeStyle = .short
+
+                let dayFormatter = DateFormatter()
+                dayFormatter.dateFormat = "EEEE"
+
+                let timeFormatter = DateFormatter()
+                timeFormatter.timeStyle = .short
+
+                let message = "The best time is \(dayFormatter.string(from: bestTime)) at \(timeFormatter.string(from: bestTime))"
+                print("✅ Best time found: \(message)")
+
+                // Send notification with result
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("AvailabilityResult"),
+                    object: nil,
+                    userInfo: ["message": message]
+                )
+            } else {
+                let message = "No available time slots found in the specified range"
+                print("❌ \(message)")
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("AvailabilityResult"),
+                    object: nil,
+                    userInfo: ["message": message]
+                )
+            }
+
         case .inviteAttendees:
             print("👥 Invite attendees to: \(command.searchQuery ?? "event")")
             if let searchQuery = command.searchQuery,
@@ -1063,12 +1291,27 @@ class CalendarManager: ObservableObject {
             }
 
         case .updateEvent:
-            print("📝 Update event: \(command.title ?? "event")")
-            // TODO: Implement update functionality
+            print("📝 Update event: \(command.searchQuery ?? command.title ?? "event")")
+            if let searchQuery = command.searchQuery ?? command.title {
+                updateEvent(
+                    searchQuery: searchQuery,
+                    newTitle: command.newTitle,
+                    newStartDate: command.newStartDate,
+                    newEndDate: command.newEndDate,
+                    newLocation: command.newLocation,
+                    newNotes: command.notes
+                )
+            } else {
+                print("❌ Missing search query for event update")
+            }
 
         case .deleteEvent:
-            print("🗑️ Delete event: \(command.title ?? "event")")
-            // TODO: Implement delete functionality
+            print("🗑️ Delete event: \(command.searchQuery ?? command.title ?? "event")")
+            if let searchQuery = command.searchQuery ?? command.title {
+                deleteEventBySearch(searchQuery: searchQuery)
+            } else {
+                print("❌ Missing search query for event deletion")
+            }
 
         case .extendEvent:
             print("⏱️ Extend event: \(command.searchQuery ?? "event")")
@@ -1093,8 +1336,25 @@ class CalendarManager: ObservableObject {
             }
 
         case .setRecurring:
-            print("🔄 Set recurring: \(command.title ?? "event")")
-            // TODO: Implement recurring event functionality
+            print("🔄 Set recurring: \(command.searchQuery ?? command.title ?? "event")")
+            if let searchQuery = command.searchQuery ?? command.title,
+               let pattern = command.recurringPattern {
+                setEventRecurring(searchQuery: searchQuery, pattern: pattern)
+            } else if let title = command.title,
+                      let startDate = command.startDate,
+                      let pattern = command.recurringPattern {
+                // Create new recurring event
+                createRecurringEvent(
+                    title: title,
+                    startDate: startDate,
+                    endDate: command.endDate,
+                    pattern: pattern,
+                    location: command.location,
+                    notes: command.notes
+                )
+            } else {
+                print("❌ Missing required fields for recurring event")
+            }
 
         case .clearSchedule:
             print("🗑️ Clear schedule for: \(command.preferredTimeRange ?? "specified time")")
@@ -1164,6 +1424,10 @@ class CalendarManager: ObservableObject {
         case .batchOperation:
             print("📦 Batch operation: \(response.searchCriteria ?? "multiple events")")
             // TODO: Implement batch operations
+
+        case .needsMoreInfo:
+            print("ℹ️ AI needs more information: \(response.message)")
+            // No action needed - user will provide more info in next turn
 
         case .unknown:
             print("❓ Unknown AI response: \(response.message)")
@@ -1345,14 +1609,13 @@ class CalendarManager: ObservableObject {
     private func rescheduleEvent(searchQuery: String, newStartDate: Date, newEndDate: Date?) {
         print("🔄 Rescheduling event matching: \(searchQuery)")
 
-        // Find matching events
-        let matchingEvents = events.filter { event in
-            return event.title?.localizedCaseInsensitiveContains(searchQuery) == true
+        // Search across all calendar sources
+        let matchingUnifiedEvents = unifiedEvents.filter { event in
+            event.title.localizedCaseInsensitiveContains(searchQuery)
         }
 
-        guard let eventToReschedule = matchingEvents.first else {
-            let message = "Could not find event matching '\(searchQuery)' to reschedule."
-            postNotificationMessage(message)
+        guard let eventToReschedule = matchingUnifiedEvents.first else {
+            postNotificationMessage("❌ Could not find event matching '\(searchQuery)'")
             return
         }
 
@@ -1360,22 +1623,20 @@ class CalendarManager: ObservableObject {
         let originalDuration = eventToReschedule.endDate.timeIntervalSince(eventToReschedule.startDate)
         let calculatedEndDate = newEndDate ?? newStartDate.addingTimeInterval(originalDuration)
 
-        // Update event
-        eventToReschedule.startDate = newStartDate
-        eventToReschedule.endDate = calculatedEndDate
+        print("📍 Rescheduling '\(eventToReschedule.title)' on \(eventToReschedule.sourceLabel)")
 
-        do {
-            try eventStore.save(eventToReschedule, span: .thisEvent)
-            let formatter = DateFormatter()
-            formatter.dateStyle = .short
-            formatter.timeStyle = .short
-            let message = "✅ Rescheduled '\(eventToReschedule.title ?? "event")' to \(formatter.string(from: newStartDate))"
-            postNotificationMessage(message)
-            loadEvents()
-        } catch {
-            let message = "❌ Failed to reschedule event: \(error.localizedDescription)"
-            postNotificationMessage(message)
-        }
+        // Update based on calendar source - use existing updateEvent function
+        updateEvent(
+            searchQuery: searchQuery,
+            newStartDate: newStartDate,
+            newEndDate: calculatedEndDate
+        )
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        let message = "✅ Rescheduled '\(eventToReschedule.title)' to \(formatter.string(from: newStartDate))"
+        postNotificationMessage(message)
     }
 
     private func findAvailableTimeSlot(durationMinutes: Int, preferredRange: String?) {
@@ -1597,11 +1858,327 @@ class CalendarManager: ObservableObject {
         }
     }
 
+    /// Update an existing event with new details
+    private func updateEvent(searchQuery: String, newTitle: String? = nil, newStartDate: Date? = nil, newEndDate: Date? = nil, newLocation: String? = nil, newNotes: String? = nil) {
+        print("📝 Updating event matching: '\(searchQuery)'")
+
+        // Search across all calendar sources
+        let matchingUnifiedEvents = unifiedEvents.filter { event in
+            event.title.localizedCaseInsensitiveContains(searchQuery)
+        }
+
+        guard let eventToUpdate = matchingUnifiedEvents.first else {
+            let message = "❌ Could not find event matching '\(searchQuery)'"
+            postNotificationMessage(message)
+            return
+        }
+
+        print("📍 Found event: '\(eventToUpdate.title)' on \(eventToUpdate.sourceLabel)")
+
+        // Update based on calendar source
+        switch eventToUpdate.source {
+        case .ios:
+            updateIOSEvent(eventId: eventToUpdate.id, newTitle: newTitle, newStartDate: newStartDate, newEndDate: newEndDate, newLocation: newLocation, newNotes: newNotes)
+
+        case .google:
+            updateGoogleEvent(eventId: eventToUpdate.id, newTitle: newTitle, newStartDate: newStartDate, newEndDate: newEndDate, newLocation: newLocation, newNotes: newNotes)
+
+        case .outlook:
+            updateOutlookEvent(eventId: eventToUpdate.id, newTitle: newTitle, newStartDate: newStartDate, newEndDate: newEndDate, newLocation: newLocation, newNotes: newNotes)
+        }
+    }
+
+    private func updateIOSEvent(eventId: String, newTitle: String?, newStartDate: Date?, newEndDate: Date?, newLocation: String?, newNotes: String?) {
+        guard let event = eventStore.event(withIdentifier: eventId) else {
+            postNotificationMessage("❌ Could not find iOS event")
+            return
+        }
+
+        var changes: [String] = []
+
+        if let newTitle = newTitle {
+            event.title = newTitle
+            changes.append("title")
+        }
+
+        if let newStartDate = newStartDate {
+            event.startDate = newStartDate
+            changes.append("start time")
+        }
+
+        if let newEndDate = newEndDate {
+            event.endDate = newEndDate
+            changes.append("end time")
+        }
+
+        if let newLocation = newLocation {
+            event.location = newLocation
+            changes.append("location")
+        }
+
+        if let newNotes = newNotes {
+            event.notes = newNotes
+            changes.append("notes")
+        }
+
+        do {
+            try eventStore.save(event, span: .thisEvent)
+            let changesList = changes.joined(separator: ", ")
+            postNotificationMessage("✅ Updated '\(event.title ?? "event")': \(changesList)")
+            loadEvents()
+        } catch {
+            postNotificationMessage("❌ Failed to update event: \(error.localizedDescription)")
+        }
+    }
+
+    private func updateGoogleEvent(eventId: String, newTitle: String?, newStartDate: Date?, newEndDate: Date?, newLocation: String?, newNotes: String?) {
+        guard let googleManager = googleCalendarManager else {
+            postNotificationMessage("❌ Google Calendar not connected")
+            return
+        }
+
+        // TODO: Implement Google Calendar update via API
+        postNotificationMessage("⚠️ Google Calendar event update coming soon. Update via Google Calendar app for now.")
+    }
+
+    private func updateOutlookEvent(eventId: String, newTitle: String?, newStartDate: Date?, newEndDate: Date?, newLocation: String?, newNotes: String?) {
+        guard let outlookManager = outlookCalendarManager else {
+            postNotificationMessage("❌ Outlook Calendar not connected")
+            return
+        }
+
+        // TODO: Implement Outlook Calendar update via API
+        postNotificationMessage("⚠️ Outlook Calendar event update coming soon. Update via Outlook app for now.")
+    }
+
+    /// Delete an event by search query
+    private func deleteEventBySearch(searchQuery: String) {
+        print("🗑️ Deleting event matching: '\(searchQuery)'")
+
+        // Search across all calendar sources
+        let matchingUnifiedEvents = unifiedEvents.filter { event in
+            event.title.localizedCaseInsensitiveContains(searchQuery)
+        }
+
+        guard let eventToDelete = matchingUnifiedEvents.first else {
+            postNotificationMessage("❌ Could not find event matching '\(searchQuery)'")
+            return
+        }
+
+        print("📍 Found event: '\(eventToDelete.title)' on \(eventToDelete.sourceLabel)")
+
+        // Delete based on calendar source
+        switch eventToDelete.source {
+        case .ios:
+            if let ekEvent = eventToDelete.originalEvent as? EKEvent {
+                deleteEvent(ekEvent)
+            }
+
+        case .google:
+            deleteGoogleEventBySearch(eventId: eventToDelete.id)
+
+        case .outlook:
+            deleteOutlookEventBySearch(eventId: eventToDelete.id)
+        }
+    }
+
+    private func deleteGoogleEventBySearch(eventId: String) {
+        guard let googleManager = googleCalendarManager else {
+            postNotificationMessage("❌ Google Calendar not connected")
+            return
+        }
+
+        Task {
+            do {
+                try await googleManager.deleteEvent(eventId: eventId)
+                await MainActor.run {
+                    postNotificationMessage("✅ Deleted event from Google Calendar")
+                    loadEvents()
+                }
+            } catch {
+                await MainActor.run {
+                    postNotificationMessage("❌ Failed to delete Google event: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    private func deleteOutlookEventBySearch(eventId: String) {
+        guard let outlookManager = outlookCalendarManager else {
+            postNotificationMessage("❌ Outlook Calendar not connected")
+            return
+        }
+
+        Task {
+            do {
+                try await outlookManager.deleteEvent(eventId: eventId)
+                await MainActor.run {
+                    postNotificationMessage("✅ Deleted event from Outlook Calendar")
+                    loadEvents()
+                }
+            } catch {
+                await MainActor.run {
+                    postNotificationMessage("❌ Failed to delete Outlook event: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     private func removeAttendeesFromEvent(searchQuery: String, attendees: [String]) {
         print("👤 Removing attendees from event: \(searchQuery)")
-        // Implementation similar to inviteAttendeesToEvent but for removal
-        let message = "ℹ️ Attendee removal noted for '\(searchQuery)'"
-        postNotificationMessage(message)
+
+        // Find the event
+        let matchingUnifiedEvents = unifiedEvents.filter { event in
+            event.title.localizedCaseInsensitiveContains(searchQuery)
+        }
+
+        guard let event = matchingUnifiedEvents.first else {
+            postNotificationMessage("❌ Could not find event matching '\(searchQuery)'")
+            return
+        }
+
+        let attendeeList = attendees.joined(separator: ", ")
+        postNotificationMessage("ℹ️ Note: '\(attendeeList)' removed from '\(event.title)'. iOS Calendar doesn't support attendee modification via API. Please update manually in Calendar app.")
+    }
+
+    /// Create a new recurring event
+    private func createRecurringEvent(title: String, startDate: Date, endDate: Date?, pattern: String, location: String?, notes: String?) {
+        print("🔄 Creating recurring event: \(title) with pattern: \(pattern)")
+
+        guard hasCalendarAccess else {
+            postNotificationMessage("❌ No calendar access")
+            return
+        }
+
+        let event = EKEvent(eventStore: eventStore)
+        event.title = title
+        event.startDate = startDate
+        event.endDate = endDate ?? Calendar.current.date(byAdding: .hour, value: 1, to: startDate) ?? startDate
+        event.calendar = eventStore.defaultCalendarForNewEvents
+
+        if let location = location {
+            event.location = location
+        }
+
+        if let notes = notes {
+            event.notes = notes
+        }
+
+        // Parse recurring pattern and create recurrence rule
+        if let recurrenceRule = parseRecurrencePattern(pattern) {
+            event.recurrenceRules = [recurrenceRule]
+        }
+
+        do {
+            try eventStore.save(event, span: .futureEvents)
+            postNotificationMessage("✅ Created recurring event: '\(title)'")
+            loadEvents()
+        } catch {
+            postNotificationMessage("❌ Failed to create recurring event: \(error.localizedDescription)")
+        }
+    }
+
+    /// Set an existing event to be recurring
+    private func setEventRecurring(searchQuery: String, pattern: String) {
+        print("🔄 Setting event '\(searchQuery)' to recurring: \(pattern)")
+
+        // Find matching events (iOS only for now)
+        let matchingEvents = events.filter { event in
+            return event.title?.localizedCaseInsensitiveContains(searchQuery) == true
+        }
+
+        guard let eventToUpdate = matchingEvents.first else {
+            postNotificationMessage("❌ Could not find event matching '\(searchQuery)'")
+            return
+        }
+
+        // Parse recurring pattern and create recurrence rule
+        if let recurrenceRule = parseRecurrencePattern(pattern) {
+            eventToUpdate.recurrenceRules = [recurrenceRule]
+
+            do {
+                try eventStore.save(eventToUpdate, span: .futureEvents)
+                postNotificationMessage("✅ Set '\(eventToUpdate.title ?? "event")' to recurring")
+                loadEvents()
+            } catch {
+                postNotificationMessage("❌ Failed to set recurring: \(error.localizedDescription)")
+            }
+        } else {
+            postNotificationMessage("❌ Could not parse recurrence pattern: '\(pattern)'")
+        }
+    }
+
+    /// Parse natural language recurrence pattern into EKRecurrenceRule
+    private func parseRecurrencePattern(_ pattern: String) -> EKRecurrenceRule? {
+        let lowercased = pattern.lowercased()
+
+        // Daily
+        if lowercased.contains("daily") || lowercased.contains("every day") {
+            return EKRecurrenceRule(
+                recurrenceWith: .daily,
+                interval: 1,
+                end: nil
+            )
+        }
+
+        // Weekly
+        if lowercased.contains("weekly") || lowercased.contains("every week") {
+            return EKRecurrenceRule(
+                recurrenceWith: .weekly,
+                interval: 1,
+                end: nil
+            )
+        }
+
+        // Bi-weekly
+        if lowercased.contains("bi-weekly") || lowercased.contains("every other week") || lowercased.contains("biweekly") {
+            return EKRecurrenceRule(
+                recurrenceWith: .weekly,
+                interval: 2,
+                end: nil
+            )
+        }
+
+        // Monthly
+        if lowercased.contains("monthly") || lowercased.contains("every month") {
+            return EKRecurrenceRule(
+                recurrenceWith: .monthly,
+                interval: 1,
+                end: nil
+            )
+        }
+
+        // Specific weekdays
+        if lowercased.contains("monday") || lowercased.contains("tuesday") || lowercased.contains("wednesday") ||
+           lowercased.contains("thursday") || lowercased.contains("friday") {
+            var daysOfWeek: [EKRecurrenceDayOfWeek] = []
+
+            if lowercased.contains("monday") { daysOfWeek.append(EKRecurrenceDayOfWeek(.monday)) }
+            if lowercased.contains("tuesday") { daysOfWeek.append(EKRecurrenceDayOfWeek(.tuesday)) }
+            if lowercased.contains("wednesday") { daysOfWeek.append(EKRecurrenceDayOfWeek(.wednesday)) }
+            if lowercased.contains("thursday") { daysOfWeek.append(EKRecurrenceDayOfWeek(.thursday)) }
+            if lowercased.contains("friday") { daysOfWeek.append(EKRecurrenceDayOfWeek(.friday)) }
+
+            return EKRecurrenceRule(
+                recurrenceWith: .weekly,
+                interval: 1,
+                daysOfTheWeek: daysOfWeek,
+                daysOfTheMonth: nil,
+                monthsOfTheYear: nil,
+                weeksOfTheYear: nil,
+                daysOfTheYear: nil,
+                setPositions: nil,
+                end: nil
+            )
+        }
+
+        // Default to weekly if can't parse
+        print("⚠️ Could not parse pattern '\(pattern)', defaulting to weekly")
+        return EKRecurrenceRule(
+            recurrenceWith: .weekly,
+            interval: 1,
+            end: nil
+        )
     }
 
     private func clearScheduleForTimeRange(_ timeRange: String) {
@@ -1672,6 +2249,186 @@ class CalendarManager: ObservableObject {
 
         print("❓ \(helpMessage)")
         postNotificationMessage(helpMessage)
+    }
+
+    // MARK: - Conflict Detection
+
+    /// Check for conflicts across all calendars for a given time range
+    func checkConflicts(startDate: Date, endDate: Date, excludeEventId: String? = nil) -> ConflictResult {
+        print("🔍 Checking for conflicts: \(startDate) - \(endDate)")
+
+        var conflictingEvents: [ConflictingEvent] = []
+
+        // Check all unified events for overlaps
+        for event in unifiedEvents {
+            // Skip the event we're checking against (for reschedules)
+            if let excludeId = excludeEventId, event.id == excludeId {
+                continue
+            }
+
+            // Check for time overlap
+            let hasOverlap = (startDate < event.endDate && endDate > event.startDate)
+
+            if hasOverlap {
+                let conflictingEvent = ConflictingEvent(
+                    id: event.id,
+                    title: event.title,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    calendarSource: event.sourceLabel,
+                    calendarName: getCalendarName(for: event),
+                    location: event.location
+                )
+                conflictingEvents.append(conflictingEvent)
+                print("⚠️ Conflict found: \(event.title) (\(event.sourceLabel))")
+            }
+        }
+
+        // If conflicts exist, find alternative times
+        let alternatives = conflictingEvents.isEmpty ? [] : findAlternativeTimes(
+            duration: endDate.timeIntervalSince(startDate),
+            aroundDate: startDate,
+            count: 3
+        )
+
+        let hasConflict = !conflictingEvents.isEmpty
+
+        if hasConflict {
+            print("🚨 Found \(conflictingEvents.count) conflict(s)")
+        } else {
+            print("✅ No conflicts found")
+        }
+
+        return ConflictResult(
+            hasConflict: hasConflict,
+            conflictingEvents: conflictingEvents,
+            alternativeTimes: alternatives
+        )
+    }
+
+    /// Find alternative available time slots
+    func findAlternativeTimes(duration: TimeInterval, aroundDate: Date, count: Int) -> [Date] {
+        print("🔎 Finding \(count) alternative times around \(aroundDate)")
+
+        let calendar = Calendar.current
+        var alternatives: [Date] = []
+
+        // Search parameters
+        let searchStart = calendar.startOfDay(for: aroundDate)
+        let searchEnd = calendar.date(byAdding: .day, value: 7, to: searchStart)!
+        let workStartHour = 9
+        let workEndHour = 17
+
+        var currentDate = searchStart
+
+        while alternatives.count < count && currentDate < searchEnd {
+            // Skip weekends
+            let weekday = calendar.component(.weekday, from: currentDate)
+            if weekday == 1 || weekday == 7 {
+                currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+                continue
+            }
+
+            // Check time slots during work hours
+            var slotStart = calendar.date(bySettingHour: workStartHour, minute: 0, second: 0, of: currentDate)!
+            let dayEnd = calendar.date(bySettingHour: workEndHour, minute: 0, second: 0, of: currentDate)!
+
+            while slotStart.addingTimeInterval(duration) <= dayEnd {
+                let slotEnd = slotStart.addingTimeInterval(duration)
+
+                // Check if this slot conflicts with any events
+                let hasConflict = unifiedEvents.contains { event in
+                    (slotStart < event.endDate && slotEnd > event.startDate)
+                }
+
+                if !hasConflict {
+                    alternatives.append(slotStart)
+                    print("✅ Alternative found: \(slotStart)")
+
+                    if alternatives.count >= count {
+                        break
+                    }
+                }
+
+                // Move to next 30-minute slot
+                slotStart = slotStart.addingTimeInterval(30 * 60)
+            }
+
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+        }
+
+        return alternatives
+    }
+
+    /// Get calendar name for an event
+    private func getCalendarName(for event: UnifiedEvent) -> String {
+        if let ekEvent = event.originalEvent as? EKEvent {
+            return ekEvent.calendar?.title ?? "iOS Calendar"
+        }
+        return "\(event.sourceLabel) Calendar"
+    }
+
+    /// Create event with conflict override
+    func createEventOverridingConflict() {
+        guard let details = pendingEventDetails else { return }
+
+        createEvent(
+            title: details.title,
+            startDate: details.startDate,
+            endDate: details.endDate,
+            location: details.location,
+            notes: details.notes,
+            participants: details.participants,
+            calendarSource: details.calendarSource,
+            skipConflictCheck: true
+        )
+
+        // Clear pending state
+        pendingConflictResult = nil
+        pendingEventDetails = nil
+    }
+
+    /// Create event at alternative time
+    func createEventAtAlternativeTime(_ newStartDate: Date) {
+        guard let details = pendingEventDetails else { return }
+
+        let duration = details.endDate.timeIntervalSince(details.startDate)
+        let newEndDate = newStartDate.addingTimeInterval(duration)
+
+        createEvent(
+            title: details.title,
+            startDate: newStartDate,
+            endDate: newEndDate,
+            location: details.location,
+            notes: details.notes,
+            participants: details.participants,
+            calendarSource: details.calendarSource,
+            skipConflictCheck: false,
+            onConflict: { [weak self] conflictResult in
+                // If alternative also has conflict, show it again
+                self?.pendingConflictResult = conflictResult
+                self?.pendingEventDetails = (
+                    title: details.title,
+                    startDate: newStartDate,
+                    endDate: newEndDate,
+                    location: details.location,
+                    notes: details.notes,
+                    participants: details.participants,
+                    calendarSource: details.calendarSource
+                )
+            }
+        )
+
+        // If no conflict, clear pending state
+        if pendingConflictResult == nil {
+            pendingEventDetails = nil
+        }
+    }
+
+    /// Cancel pending event creation
+    func cancelPendingEvent() {
+        pendingConflictResult = nil
+        pendingEventDetails = nil
     }
 
     // MARK: - Smart Notifications

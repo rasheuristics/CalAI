@@ -11,6 +11,9 @@ struct EventsTabView: View {
     @State private var showUnifiedEvents = true
     @State private var selectedEventForEdit: UnifiedEvent?
     @State private var showingEditAlert = false
+    @State private var showingReschedule = false
+    @State private var eventsToReschedule: [UnifiedEvent] = []
+    @State private var collapsedDays: Set<Date> = []
 
     var body: some View {
         ZStack {
@@ -98,22 +101,53 @@ struct EventsTabView: View {
                 if showUnifiedEvents {
                     List {
                         ForEach(groupedUnifiedEvents.keys.sorted(), id: \.self) { date in
-                            Section(header: Text(formatSectionHeader(date))) {
-                                ForEach(groupedUnifiedEvents[date] ?? [], id: \.id) { event in
-                                    UnifiedEventDetailRow(event: event, fontManager: fontManager)
-                                        .onTapGesture(count: 2) {
-                                            selectedEventForEdit = event
-                                            showingEditAlert = true
+                            Section(header:
+                                Button(action: {
+                                    withAnimation(.easeInOut(duration: 1.0)) {
+                                        if collapsedDays.contains(date) {
+                                            collapsedDays.remove(date)
+                                        } else {
+                                            collapsedDays.insert(date)
                                         }
+                                    }
+                                }) {
+                                    HStack {
+                                        Text(formatSectionHeader(date))
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        Image(systemName: collapsedDays.contains(date) ? "chevron.right" : "chevron.down")
+                                            .foregroundColor(.secondary)
+                                            .font(.caption)
+                                    }
                                 }
-                                .onDelete { indexSet in
-                                    let eventsForDate = groupedUnifiedEvents[date] ?? []
-                                    print("🗑️ Delete triggered in unified view - \(indexSet.count) event(s)")
-                                    for index in indexSet {
-                                        if index < eventsForDate.count {
-                                            let event = eventsForDate[index]
-                                            print("🗑️ Deleting unified event at index \(index): \(event.title)")
-                                            deleteUnifiedEvent(event)
+                                .buttonStyle(PlainButtonStyle())
+                            ) {
+                                if !collapsedDays.contains(date) {
+                                    ForEach(groupedUnifiedEvents[date] ?? [], id: \.id) { event in
+                                        UnifiedEventDetailRow(event: event, fontManager: fontManager, calendarManager: calendarManager)
+                                            .onTapGesture {
+                                                selectedEventForEdit = event
+                                                showingEditAlert = true
+                                            }
+                                            .swipeActions(edge: .leading) {
+                                                Button {
+                                                    eventsToReschedule = [event]
+                                                    showingReschedule = true
+                                                } label: {
+                                                    Label("Reschedule", systemImage: "calendar.badge.clock")
+                                                }
+                                                .tint(.blue)
+                                            }
+                                    }
+                                    .onDelete { indexSet in
+                                        let eventsForDate = groupedUnifiedEvents[date] ?? []
+                                        print("🗑️ Delete triggered in unified view - \(indexSet.count) event(s)")
+                                        for index in indexSet {
+                                            if index < eventsForDate.count {
+                                                let event = eventsForDate[index]
+                                                print("🗑️ Deleting unified event at index \(index): \(event.title)")
+                                                deleteUnifiedEvent(event)
+                                            }
                                         }
                                     }
                                 }
@@ -127,34 +161,56 @@ struct EventsTabView: View {
                 } else {
                     List {
                         ForEach(groupedEvents.keys.sorted(), id: \.self) { date in
-                            Section(header: Text(formatSectionHeader(date))) {
-                                ForEach(groupedEvents[date] ?? [], id: \.eventIdentifier) { event in
-                                    EventDetailRow(event: event, fontManager: fontManager)
-                                        .onTapGesture(count: 2) {
-                                            // Convert EKEvent to UnifiedEvent for editing
-                                            let unifiedEvent = UnifiedEvent(
-                                                id: event.eventIdentifier,
-                                                title: event.title ?? "Untitled Event",
-                                                startDate: event.startDate,
-                                                endDate: event.endDate ?? event.startDate.addingTimeInterval(3600),
-                                                location: event.location,
-                                                description: event.notes,
-                                                isAllDay: event.isAllDay,
-                                                source: .ios,
-                                                organizer: event.organizer?.name,
-                                                originalEvent: event
-                                            )
-                                            selectedEventForEdit = unifiedEvent
-                                            showingEditAlert = true
+                            Section(header:
+                                Button(action: {
+                                    withAnimation(.easeInOut(duration: 1.0)) {
+                                        if collapsedDays.contains(date) {
+                                            collapsedDays.remove(date)
+                                        } else {
+                                            collapsedDays.insert(date)
                                         }
+                                    }
+                                }) {
+                                    HStack {
+                                        Text(formatSectionHeader(date))
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        Image(systemName: collapsedDays.contains(date) ? "chevron.right" : "chevron.down")
+                                            .foregroundColor(.secondary)
+                                            .font(.caption)
+                                    }
                                 }
-                                .onDelete { indexSet in
-                                    let eventsForDate = groupedEvents[date] ?? []
-                                    for index in indexSet {
-                                        if index < eventsForDate.count {
-                                            let event = eventsForDate[index]
-                                            print("🗑️ Deleting iOS-only view event: \(event.title ?? "Untitled")")
-                                            calendarManager.deleteEvent(event)
+                                .buttonStyle(PlainButtonStyle())
+                            ) {
+                                if !collapsedDays.contains(date) {
+                                    ForEach(groupedEvents[date] ?? [], id: \.eventIdentifier) { event in
+                                        EventDetailRow(event: event, fontManager: fontManager)
+                                            .onTapGesture {
+                                                // Convert EKEvent to UnifiedEvent for editing
+                                                let unifiedEvent = UnifiedEvent(
+                                                    id: event.eventIdentifier,
+                                                    title: event.title ?? "Untitled Event",
+                                                    startDate: event.startDate,
+                                                    endDate: event.endDate ?? event.startDate.addingTimeInterval(3600),
+                                                    location: event.location,
+                                                    description: event.notes,
+                                                    isAllDay: event.isAllDay,
+                                                    source: .ios,
+                                                    organizer: event.organizer?.name,
+                                                    originalEvent: event
+                                                )
+                                                selectedEventForEdit = unifiedEvent
+                                                showingEditAlert = true
+                                            }
+                                    }
+                                    .onDelete { indexSet in
+                                        let eventsForDate = groupedEvents[date] ?? []
+                                        for index in indexSet {
+                                            if index < eventsForDate.count {
+                                                let event = eventsForDate[index]
+                                                print("🗑️ Deleting iOS-only view event: \(event.title ?? "Untitled")")
+                                                calendarManager.deleteEvent(event)
+                                            }
                                         }
                                     }
                                 }
@@ -177,6 +233,23 @@ struct EventsTabView: View {
             .sheet(isPresented: $showingEditAlert) {
                 if let eventToEdit = selectedEventForEdit {
                     AddEventView(calendarManager: calendarManager, fontManager: fontManager, eventToEdit: eventToEdit)
+                }
+            }
+            .sheet(isPresented: $showingReschedule) {
+                NavigationView {
+                    if eventsToReschedule.count == 1, let event = eventsToReschedule.first {
+                        SingleEventReschedulingView(
+                            event: event,
+                            fontManager: fontManager,
+                            calendarManager: calendarManager
+                        )
+                    } else {
+                        SmartReschedulingView(
+                            events: eventsToReschedule,
+                            fontManager: fontManager,
+                            calendarManager: calendarManager
+                        )
+                    }
                 }
             }
         }
@@ -371,6 +444,9 @@ struct EventDetailRow: View {
 struct UnifiedEventDetailRow: View {
     let event: UnifiedEvent
     let fontManager: FontManager
+    @ObservedObject var calendarManager: CalendarManager
+    @State private var showingMeetingPrep = false
+    @State private var showingMeetingFollowUp = false
 
     var body: some View {
         HStack {
@@ -411,6 +487,71 @@ struct UnifiedEventDetailRow: View {
                             .foregroundColor(.secondary)
                     }
                 }
+
+                // Meeting Prep button for upcoming events
+                if isUpcomingEvent {
+                    Button(action: {
+                        showingMeetingPrep = true
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.text")
+                                .font(.caption)
+                            Text("Meeting Prep")
+                                .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
+                        }
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .padding(.top, 4)
+                }
+
+                // Meeting Summary button for completed events
+                if isCompletedEvent {
+                    Button(action: {
+                        showingMeetingFollowUp = true
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.caption)
+                            Text("Meeting Summary")
+                                .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
+                        }
+                        .foregroundColor(.green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.green.opacity(0.1))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .padding(.top, 4)
+                }
+            }
+            .sheet(isPresented: $showingMeetingPrep) {
+                NavigationView {
+                    MeetingPreparationView(
+                        preparation: MeetingPreparationGenerator.generate(
+                            for: event,
+                            allEvents: calendarManager.unifiedEvents
+                        ),
+                        fontManager: fontManager
+                    )
+                }
+            }
+            .sheet(isPresented: $showingMeetingFollowUp) {
+                NavigationView {
+                    MeetingFollowUpView(
+                        followUp: MeetingFollowUpGenerator.generate(
+                            for: event,
+                            notes: event.description,
+                            allEvents: calendarManager.unifiedEvents
+                        ),
+                        fontManager: fontManager
+                    )
+                }
             }
 
             Spacer()
@@ -430,5 +571,18 @@ struct UnifiedEventDetailRow: View {
 
     private func colorForSource(_ source: CalendarSource) -> Color {
         return DesignSystem.Colors.forCalendarSource(source)
+    }
+
+    private var isUpcomingEvent: Bool {
+        // Show prep for events within next 24 hours and not yet finished
+        let timeUntilStart = event.startDate.timeIntervalSinceNow
+        let isNotFinished = event.endDate > Date()
+        return timeUntilStart > 0 && timeUntilStart < 24 * 60 * 60 && isNotFinished
+    }
+
+    private var isCompletedEvent: Bool {
+        // Show summary for events that ended within the last 7 days
+        let timeSinceEnd = Date().timeIntervalSince(event.endDate)
+        return timeSinceEnd > 0 && timeSinceEnd < 7 * 24 * 60 * 60
     }
 }

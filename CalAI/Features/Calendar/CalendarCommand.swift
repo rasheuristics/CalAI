@@ -15,6 +15,7 @@ enum CalendarCommandType: String, Codable {
     case clearSchedule = "clear_schedule"
     case getWorkloadSummary = "get_workload_summary"
     case findTimeSlot = "find_time_slot"
+    case findBestTime = "find_best_time"
     case blockTime = "block_time"
     case showHelp = "show_help"
 }
@@ -31,6 +32,7 @@ struct CalendarCommand: Codable {
     let queryEndDate: Date?
     let eventId: String?
     let searchQuery: String?
+    let calendarSource: String? // "iOS", "Google", "Outlook"
 
     // Advanced parameters
     let newStartDate: Date?
@@ -57,6 +59,7 @@ struct CalendarCommand: Codable {
         queryEndDate: Date? = nil,
         eventId: String? = nil,
         searchQuery: String? = nil,
+        calendarSource: String? = nil,
         newStartDate: Date? = nil,
         newEndDate: Date? = nil,
         newLocation: String? = nil,
@@ -80,6 +83,7 @@ struct CalendarCommand: Codable {
         self.queryEndDate = queryEndDate
         self.eventId = eventId
         self.searchQuery = searchQuery
+        self.calendarSource = calendarSource
         self.newStartDate = newStartDate
         self.newEndDate = newEndDate
         self.newLocation = newLocation
@@ -99,11 +103,27 @@ struct AICalendarResponse: Codable {
     let command: CalendarCommand?
     let requiresConfirmation: Bool
     let confirmationMessage: String?
+    let needsMoreInfo: Bool
+    let partialCommand: CalendarCommand?
+    let eventResults: [EventResult]? // Events returned from queries
 
-    init(message: String, command: CalendarCommand? = nil, requiresConfirmation: Bool = false, confirmationMessage: String? = nil) {
+    init(message: String, command: CalendarCommand? = nil, requiresConfirmation: Bool = false, confirmationMessage: String? = nil, needsMoreInfo: Bool = false, partialCommand: CalendarCommand? = nil, eventResults: [EventResult]? = nil) {
         self.message = message
         self.command = command
         self.requiresConfirmation = requiresConfirmation
         self.confirmationMessage = confirmationMessage
+        self.needsMoreInfo = needsMoreInfo
+        self.partialCommand = partialCommand
+        self.eventResults = eventResults
     }
+}
+
+struct EventResult: Codable, Identifiable {
+    let id: String
+    let title: String
+    let startDate: Date
+    let endDate: Date
+    let location: String?
+    let source: String // "iOS", "Google", "Outlook"
+    let color: [Double]? // RGB values [r, g, b]
 }

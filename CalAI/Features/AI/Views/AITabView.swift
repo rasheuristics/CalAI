@@ -13,6 +13,9 @@ struct AITabView: View {
     @State private var showingConfirmation = false
     @State private var showConversationWindow = false
 
+    // Multi-turn event creation state
+    @State private var partialEvent: CalendarCommand? = nil
+
     // Inline form states
     @State private var showingInlineForm = false
     @State private var currentFormType: InlineFormType?
@@ -67,6 +70,7 @@ struct AITabView: View {
                         ConversationWindow(
                             conversationHistory: $conversationHistory,
                             voiceManager: voiceManager,
+                            calendarManager: calendarManager,
                             isProcessing: isProcessing,
                             fontManager: fontManager,
                             appearanceManager: appearanceManager,
@@ -83,6 +87,40 @@ struct AITabView: View {
                         )
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
+                }
+
+                // Conflict warning sheet
+                if calendarManager.pendingConflictResult != nil,
+                   let conflictResult = calendarManager.pendingConflictResult,
+                   let eventDetails = calendarManager.pendingEventDetails {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            // Prevent dismissal by tapping outside
+                        }
+
+                    ConflictWarningView(
+                        conflictResult: conflictResult,
+                        proposedEventTitle: eventDetails.title,
+                        proposedStartDate: eventDetails.startDate,
+                        proposedEndDate: eventDetails.endDate,
+                        fontManager: fontManager,
+                        onCancel: {
+                            calendarManager.cancelPendingEvent()
+                        },
+                        onFindAlternative: { alternativeDate in
+                            calendarManager.createEventAtAlternativeTime(alternativeDate)
+                        },
+                        onOverride: {
+                            calendarManager.createEventOverridingConflict()
+                        }
+                    )
+                    .frame(maxWidth: 500)
+                    .cornerRadius(16)
+                    .shadow(radius: 20)
+                    .padding()
+                    .transition(AnyTransition.scale.combined(with: AnyTransition.opacity))
+                    .zIndex(100)
                 }
 
                 // Inline form (shown when needed)
@@ -136,13 +174,21 @@ struct AITabView: View {
                     calendarManager: calendarManager,
                     fontManager: fontManager,
                     appearanceManager: appearanceManager,
+                    conversationHistory: conversationHistory,
+                    partialEvent: partialEvent,
                     onTranscript: { transcript in
                         print("🗣️ Transcript received in AITabView: '\(transcript)'")
-                        print("📝 Adding user message to conversation")
-                        addUserMessage(transcript)
+                        print("📝 Processing with AI in background, keeping live dictation visible")
+                        // DO NOT add to conversation history yet
+                        // DO NOT clear voiceManager.currentTranscript yet
+                        // The live dictation stays visible while AI processes
                     },
                     onResponse: { response in
                         print("🤖 AI response received in AITabView: \(response.message)")
+
+                        // Clear live dictation now that AI has responded
+                        voiceManager.currentTranscript = ""
+
                         if let command = response.command {
                             print("🎯 Response command: \(command.type)")
                             print("📅 Event title: \(command.title ?? "nil")")
@@ -212,10 +258,17 @@ struct AITabView: View {
             id: UUID(),
             message: response.message,
             isUser: false,
-            timestamp: Date()
+            timestamp: Date(),
+            eventResults: response.eventResults
         )
         conversationHistory.append(item)
         isProcessing = false
+
+        // Store partial event if AI needs more info
+        if response.needsMoreInfo, let partial = response.partialCommand {
+            partialEvent = partial
+            print("📝 Storing partial event: title=\(partial.title ?? "nil"), startDate=\(partial.startDate?.description ?? "nil")")
+        }
     }
 
     private func executeAIAction(_ response: AICalendarResponse) {
@@ -246,10 +299,10 @@ struct AITabView: View {
             }
         } else {
             // Handle non-form commands (queries, help, etc.)
-            addUserMessage(text)
+            // DO NOT add user message to conversation - only show as live dictation
 
-            // Process the command through AI
-            aiManager.processVoiceCommand(text) { result in
+            // Process the command through AI with conversation history, calendar events, and partial event
+            aiManager.processVoiceCommand(text, conversationHistory: conversationHistory, calendarEvents: calendarManager.unifiedEvents, partialEvent: partialEvent) { result in
                 print("🎯 AI processing completed for example command: \(result.message)")
 
                 if result.requiresConfirmation {
@@ -337,12 +390,7 @@ struct AITabView: View {
     }
 }
 
-struct ConversationItem: Identifiable {
-    let id: UUID
-    let message: String
-    let isUser: Bool
-    let timestamp: Date
-}
+// ConversationItem is now defined in AIManager.swift
 
 struct ConversationBubble: View {
     let item: ConversationItem
@@ -1707,80 +1755,175 @@ struct InlineFormView: View {
 
 // MARK: - Persistent Voice Footer
 
+// MARK: - Waveform View
+
+struct WaveformView: View {
+    let isAnimating: Bool
+    @State private var barHeights: [CGFloat] = [0.3, 0.5, 0.7, 0.5, 0.3]
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 3) {
+            ForEach(0..<5) { index in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.white)
+                    .frame(width: 3, height: 20 * barHeights[index])
+                    .animation(
+                        isAnimating ?
+                            Animation.easeInOut(duration: 0.5)
+                                .repeatForever(autoreverses: true)
+                                .delay(Double(index) * 0.1)
+                            : .default,
+                        value: barHeights[index]
+                    )
+            }
+        }
+        .onAppear {
+            if isAnimating {
+                animateWaveform()
+            }
+        }
+        .onChange(of: isAnimating) { newValue in
+            if newValue {
+                animateWaveform()
+            } else {
+                resetWaveform()
+            }
+        }
+    }
+
+    private func animateWaveform() {
+        barHeights = [0.4, 0.8, 1.0, 0.6, 0.4]
+    }
+
+    private func resetWaveform() {
+        barHeights = [0.3, 0.5, 0.7, 0.5, 0.3]
+    }
+}
+
+// MARK: - Persistent Voice Footer
+
 struct PersistentVoiceFooter: View {
     @ObservedObject var voiceManager: VoiceManager
     @ObservedObject var aiManager: AIManager
     @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var fontManager: FontManager
     @ObservedObject var appearanceManager: AppearanceManager
+    let conversationHistory: [ConversationItem]
+    let partialEvent: CalendarCommand?
     let onTranscript: (String) -> Void
     let onResponse: (AICalendarResponse) -> Void
     let onStartListening: () -> Void
 
     @State private var isListening = false
+    @State private var currentTranscript = ""
 
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
             Spacer()
 
-            // Mic Icon - color reversal when active (no animation)
-            Button(action: {
-                startVoiceRecording()
-            }) {
-                ZStack {
-                    // Circle background
-                    Circle()
-                        .fill(isListening ? Color.white : Color.blue)
-                        .frame(width: 44, height: 44)
+            // Stop button (only visible when listening)
+            if isListening {
+                Button(action: {
+                    stopRecording()
+                }) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 44, height: 44)
 
-                    // Mic icon
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 22))
-                        .foregroundColor(isListening ? .blue : .white)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.white)
+                            .frame(width: 16, height: 16)
+                    }
                 }
+                .buttonStyle(PlainButtonStyle())
+                .transition(.scale.combined(with: .opacity))
+            }
+
+            // Main pill button (Speak/Send)
+            Button(action: {
+                if isListening {
+                    sendTranscript()
+                } else {
+                    startVoiceRecording()
+                }
+            }) {
+                HStack(spacing: 8) {
+                    // Waveform
+                    WaveformView(isAnimating: isListening)
+                        .frame(width: 30, height: 20)
+
+                    // Text
+                    Text(isListening ? "Send" : "Speak")
+                        .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                        .foregroundColor(.white)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule()
+                        .fill(Color.blue)
+                )
             }
             .buttonStyle(PlainButtonStyle())
 
             Spacer()
         }
         .padding(.vertical, 10)
-        .frame(maxWidth: 200)
-        .background(
-            RoundedRectangle(cornerRadius: 25)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 25)
-                        .fill(Color.blue.opacity(appearanceManager.blueAccentOpacity * 0.3))
-                )
-                .shadow(color: .black.opacity(appearanceManager.shadowOpacity), radius: 8, x: 0, y: -4)
-        )
         .frame(maxWidth: .infinity)
         .padding(.bottom, 8)
     }
 
     private func startVoiceRecording() {
-        if voiceManager.isListening {
-            print("🔴 Stopping voice recording from persistent footer")
-            voiceManager.stopListening()
-            isListening = false
-        } else {
-            print("🎤 Starting voice recording from persistent footer")
-            isListening = true
-            onStartListening() // Notify parent to show conversation window
+        print("🎤 Starting voice recording from persistent footer")
+        isListening = true
+        onStartListening() // Notify parent to show conversation window
 
-            voiceManager.startListening { transcript in
-                print("📝 Transcript received: \(transcript)")
-                isListening = false
-
-                // Add transcript to conversation history
-                onTranscript(transcript)
-
-                // Process with AI
-                aiManager.processVoiceCommand(transcript) { response in
-                    print("🤖 AI response: \(response.message)")
-                    onResponse(response)
-                }
+        voiceManager.startListening(
+            onPartialTranscript: { partial in
+                // Update current transcript as user speaks
+                print("📝 Partial transcript: \(partial)")
+                currentTranscript = partial
+            },
+            completion: { final in
+                // Store final transcript but don't process yet
+                print("✅ Final transcript received: \(final)")
+                currentTranscript = final
+                // Keep listening state active until user presses Send
             }
+        )
+    }
+
+    private func stopRecording() {
+        print("🔴 Stopping voice recording without sending")
+        voiceManager.stopListening()
+        isListening = false
+        currentTranscript = ""
+    }
+
+    private func sendTranscript() {
+        print("📤 Sending transcript to AI: \(currentTranscript)")
+
+        // Store transcript before clearing
+        let transcriptToSend = currentTranscript
+
+        // Stop listening and clear immediately
+        voiceManager.stopListening()
+        isListening = false
+        currentTranscript = ""
+
+        guard !transcriptToSend.isEmpty else {
+            print("⚠️ No transcript to send")
+            return
+        }
+
+        // Add transcript to conversation history
+        onTranscript(transcriptToSend)
+
+        // Process with AI including conversation history, calendar events, and partial event
+        aiManager.processVoiceCommand(transcriptToSend, conversationHistory: conversationHistory, calendarEvents: calendarManager.unifiedEvents, partialEvent: partialEvent) { response in
+            print("🤖 AI response: \(response.message)")
+            onResponse(response)
         }
     }
 }
@@ -1790,6 +1933,7 @@ struct PersistentVoiceFooter: View {
 struct ConversationWindow: View {
     @Binding var conversationHistory: [ConversationItem]
     @ObservedObject var voiceManager: VoiceManager
+    @ObservedObject var calendarManager: CalendarManager
     let isProcessing: Bool
     let fontManager: FontManager
     let appearanceManager: AppearanceManager
@@ -1797,6 +1941,22 @@ struct ConversationWindow: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Header with close button
+            HStack {
+                Spacer()
+                Button(action: {
+                    conversationHistory.removeAll()
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .padding(8)
+                        .background(Circle().fill(Color(.systemGray5)))
+                }
+                .padding(.trailing, 12)
+                .padding(.top, 12)
+            }
+
             // Conversation content
             ScrollViewReader { proxy in
                 ScrollView {
@@ -1805,7 +1965,8 @@ struct ConversationWindow: View {
                         ForEach(conversationHistory) { item in
                             ConversationLine(
                                 item: item,
-                                fontManager: fontManager
+                                fontManager: fontManager,
+                                calendarManager: calendarManager
                             )
                             .id(item.id)
                         }
@@ -1880,29 +2041,239 @@ struct ConversationWindow: View {
 struct ConversationLine: View {
     let item: ConversationItem
     let fontManager: FontManager
+    @ObservedObject var calendarManager: CalendarManager
+    @State private var expandedEventIds: Set<String> = []
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            if item.isUser {
-                // User input with arrow cursor
-                Image(systemName: "arrowtriangle.right.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(.gray)
-                    .padding(.top, 6)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                if item.isUser {
+                    // User input with arrow cursor
+                    Image(systemName: "arrowtriangle.right.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray)
+                        .padding(.top, 6)
 
-                Text(item.message)
-                    .dynamicFont(size: 16, fontManager: fontManager)
-                    .foregroundColor(.primary)
-            } else {
-                // AI response in blue
-                Text(item.message)
-                    .dynamicFont(size: 16, fontManager: fontManager)
-                    .foregroundColor(.blue)
+                    Text(item.message)
+                        .dynamicFont(size: 16, fontManager: fontManager)
+                        .foregroundColor(.primary)
+                } else {
+                    // AI response in blue
+                    Text(item.message)
+                        .dynamicFont(size: 16, fontManager: fontManager)
+                        .foregroundColor(.blue)
+                }
+
+                Spacer()
             }
 
-            Spacer()
+            // Display event cards if present
+            if let events = item.eventResults, !events.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(events) { eventResult in
+                        EventResultCard(
+                            eventResult: eventResult,
+                            fontManager: fontManager,
+                            calendarManager: calendarManager,
+                            isExpanded: expandedEventIds.contains(eventResult.id),
+                            onTap: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    if expandedEventIds.contains(eventResult.id) {
+                                        expandedEventIds.remove(eventResult.id)
+                                    } else {
+                                        expandedEventIds.insert(eventResult.id)
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+                .padding(.leading, 0)
+            }
         }
         .padding(.horizontal)
+    }
+}
+
+struct EventResultCard: View {
+    let eventResult: EventResult
+    let fontManager: FontManager
+    @ObservedObject var calendarManager: CalendarManager
+    let isExpanded: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 0) {
+                // Compact card view (always visible)
+                HStack(spacing: 8) {
+                    // Lane indicator (similar to calendar view)
+                    HStack(spacing: 2) {
+                        ForEach(0..<3) { index in
+                            Rectangle()
+                                .fill(index == 0 ? eventColor : Color.clear)
+                                .frame(width: 3, height: 20)
+                        }
+                    }
+                    .frame(width: 24)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(formatTimeRange(start: eventResult.startDate, end: eventResult.endDate))
+                                .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
+                                .foregroundColor(.secondary)
+
+                            Spacer()
+
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+
+                        Text(eventResult.title)
+                            .dynamicFont(size: 15, weight: .semibold, fontManager: fontManager)
+                            .foregroundColor(.primary)
+
+                        if let location = eventResult.location, !isExpanded {
+                            HStack {
+                                Image(systemName: "location")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption2)
+                                Text(location)
+                                    .dynamicFont(size: 14, fontManager: fontManager)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+
+                    Spacer()
+                }
+                .padding(12)
+
+                // Expanded details (shown when isExpanded is true)
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Divider()
+                            .padding(.horizontal, 12)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            if let location = eventResult.location {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Image(systemName: "location.fill")
+                                        .foregroundColor(eventColor)
+                                        .font(.system(size: 14))
+                                        .frame(width: 20)
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Location")
+                                            .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
+                                            .foregroundColor(.secondary)
+
+                                        Text(location)
+                                            .dynamicFont(size: 14, fontManager: fontManager)
+                                            .foregroundColor(.primary)
+
+                                        // Check if it's a virtual meeting link
+                                        if isVirtualMeetingLink(location) {
+                                            Link("Join Meeting", destination: URL(string: location) ?? URL(string: "https://")!)
+                                                .dynamicFont(size: 14, weight: .semibold, fontManager: fontManager)
+                                                .foregroundColor(eventColor)
+                                                .padding(.vertical, 6)
+                                                .padding(.horizontal, 12)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 6)
+                                                        .fill(eventColor.opacity(0.1))
+                                                )
+                                        }
+                                    }
+                                }
+                            }
+
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "calendar")
+                                    .foregroundColor(eventColor)
+                                    .font(.system(size: 14))
+                                    .frame(width: 20)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Calendar")
+                                        .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
+                                        .foregroundColor(.secondary)
+
+                                    Text(eventResult.source)
+                                        .dynamicFont(size: 14, fontManager: fontManager)
+                                        .foregroundColor(.primary)
+                                }
+                            }
+
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "clock.fill")
+                                    .foregroundColor(eventColor)
+                                    .font(.system(size: 14))
+                                    .frame(width: 20)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Time")
+                                        .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
+                                        .foregroundColor(.secondary)
+
+                                    Text(formatFullDateTime(start: eventResult.startDate, end: eventResult.endDate))
+                                        .dynamicFont(size: 14, fontManager: fontManager)
+                                        .foregroundColor(.primary)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                    }
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(eventColor.opacity(isExpanded ? 0.05 : 0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(eventColor.opacity(isExpanded ? 0.4 : 0.3), lineWidth: isExpanded ? 1.5 : 1)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    private var eventColor: Color {
+        // Use the actual calendar color from the event
+        if let colorComponents = eventResult.color, colorComponents.count >= 3 {
+            return Color(red: colorComponents[0], green: colorComponents[1], blue: colorComponents[2])
+        }
+        // Default to light blue
+        return Color(red: 0.2, green: 0.6, blue: 1.0)
+    }
+
+    private func isVirtualMeetingLink(_ location: String) -> Bool {
+        let lowercased = location.lowercased()
+        return lowercased.contains("zoom.us") ||
+               lowercased.contains("teams.microsoft.com") ||
+               lowercased.contains("meet.google.com") ||
+               lowercased.hasPrefix("http://") ||
+               lowercased.hasPrefix("https://")
+    }
+
+    private func formatTimeRange(start: Date, end: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return "\(formatter.string(from: start)) - \(formatter.string(from: end))"
+    }
+
+    private func formatFullDateTime(start: Date, end: Date) -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .none
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+
+        return "\(dateFormatter.string(from: start))\n\(timeFormatter.string(from: start)) - \(timeFormatter.string(from: end))"
     }
 }
 
