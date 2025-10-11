@@ -9,6 +9,9 @@ struct ContentView: View {
     @StateObject private var aiManager = AIManager()
     @StateObject private var fontManager = FontManager()
     @StateObject private var appearanceManager = AppearanceManager()
+    @StateObject private var morningBriefingService = MorningBriefingService.shared
+    // PHASE 12 DISABLED
+    // @StateObject private var postMeetingService = PostMeetingService.shared
     @State private var selectedTab: Int = 0
 
     var body: some View {
@@ -43,6 +46,15 @@ struct ContentView: View {
                     }
                     .tag(2)
 
+                // PHASE 12 DISABLED - Actions Tab
+                // ActionItemsView(postMeetingService: postMeetingService, fontManager: fontManager, calendarManager: calendarManager)
+                //     .tabItem {
+                //         Image(systemName: "checkmark.circle")
+                //         Text("Actions")
+                //     }
+                //     .tag(3)
+                //     .badge(postMeetingService.pendingActionItems.filter { !$0.isCompleted }.count)
+
                 SettingsTabView(calendarManager: calendarManager, voiceManager: voiceManager, fontManager: fontManager, googleCalendarManager: googleCalendarManager, outlookCalendarManager: outlookCalendarManager, appearanceManager: appearanceManager)
                     .tabItem {
                         Image(systemName: "gearshape")
@@ -63,9 +75,26 @@ struct ContentView: View {
             calendarManager.googleCalendarManager = googleCalendarManager
             calendarManager.outlookCalendarManager = outlookCalendarManager
 
+            // Configure Morning Briefing Service
+            morningBriefingService.configure(calendarManager: calendarManager)
+
+            // PHASE 12 DISABLED - PostMeetingService Configuration
+            // postMeetingService.configure(calendarManager: calendarManager, aiManager: aiManager)
+
             calendarManager.requestCalendarAccess()
             setupiOS26TabBar()
         }
+        // PHASE 12 DISABLED - Post-Meeting Summary Sheet
+        // .sheet(isPresented: $postMeetingService.showPostMeetingSummary) {
+        //     if let summary = postMeetingService.currentMeetingSummary {
+        //         PostMeetingSummaryView(
+        //             followUp: summary,
+        //             postMeetingService: postMeetingService,
+        //             fontManager: fontManager,
+        //             calendarManager: calendarManager
+        //         )
+        //     }
+        // }
     }
 
     private func setupiOS26TabBar() {

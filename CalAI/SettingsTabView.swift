@@ -17,6 +17,9 @@ struct SettingsTabView: View {
     @State private var showingAPIKeyAlert = false
     @State private var isAnthropicKeyVisible = false
     @State private var isOpenAIKeyVisible = false
+    @State private var defaultWorkCalendar = UserDefaults.standard.string(forKey: "defaultWorkCalendar") ?? "Outlook"
+    @State private var defaultPersonalCalendar = UserDefaults.standard.string(forKey: "defaultPersonalCalendar") ?? "iOS"
+    @State private var defaultFallbackCalendar = UserDefaults.standard.string(forKey: "defaultFallbackCalendar") ?? "iOS"
 
     private var sizeCategory: ContentSizeCategory {
         switch fontManager.currentFontSize {
@@ -210,6 +213,122 @@ struct SettingsTabView: View {
                                 .dynamicFont(size: 16, fontManager: fontManager)
                         }
                     }
+                }
+
+                Section("Event Tasks") {
+                    NavigationLink(destination: TaskSettingsView(fontManager: fontManager)) {
+                        HStack {
+                            Image(systemName: "checklist")
+                                .foregroundColor(.blue)
+                            Text("Event Tasks & Preparation")
+                                .dynamicFont(size: 16, fontManager: fontManager)
+                        }
+                    }
+                }
+
+                Section("Morning Briefing") {
+                    NavigationLink(destination: MorningBriefingSettingsView(fontManager: fontManager)) {
+                        HStack {
+                            Image(systemName: "sun.horizon.fill")
+                                .foregroundColor(.orange)
+                            Text("Daily Briefing Settings")
+                                .dynamicFont(size: 16, fontManager: fontManager)
+                        }
+                    }
+
+                    NavigationLink(destination: MorningBriefingView(fontManager: fontManager)) {
+                        HStack {
+                            Image(systemName: "newspaper.fill")
+                                .foregroundColor(.blue)
+                            Text("View Today's Briefing")
+                                .dynamicFont(size: 16, fontManager: fontManager)
+                        }
+                    }
+                }
+
+                Section(header: Text("Calendar Auto-Routing"),
+                       footer: Text("Events are automatically routed to the appropriate calendar based on keywords. Work events (meetings, standups, etc.) go to your work calendar, while personal events (gym, doctor, etc.) go to your personal calendar.")) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Work Calendar Preference
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "briefcase.fill")
+                                    .foregroundColor(.blue)
+                                Text("Work Events Calendar")
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                            }
+
+                            Picker("Work Calendar", selection: $defaultWorkCalendar) {
+                                Text("iOS Calendar").tag("iOS")
+                                Text("Google Calendar").tag("Google")
+                                Text("Outlook Calendar").tag("Outlook")
+                            }
+                            .pickerStyle(SegmentedPickerStyle())
+                            .onChange(of: defaultWorkCalendar) { newValue in
+                                UserDefaults.standard.set(newValue, forKey: "defaultWorkCalendar")
+                            }
+
+                            Text("For meetings, standups, reviews, clients, presentations")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 24)
+                        }
+
+                        Divider()
+
+                        // Personal Calendar Preference
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "person.fill")
+                                    .foregroundColor(.green)
+                                Text("Personal Events Calendar")
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                            }
+
+                            Picker("Personal Calendar", selection: $defaultPersonalCalendar) {
+                                Text("iOS Calendar").tag("iOS")
+                                Text("Google Calendar").tag("Google")
+                                Text("Outlook Calendar").tag("Outlook")
+                            }
+                            .pickerStyle(SegmentedPickerStyle())
+                            .onChange(of: defaultPersonalCalendar) { newValue in
+                                UserDefaults.standard.set(newValue, forKey: "defaultPersonalCalendar")
+                            }
+
+                            Text("For gym, doctor, dentist, birthdays, personal appointments")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 24)
+                        }
+
+                        Divider()
+
+                        // Fallback Calendar Preference
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "questionmark.circle.fill")
+                                    .foregroundColor(.orange)
+                                Text("Default Calendar (Ambiguous)")
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                            }
+
+                            Picker("Default Calendar", selection: $defaultFallbackCalendar) {
+                                Text("iOS Calendar").tag("iOS")
+                                Text("Google Calendar").tag("Google")
+                                Text("Outlook Calendar").tag("Outlook")
+                            }
+                            .pickerStyle(SegmentedPickerStyle())
+                            .onChange(of: defaultFallbackCalendar) { newValue in
+                                UserDefaults.standard.set(newValue, forKey: "defaultFallbackCalendar")
+                            }
+
+                            Text("Used when event context is unclear")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 24)
+                        }
+                    }
+                    .padding(.vertical, 8)
                 }
 
                 Section("Display Settings") {
