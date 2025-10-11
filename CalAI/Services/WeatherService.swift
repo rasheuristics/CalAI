@@ -1,8 +1,9 @@
 import Foundation
 import CoreLocation
 import Combine
+import WeatherKit
 
-/// Service for fetching weather data using OpenWeatherMap API
+/// Service for fetching weather data using Apple WeatherKit (iOS 16+) with OpenWeatherMap fallback (iOS 15)
 class WeatherService: NSObject, ObservableObject {
     static let shared = WeatherService()
 
@@ -13,7 +14,7 @@ class WeatherService: NSObject, ObservableObject {
     private let locationManager = CLLocationManager()
     private var cancellables = Set<AnyCancellable>()
 
-    // OpenWeatherMap API Key - Store in UserDefaults (user will provide in settings)
+    // OpenWeatherMap API Key - Fallback for iOS 15 only
     private var apiKey: String? {
         get {
             return UserDefaults.standard.string(forKey: "openWeatherMapAPIKey")
@@ -33,20 +34,14 @@ class WeatherService: NSObject, ObservableObject {
 
     /// Fetch current weather for device location
     func fetchCurrentWeather(completion: @escaping (Result<WeatherData, Error>) -> Void) {
-        guard let apiKey = apiKey, !apiKey.isEmpty else {
-            let error = NSError(domain: "WeatherService", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "OpenWeatherMap API key not configured"
-            ])
-            completion(.failure(error))
-            return
-        }
-
         // Check location authorization
         let status = locationManager.authorizationStatus
+        print("🌦️ WeatherService: Checking location authorization - status: \(status.rawValue)")
 
         switch status {
         case .notDetermined:
             // Request permission
+            print("⚠️ WeatherService: Location permission not determined, requesting...")
             locationManager.requestWhenInUseAuthorization()
             let error = NSError(domain: "WeatherService", code: 2, userInfo: [
                 NSLocalizedDescriptionKey: "Location permission not granted"
@@ -54,6 +49,7 @@ class WeatherService: NSObject, ObservableObject {
             completion(.failure(error))
 
         case .restricted, .denied:
+            print("❌ WeatherService: Location permission denied or restricted")
             let error = NSError(domain: "WeatherService", code: 3, userInfo: [
                 NSLocalizedDescriptionKey: "Location permission denied. Enable in Settings."
             ])
@@ -61,12 +57,14 @@ class WeatherService: NSObject, ObservableObject {
 
         case .authorizedWhenInUse, .authorizedAlways:
             // Get location and fetch weather
+            print("✅ WeatherService: Location authorized, requesting location...")
             locationManager.requestLocation()
 
             // Store completion for when location is received
             self.weatherCompletion = completion
 
         @unknown default:
+            print("❌ WeatherService: Unknown location authorization status")
             let error = NSError(domain: "WeatherService", code: 4, userInfo: [
                 NSLocalizedDescriptionKey: "Unknown location authorization status"
             ])
@@ -74,14 +72,22 @@ class WeatherService: NSObject, ObservableObject {
         }
     }
 
-    /// Set API key
+    /// Set API key (for iOS 15 fallback)
     func setAPIKey(_ key: String) {
         self.apiKey = key
     }
 
-    /// Check if API key is configured
+    /// Check if API key is configured (for iOS 15 fallback)
     func hasAPIKey() -> Bool {
         return apiKey != nil && !apiKey!.isEmpty
+    }
+
+    /// Check if WeatherKit is available (iOS 16+)
+    var isWeatherKitAvailable: Bool {
+        if #available(iOS 16.0, *) {
+            return true
+        }
+        return false
     }
 
     // MARK: - Private Methods
@@ -89,20 +95,111 @@ class WeatherService: NSObject, ObservableObject {
     private var weatherCompletion: ((Result<WeatherData, Error>) -> Void)?
 
     private func fetchWeather(for location: CLLocation) {
-        guard let apiKey = apiKey else { return }
+        print("🌦️ WeatherService: Fetching weather for location: \(location.coordinate.latitude), \(location.coordinate.longitude)")
+        isLoading = true
+        error = nil
+
+        // Try WeatherKit first (iOS 16+)
+        if #available(iOS 16.0, *) {
+            print("🌦️ WeatherService: Using WeatherKit (iOS 16+)")
+            fetchWeatherKitData(for: location)
+        } else {
+            print("🌦️ WeatherService: Using OpenWeatherMap fallback (iOS 15)")
+            // Fallback to OpenWeatherMap for iOS 15
+            fetchOpenWeatherMapData(for: location)
+        }
+    }
+
+    // MARK: - WeatherKit Implementation (iOS 16+)
+
+    @available(iOS 16.0, *)
+    private func fetchWeatherKitData(for location: CLLocation) {
+        Task {
+            do {
+                print("🌦️ WeatherService: Requesting weather from WeatherKit...")
+                let weather = try await WeatherKit.WeatherService.shared.weather(for: location)
+                let currentWeather = weather.currentWeather
+                print("✅ WeatherService: WeatherKit data received - \(currentWeather.temperature.value)°C, \(currentWeather.condition.description)")
+
+                // Convert to WeatherData
+                let weatherData = WeatherData(
+                    temperature: convertTemperature(currentWeather.temperature.value),
+                    feelsLike: convertTemperature(currentWeather.apparentTemperature.value),
+                    condition: currentWeather.condition.description,
+                    conditionDescription: currentWeather.condition.description,
+                    high: convertTemperature(weather.dailyForecast.first?.highTemperature.value ?? currentWeather.temperature.value),
+                    low: convertTemperature(weather.dailyForecast.first?.lowTemperature.value ?? currentWeather.temperature.value),
+                    precipitationChance: Int((weather.dailyForecast.first?.precipitationChance ?? 0) * 100),
+                    humidity: Int(currentWeather.humidity * 100),
+                    windSpeed: convertWindSpeed(currentWeather.wind.speed.value),
+                    icon: weatherConditionToIcon(currentWeather.condition)
+                )
+
+                DispatchQueue.main.async {
+                    print("✅ WeatherService: Weather data converted and ready")
+                    self.currentWeather = weatherData
+                    self.isLoading = false
+                    self.weatherCompletion?(.success(weatherData))
+                    self.weatherCompletion = nil
+                }
+            } catch {
+                print("❌ WeatherService: WeatherKit error - \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    self.error = "WeatherKit error: \(error.localizedDescription)"
+                    self.weatherCompletion?(.failure(error))
+                    self.weatherCompletion = nil
+                }
+            }
+        }
+    }
+
+    @available(iOS 16.0, *)
+    private func weatherConditionToIcon(_ condition: WeatherCondition) -> String {
+        switch condition {
+        case .clear: return "01d"
+        case .cloudy: return "04d"
+        case .partlyCloudy: return "02d"
+        case .mostlyCloudy: return "03d"
+        case .rain: return "10d"
+        case .drizzle: return "09d"
+        case .heavyRain: return "10d"
+        case .snow: return "13d"
+        case .sleet: return "13d"
+        case .hail: return "13d"
+        case .thunderstorms: return "11d"
+        case .tropicalStorm: return "11d"
+        case .hurricane: return "11d"
+        case .foggy: return "50d"
+        case .haze: return "50d"
+        case .smoky: return "50d"
+        case .breezy: return "01d"
+        case .windy: return "01d"
+        default: return "01d"
+        }
+    }
+
+    // MARK: - OpenWeatherMap Implementation (iOS 15 Fallback)
+
+    private func fetchOpenWeatherMapData(for location: CLLocation) {
+        guard let apiKey = apiKey, !apiKey.isEmpty else {
+            let error = NSError(domain: "WeatherService", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Weather unavailable on iOS 15 without OpenWeatherMap API key"
+            ])
+            DispatchQueue.main.async {
+                self.isLoading = false
+                self.error = error.localizedDescription
+                self.weatherCompletion?(.failure(error))
+                self.weatherCompletion = nil
+            }
+            return
+        }
 
         let lat = location.coordinate.latitude
         let lon = location.coordinate.longitude
 
-        // OpenWeatherMap One Call API 3.0 (includes current + forecast)
-        // Note: For free tier, use Current Weather API + 5-day forecast
         let currentWeatherURL = "https://api.openweathermap.org/data/2.5/weather?lat=\(lat)&lon=\(lon)&appid=\(apiKey)&units=metric"
-        let forecastURL = "https://api.openweathermap.org/data/2.5/forecast?lat=\(lat)&lon=\(lon)&appid=\(apiKey)&units=metric"
 
-        isLoading = true
-        error = nil
-
-        // Fetch current weather
         guard let url = URL(string: currentWeatherURL) else {
             let error = NSError(domain: "WeatherService", code: 5, userInfo: [
                 NSLocalizedDescriptionKey: "Invalid weather API URL"
@@ -137,7 +234,7 @@ class WeatherService: NSObject, ObservableObject {
 
                 do {
                     let weatherResponse = try JSONDecoder().decode(OpenWeatherMapResponse.self, from: data)
-                    let weatherData = self.convertToWeatherData(weatherResponse)
+                    let weatherData = self.convertOpenWeatherToWeatherData(weatherResponse)
                     self.currentWeather = weatherData
                     self.weatherCompletion?(.success(weatherData))
                     self.weatherCompletion = nil
@@ -150,8 +247,8 @@ class WeatherService: NSObject, ObservableObject {
         }.resume()
     }
 
-    private func convertToWeatherData(_ response: OpenWeatherMapResponse) -> WeatherData {
-        // Convert Celsius to Fahrenheit if needed (based on locale)
+    private func convertOpenWeatherToWeatherData(_ response: OpenWeatherMapResponse) -> WeatherData {
+        // Convert Celsius to local preference
         let usesMetric = Locale.current.usesMetricSystem
         let temp = usesMetric ? response.main.temp : celsiusToFahrenheit(response.main.temp)
         let feelsLike = usesMetric ? response.main.feelsLike : celsiusToFahrenheit(response.main.feelsLike)
@@ -172,8 +269,20 @@ class WeatherService: NSObject, ObservableObject {
         )
     }
 
+    // MARK: - Helper Methods
+
+    private func convertTemperature(_ celsius: Double) -> Double {
+        let usesMetric = Locale.current.usesMetricSystem
+        return usesMetric ? celsius : celsiusToFahrenheit(celsius)
+    }
+
     private func celsiusToFahrenheit(_ celsius: Double) -> Double {
         return (celsius * 9/5) + 32
+    }
+
+    private func convertWindSpeed(_ metersPerSecond: Double) -> Double {
+        let usesMetric = Locale.current.usesMetricSystem
+        return usesMetric ? metersPerSecond * 3.6 : metersPerSecond * 2.237 // km/h or mph
     }
 }
 
@@ -181,11 +290,16 @@ class WeatherService: NSObject, ObservableObject {
 
 extension WeatherService: CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.first else { return }
+        guard let location = locations.first else {
+            print("❌ WeatherService: No location received")
+            return
+        }
+        print("✅ WeatherService: Location received - \(location.coordinate.latitude), \(location.coordinate.longitude)")
         fetchWeather(for: location)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("❌ WeatherService: Location error - \(error.localizedDescription)")
         DispatchQueue.main.async {
             self.error = "Failed to get location: \(error.localizedDescription)"
             let nsError = error as NSError

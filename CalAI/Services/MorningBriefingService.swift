@@ -86,7 +86,16 @@ class MorningBriefingService: ObservableObject {
             DispatchQueue.main.async {
                 guard let self = self else { return }
 
-                let weather = try? result.get()
+                var weather: WeatherData? = nil
+
+                switch result {
+                case .success(let weatherData):
+                    print("✅ Weather fetched successfully: \(weatherData.temperature)°, \(weatherData.condition)")
+                    weather = weatherData
+                case .failure(let error):
+                    print("❌ Weather fetch failed: \(error.localizedDescription)")
+                    // Continue without weather data
+                }
 
                 let briefing = DailyBriefing(
                     date: date,

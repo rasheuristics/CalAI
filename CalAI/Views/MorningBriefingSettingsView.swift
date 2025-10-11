@@ -86,9 +86,9 @@ struct MorningBriefingSettingsView: View {
                         .foregroundColor(.secondary)
                 }
 
-                // Weather API Configuration
+                // Weather Configuration
                 Section(header: Text("Weather Configuration"),
-                       footer: Text("Get your free API key from openweathermap.org/api. Required for weather data.")) {
+                       footer: weatherConfigFooter) {
                     HStack {
                         if isWeatherAPIKeyVisible {
                             TextField("API Key", text: $weatherAPIKey)
@@ -111,11 +111,20 @@ struct MorningBriefingSettingsView: View {
                         weatherService.setAPIKey(newValue)
                     }
 
-                    if weatherService.hasAPIKey() {
+                    // Weather status
+                    if weatherService.isWeatherKitAvailable {
                         HStack {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.green)
-                            Text("Weather API Configured")
+                            Text("Using Apple WeatherKit (iOS 16+)")
+                                .dynamicFont(size: 14, fontManager: fontManager)
+                                .foregroundColor(.green)
+                        }
+                    } else if weatherService.hasAPIKey() {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("OpenWeatherMap API Configured (iOS 15)")
                                 .dynamicFont(size: 14, fontManager: fontManager)
                                 .foregroundColor(.green)
                         }
@@ -123,7 +132,7 @@ struct MorningBriefingSettingsView: View {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundColor(.orange)
-                            Text("Weather API Not Configured")
+                            Text("iOS 15: API Key Required")
                                 .dynamicFont(size: 14, fontManager: fontManager)
                                 .foregroundColor(.orange)
                         }
@@ -193,6 +202,16 @@ struct MorningBriefingSettingsView: View {
         }
         .navigationTitle("Morning Briefing")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Computed Properties
+
+    private var weatherConfigFooter: Text {
+        if weatherService.isWeatherKitAvailable {
+            return Text("iOS 16+: Weather automatically provided by Apple WeatherKit. No API key needed.")
+        } else {
+            return Text("iOS 15: OpenWeatherMap API key required. Get your free key from openweathermap.org/api")
+        }
     }
 
     // MARK: - Helper Views
