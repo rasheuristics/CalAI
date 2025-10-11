@@ -17,6 +17,10 @@ struct CalendarTabView: View {
     @State private var showingDatePicker = false
     @State private var selectedEventForDetail: UnifiedEvent? = nil
     @State private var showEventDetail = false
+    @State private var selectedEventForEdit: UnifiedEvent? = nil
+    @State private var showingEditView = false
+    @State private var selectedEventForShare: UnifiedEvent? = nil
+    @State private var showingShareView = false
 
     private let eventFilterService = EventFilterService()
 
@@ -75,8 +79,8 @@ struct CalendarTabView: View {
                                     onEventTap: { calendarEvent in
                                         // Find the corresponding UnifiedEvent
                                         if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == calendarEvent.id }) {
-                                            selectedEventForDetail = unifiedEvent
-                                            showEventDetail = true
+                                            selectedEventForShare = unifiedEvent
+                                            showingShareView = true
                                         }
                                     }
                                 )
@@ -91,8 +95,8 @@ struct CalendarTabView: View {
                                 onEventTap: { calendarEvent in
                                     // Find the corresponding UnifiedEvent
                                     if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == calendarEvent.id }) {
-                                        selectedEventForDetail = unifiedEvent
-                                        showEventDetail = true
+                                        selectedEventForShare = unifiedEvent
+                                        showingShareView = true
                                     }
                                 }
                             )
@@ -121,6 +125,24 @@ struct CalendarTabView: View {
                     calendarManager: calendarManager,
                     fontManager: fontManager,
                     event: event
+                )
+            }
+        }
+        .sheet(isPresented: $showingEditView) {
+            if let event = selectedEventForEdit {
+                AddEventView(
+                    calendarManager: calendarManager,
+                    fontManager: fontManager,
+                    eventToEdit: event
+                )
+            }
+        }
+        .sheet(isPresented: $showingShareView) {
+            if let event = selectedEventForShare {
+                EventShareView(
+                    event: event,
+                    calendarManager: calendarManager,
+                    fontManager: fontManager
                 )
             }
         }
@@ -530,6 +552,7 @@ struct iOSWeekView: View {
     @Binding var selectedDate: Date
     let events: [EKEvent]
     @ObservedObject var fontManager: FontManager
+    let onEventTap: (EKEvent) -> Void
 
     private let calendar = Calendar.current
     private let hourHeight: CGFloat = 50
@@ -562,7 +585,9 @@ struct iOSWeekView: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(selectedDayEvents, id: \.eventIdentifier) { event in
-                        DayEventCard(event: event)
+                        DayEventCard(event: event) {
+                            onEventTap(event)
+                        }
                     }
 
                     if selectedDayEvents.isEmpty {
@@ -685,6 +710,7 @@ struct iOSDayView: View {
     @Binding var selectedDate: Date
     let events: [EKEvent]
     @ObservedObject var fontManager: FontManager
+    let onEventTap: (EKEvent) -> Void
 
     private let calendar = Calendar.current
 
@@ -706,7 +732,9 @@ struct iOSDayView: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(todayEvents, id: \.eventIdentifier) { event in
-                        DayEventCard(event: event)
+                        DayEventCard(event: event) {
+                            onEventTap(event)
+                        }
                     }
 
                     if todayEvents.isEmpty {
@@ -745,6 +773,9 @@ struct iOSDayView: View {
 
 struct DayEventCard: View {
     let event: EKEvent
+    let onTap: () -> Void
+
+    @StateObject private var taskManager = EventTaskManager.shared
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -764,9 +795,16 @@ struct DayEventCard: View {
 
             // Event details
             VStack(alignment: .leading, spacing: 4) {
-                Text(event.title)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.black)
+                HStack {
+                    Text(event.title)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.black)
+
+                    Spacer()
+
+                    // Task Badge
+                    TaskBadgeView(count: taskManager.getPendingTaskCount(for: event.eventIdentifier))
+                }
 
                 if let location = event.location, !location.isEmpty {
                     Text(location)
@@ -775,7 +813,7 @@ struct DayEventCard: View {
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(16)
         .background(
@@ -787,6 +825,9 @@ struct DayEventCard: View {
                 )
                 .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
         )
+        .onTapGesture {
+            onTap()
+        }
     }
 
     private var startTime: String {

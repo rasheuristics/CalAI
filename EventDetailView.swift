@@ -8,6 +8,7 @@ struct EventDetailView: View {
 
     let event: UnifiedEvent
     @State private var showEditView = false
+    @State private var showShareView = false
 
     var body: some View {
         NavigationView {
@@ -141,6 +142,15 @@ struct EventDetailView: View {
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        showShareView = true
+                    }) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 17, weight: .medium))
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Edit") {
                         showEditView = true
                     }
@@ -152,6 +162,13 @@ struct EventDetailView: View {
                     calendarManager: calendarManager,
                     fontManager: fontManager,
                     event: event
+                )
+            }
+            .sheet(isPresented: $showShareView) {
+                EventShareView(
+                    event: event,
+                    calendarManager: calendarManager,
+                    fontManager: fontManager
                 )
             }
         }
