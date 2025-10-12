@@ -8,6 +8,8 @@ struct MorningBriefingView: View {
     @StateObject private var voiceReader = VoiceReader()
 
     @State private var isLoading = false
+    @State private var showWeatherAlert = false
+    @State private var weatherAlertMessage = ""
 
     var body: some View {
         NavigationView {
@@ -71,6 +73,19 @@ struct MorningBriefingView: View {
                     }
                 }
             }
+            .alert("Weather Test Result", isPresented: $showWeatherAlert) {
+                Button("OK", role: .cancel) {
+                    showWeatherAlert = false
+                }
+                if weatherAlertMessage.contains("Successful") {
+                    Button("Refresh Briefing") {
+                        showWeatherAlert = false
+                        refreshBriefing()
+                    }
+                }
+            } message: {
+                Text(weatherAlertMessage)
+            }
         }
     }
 
@@ -120,15 +135,7 @@ struct MorningBriefingView: View {
                         .foregroundColor(.secondary)
 
                         Button(action: {
-                            print("🧪 Manual weather fetch test started...")
-                            WeatherService.shared.fetchCurrentWeather { result in
-                                switch result {
-                                case .success(let weather):
-                                    print("🧪 Manual test SUCCESS: \(weather.temperatureFormatted), \(weather.condition)")
-                                case .failure(let error):
-                                    print("🧪 Manual test FAILED: \(error.localizedDescription)")
-                                }
-                            }
+                            testWeatherFetch()
                         }) {
                             HStack {
                                 Image(systemName: "arrow.clockwise.circle.fill")
@@ -365,6 +372,26 @@ struct MorningBriefingView: View {
     private func playVoiceReadout(for briefing: DailyBriefing) {
         let script = briefingService.generateVoiceScript(for: briefing)
         voiceReader.speak(script)
+    }
+
+    private func testWeatherFetch() {
+        print("🧪 Manual weather fetch test started...")
+
+        WeatherService.shared.fetchCurrentWeather { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let weather):
+                    print("🧪 Manual test SUCCESS: \(weather.temperatureFormatted), \(weather.condition)")
+                    self.weatherAlertMessage = "✅ Weather Fetch Successful!\n\nTemperature: \(weather.temperatureFormatted)\nCondition: \(weather.condition)\n\nBut weather is not showing in briefing. This means the briefing was generated before location permission was granted. Try refreshing the briefing."
+                    self.showWeatherAlert = true
+
+                case .failure(let error):
+                    print("🧪 Manual test FAILED: \(error.localizedDescription)")
+                    self.weatherAlertMessage = "❌ Weather Fetch Failed\n\nError: \(error.localizedDescription)\n\nCommon fixes:\n• Check Settings → Privacy → Location Services → CalAI\n• Make sure location permission is set to 'While Using App'\n• Try restarting the app"
+                    self.showWeatherAlert = true
+                }
+            }
+        }
     }
 }
 
