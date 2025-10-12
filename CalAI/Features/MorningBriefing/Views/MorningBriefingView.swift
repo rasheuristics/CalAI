@@ -46,8 +46,21 @@ struct MorningBriefingView: View {
                 }
             }
             .onAppear {
+                print("========================================")
+                print("🔵🔵🔵 MORNING BRIEFING VIEW APPEARED 🔵🔵🔵")
+                print("🔵 Current briefing: \(briefingService.todaysBriefing != nil ? "EXISTS" : "NIL")")
+                print("========================================")
+
                 if briefingService.todaysBriefing == nil {
+                    print("🔵 No briefing exists, refreshing...")
                     refreshBriefing()
+                } else {
+                    print("🔵 Briefing already exists")
+                    if let weather = briefingService.todaysBriefing?.weather {
+                        print("🔵 Weather in briefing: ✅ \(weather.temperatureFormatted)")
+                    } else {
+                        print("🔵 Weather in briefing: ❌ NIL")
+                    }
                 }
 
                 // Auto-play voice if enabled

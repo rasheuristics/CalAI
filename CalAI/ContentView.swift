@@ -66,6 +66,10 @@ struct ContentView: View {
         }
         .preferredColorScheme(appearanceManager.currentMode.colorScheme)
         .onAppear {
+            print("========================================")
+            print("🔴🔴🔴 CALAI APP LAUNCHED - CONSOLE IS WORKING! 🔴🔴🔴")
+            print("========================================")
+
             // Perform secure storage migration if needed
             if !SecureStorage.isMigrationCompleted() {
                 SecureStorage.performAppMigration()
@@ -76,7 +80,9 @@ struct ContentView: View {
             calendarManager.outlookCalendarManager = outlookCalendarManager
 
             // Configure Morning Briefing Service
+            print("🔴 About to configure MorningBriefingService...")
             morningBriefingService.configure(calendarManager: calendarManager)
+            print("🔴 MorningBriefingService configuration completed")
 
             // PHASE 12 DISABLED - PostMeetingService Configuration
             // postMeetingService.configure(calendarManager: calendarManager, aiManager: aiManager)
