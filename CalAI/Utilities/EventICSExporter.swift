@@ -40,14 +40,30 @@ class EventICSExporter {
 
         // Title and description
         ics.append("SUMMARY:\(escapeICSText(event.title))")
+
+        // Add calendar source information to description
+        let sourceInfo = "Source Calendar: \(event.source.displayName)"
+        var fullDescription = sourceInfo
+
         if let description = event.description, !description.isEmpty {
-            ics.append("DESCRIPTION:\(escapeICSText(description))")
+            fullDescription = "\(description)\n\n\(sourceInfo)"
         }
+
+        ics.append("DESCRIPTION:\(escapeICSText(fullDescription))")
 
         // Location
         if let location = event.location, !location.isEmpty {
             ics.append("LOCATION:\(escapeICSText(location))")
         }
+
+        // Add custom property for calendar source
+        let sourceValue: String
+        switch event.source {
+        case .ios: sourceValue = "ios"
+        case .google: sourceValue = "google"
+        case .outlook: sourceValue = "outlook"
+        }
+        ics.append("X-CALAI-SOURCE:\(sourceValue)")
 
         // Organizer (for meeting invitations)
         if let organizerEmail = organizerEmail, !organizerEmail.isEmpty {
@@ -117,13 +133,104 @@ class EventICSExporter {
             method: method
         )
 
-        // Base64 encode for data URL
-        if let data = icsContent.data(using: .utf8) {
-            let base64 = data.base64EncodedString()
-            return "data:text/calendar;base64,\(base64)"
+        // For QR codes, return raw ICS content (most calendar apps can parse this)
+        // Base64 encoding makes QR codes unnecessarily large
+        return icsContent
+    }
+
+    /// Create a universal calendar URL that works based on event source
+    /// - Parameter event: The event to create a link for
+    /// - Returns: Calendar URL appropriate for the event source
+    static func createUniversalCalendarURL(event: UnifiedEvent) -> String {
+        switch event.source {
+        case .google:
+            return createGoogleCalendarURL(event: event)
+        case .outlook:
+            return createOutlookCalendarURL(event: event)
+        case .ios:
+            // For iOS events, use Google Calendar as universal option
+            // (iOS calendar doesn't have a web interface)
+            return createGoogleCalendarURL(event: event)
+        }
+    }
+
+    /// Create a Google Calendar URL for the event
+    /// - Parameter event: The event to create a link for
+    /// - Returns: Google Calendar URL
+    static func createGoogleCalendarURL(event: UnifiedEvent) -> String {
+        let baseURL = "https://calendar.google.com/calendar/render?action=TEMPLATE"
+
+        // Format dates for Google Calendar (yyyyMMdd'T'HHmmss'Z')
+        let dateFormatter = DateFormatter()
+        dateFormatter.timeZone = TimeZone(identifier: "UTC")
+        dateFormatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+
+        let startDate = dateFormatter.string(from: event.startDate)
+        let endDate = dateFormatter.string(from: event.endDate)
+
+        var components = URLComponents(string: baseURL)!
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "text", value: event.title),
+            URLQueryItem(name: "dates", value: "\(startDate)/\(endDate)")
+        ]
+
+        if let location = event.location, !location.isEmpty {
+            queryItems.append(URLQueryItem(name: "location", value: location))
         }
 
-        return ""
+        // Add calendar source information to description
+        let sourceInfo = "📅 Source: \(event.source.displayName)"
+        var fullDescription = sourceInfo
+
+        if let description = event.description, !description.isEmpty {
+            fullDescription = "\(description)\n\n\(sourceInfo)"
+        }
+
+        queryItems.append(URLQueryItem(name: "details", value: fullDescription))
+
+        components.queryItems = queryItems
+
+        return components.url?.absoluteString ?? baseURL
+    }
+
+    /// Create an Outlook Calendar URL for the event
+    /// - Parameter event: The event to create a link for
+    /// - Returns: Outlook Calendar URL
+    static func createOutlookCalendarURL(event: UnifiedEvent) -> String {
+        let baseURL = "https://outlook.live.com/calendar/0/deeplink/compose"
+
+        // Format dates for Outlook (ISO 8601 format)
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.timeZone = TimeZone(identifier: "UTC")
+
+        let startDate = dateFormatter.string(from: event.startDate)
+        let endDate = dateFormatter.string(from: event.endDate)
+
+        var components = URLComponents(string: baseURL)!
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "subject", value: event.title),
+            URLQueryItem(name: "startdt", value: startDate),
+            URLQueryItem(name: "enddt", value: endDate),
+            URLQueryItem(name: "path", value: "/calendar/action/compose")
+        ]
+
+        if let location = event.location, !location.isEmpty {
+            queryItems.append(URLQueryItem(name: "location", value: location))
+        }
+
+        // Add calendar source information to description
+        let sourceInfo = "📅 Source: \(event.source.displayName)"
+        var fullDescription = sourceInfo
+
+        if let description = event.description, !description.isEmpty {
+            fullDescription = "\(description)\n\n\(sourceInfo)"
+        }
+
+        queryItems.append(URLQueryItem(name: "body", value: fullDescription))
+
+        components.queryItems = queryItems
+
+        return components.url?.absoluteString ?? baseURL
     }
 
     /// Save .ics file to temporary directory and return URL

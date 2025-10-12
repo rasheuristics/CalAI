@@ -778,7 +778,7 @@ class CalendarManager: ObservableObject {
         syncManager.isSyncing
     }
 
-    var syncErrors: [SyncError] {
+    var syncErrors: [CalendarSyncError] {
         syncManager.syncErrors
     }
 

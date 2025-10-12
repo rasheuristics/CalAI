@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import os.log
 
 /// Privacy-first analytics service with user opt-in

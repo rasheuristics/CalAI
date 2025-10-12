@@ -28,12 +28,12 @@ struct ErrorRecoveryView: View {
                 VStack(spacing: DesignSystem.Spacing.sm) {
                     Text(error.title)
                         .font(.title2.bold())
-                        .foregroundColor(DesignSystem.Colors.Text.primary)
+                        .foregroundColor(.primary)
                         .multilineTextAlignment(.center)
 
                     Text(error.message)
                         .font(.body)
-                        .foregroundColor(DesignSystem.Colors.Text.secondary)
+                        .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -60,16 +60,16 @@ struct ErrorRecoveryView: View {
                     content: {
                         Text(details)
                             .font(.caption.monospaced())
-                            .foregroundColor(DesignSystem.Colors.Text.tertiary)
+                            .foregroundColor(Color(.tertiaryLabel))
                             .padding(DesignSystem.Spacing.md)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(DesignSystem.Colors.Background.tertiary)
+                            .background(Color(.systemGray6))
                             .cornerRadius(DesignSystem.CornerRadius.sm)
                     },
                     label: {
                         Label("Technical Details", systemImage: "chevron.down")
                             .font(.caption)
-                            .foregroundColor(DesignSystem.Colors.Text.tertiary)
+                            .foregroundColor(Color(.tertiaryLabel))
                     }
                 )
                 .padding(.horizontal, DesignSystem.Spacing.xl)
@@ -79,7 +79,7 @@ struct ErrorRecoveryView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DesignSystem.Colors.Background.primary)
+        .background(Color(.systemBackground))
     }
 
     private func handleRecovery(_ option: RecoveryOption) {
@@ -128,20 +128,20 @@ struct RecoveryOptionButton: View {
         case .primary:
             return .white
         case .secondary:
-            return DesignSystem.Colors.Primary.blue
+            return .blue
         case .destructive:
             return .red
         case .tertiary:
-            return DesignSystem.Colors.Text.secondary
+            return .secondary
         }
     }
 
     private var backgroundColor: Color {
         switch option.style {
         case .primary:
-            return DesignSystem.Colors.Primary.blue
+            return .blue
         case .secondary:
-            return DesignSystem.Colors.Primary.blue.opacity(0.1)
+            return .blue.opacity(0.1)
         case .destructive:
             return Color.red.opacity(0.1)
         case .tertiary:
@@ -154,11 +154,11 @@ struct RecoveryOptionButton: View {
         case .primary:
             return .clear
         case .secondary:
-            return DesignSystem.Colors.Primary.blue.opacity(0.3)
+            return .blue.opacity(0.3)
         case .destructive:
             return Color.red.opacity(0.3)
         case .tertiary:
-            return DesignSystem.Colors.Text.tertiary.opacity(0.2)
+            return Color(.tertiaryLabel).opacity(0.2)
         }
     }
 
@@ -186,11 +186,17 @@ struct ErrorRecoverySheet: ViewModifier {
         content
             .sheet(isPresented: $errorManager.isShowingRecovery) {
                 if let error = errorManager.currentError {
-                    ErrorRecoveryView(error: error) { option in
-                        errorManager.attemptRecovery(option: option)
+                    if #available(iOS 16.0, *) {
+                        ErrorRecoveryView(error: error) { option in
+                            errorManager.attemptRecovery(option: option)
+                        }
+                        .presentationDetents([.medium, .large])
+                        .presentationDragIndicator(.visible)
+                    } else {
+                        ErrorRecoveryView(error: error) { option in
+                            errorManager.attemptRecovery(option: option)
+                        }
                     }
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
                 }
             }
     }
@@ -219,11 +225,11 @@ struct InlineErrorView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(error.title)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundColor(DesignSystem.Colors.Text.primary)
+                    .foregroundColor(.primary)
 
                 Text(error.message)
                     .font(.caption)
-                    .foregroundColor(DesignSystem.Colors.Text.secondary)
+                    .foregroundColor(.secondary)
                     .lineLimit(2)
             }
 
@@ -238,7 +244,7 @@ struct InlineErrorView: View {
 
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
-                    .foregroundColor(DesignSystem.Colors.Text.tertiary)
+                    .foregroundColor(Color(.tertiaryLabel))
             }
         }
         .padding(DesignSystem.Spacing.md)
@@ -264,19 +270,19 @@ struct ErrorToast: View {
 
             Text(error.title)
                 .font(.subheadline.weight(.medium))
-                .foregroundColor(DesignSystem.Colors.Text.primary)
+                .foregroundColor(.primary)
 
             Spacer()
 
             Button(action: { isShowing = false }) {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(DesignSystem.Colors.Text.tertiary)
+                    .foregroundColor(Color(.tertiaryLabel))
             }
         }
         .padding(DesignSystem.Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.lg)
-                .fill(DesignSystem.Colors.Background.primary)
+                .fill(Color(.systemBackground))
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
         )
         .padding(.horizontal, DesignSystem.Spacing.lg)

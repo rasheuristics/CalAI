@@ -105,7 +105,7 @@ class CalendarAnalyticsService {
     // MARK: - Helper Methods
 
     private func categorizeEvent(_ event: UnifiedEvent) -> EventCategory {
-        let title = event.title?.lowercased() ?? ""
+        let title = event.title.lowercased()
 
         if title.contains("meeting") || title.contains("call") || title.contains("sync") {
             return .meeting

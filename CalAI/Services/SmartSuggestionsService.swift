@@ -40,8 +40,8 @@ class SmartSuggestionsService {
         on date: Date,
         existingEvents: [UnifiedEvent],
         preferences: TimeSlotPreferences = .default
-    ) -> [TimeSlot] {
-        var suggestions: [TimeSlot] = []
+    ) -> [SuggestedTimeSlot] {
+        var suggestions: [SuggestedTimeSlot] = []
         let dayStart = calendar.startOfDay(for: date)
 
         // Get user's preferred working hours
@@ -65,7 +65,7 @@ class SmartSuggestionsService {
                         duration: duration,
                         preferences: preferences
                     )
-                    suggestions.append(TimeSlot(
+                    suggestions.append(SuggestedTimeSlot(
                         start: currentTime,
                         end: currentTime.addingTimeInterval(duration),
                         score: score,
@@ -85,7 +85,7 @@ class SmartSuggestionsService {
                     duration: duration,
                     preferences: preferences
                 )
-                suggestions.append(TimeSlot(
+                suggestions.append(SuggestedTimeSlot(
                     start: currentTime,
                     end: currentTime.addingTimeInterval(duration),
                     score: score,
@@ -257,7 +257,8 @@ struct EventSuggestion: Codable {
     let priority: Int // 1-5
 }
 
-struct TimeSlot {
+// Renamed from TimeSlot to avoid conflict with Features/PostMeeting/SmartRescheduling.swift
+struct SuggestedTimeSlot {
     let start: Date
     let end: Date
     let score: Double // 0-1, higher is better

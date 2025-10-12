@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 /// Manages error recovery strategies and user guidance
-class ErrorRecoveryManager {
+class ErrorRecoveryManager: ObservableObject {
     static let shared = ErrorRecoveryManager()
 
     @Published var currentError: RecoverableError?
@@ -122,6 +122,8 @@ class ErrorRecoveryManager {
             contactSupport()
         case .viewDetails:
             viewErrorDetails()
+        case .openSettings:
+            openSettings()
         case .dismiss:
             dismissError()
         }
@@ -163,6 +165,14 @@ class ErrorRecoveryManager {
     private func viewErrorDetails() {
         print("📋 Viewing error details")
         // Show detailed error information
+    }
+
+    private func openSettings() {
+        print("⚙️ Opening Settings")
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
+        dismissError()
     }
 
     private func dismissError() {
@@ -225,9 +235,9 @@ struct RecoverableError: Identifiable {
 
     init(from appError: AppError, context: ErrorContext) {
         self.title = appError.title
-        self.message = appError.recoverySuggestion
-        self.icon = appError.icon
-        self.severity = appError.severity
+        self.message = appError.message
+        self.icon = "exclamationmark.triangle"
+        self.severity = appError.isRetryable ? .medium : .high
         self.context = context
         self.canAutoRecover = appError.isRetryable
 
@@ -238,13 +248,13 @@ struct RecoverableError: Identifiable {
         }
 
         if case .calendarAccessDenied = appError {
-            // Will be handled by settings link
+            options.append(.openSettings)
         }
 
         options.append(.dismiss)
 
         self.recoveryOptions = options
-        self.technicalDetails = appError.technicalDescription
+        self.technicalDetails = nil
     }
 }
 
@@ -300,6 +310,7 @@ enum RecoveryOption {
     case resetCache
     case contactSupport
     case viewDetails
+    case openSettings
     case dismiss
 
     var title: String {
@@ -314,6 +325,8 @@ enum RecoveryOption {
             return "Contact Support"
         case .viewDetails:
             return "View Details"
+        case .openSettings:
+            return "Open Settings"
         case .dismiss:
             return "Dismiss"
         }
@@ -331,6 +344,8 @@ enum RecoveryOption {
             return "envelope"
         case .viewDetails:
             return "info.circle"
+        case .openSettings:
+            return "gearshape"
         case .dismiss:
             return "xmark"
         }
@@ -348,6 +363,8 @@ enum RecoveryOption {
             return .secondary
         case .viewDetails:
             return .tertiary
+        case .openSettings:
+            return .primary
         case .dismiss:
             return .tertiary
         }
@@ -370,13 +387,9 @@ extension AppError {
             return .high
         case .networkError:
             return .medium
-        case .invalidEventData, .eventNotFound, .duplicateEvent:
+        case .failedToLoadEvents, .failedToSyncCalendar:
             return .medium
-        case .syncFailed:
-            return .medium
-        case .aiProcessingFailed:
-            return .low
-        case .unknown:
+        case .unknownError:
             return .medium
         }
     }
@@ -387,17 +400,11 @@ extension AppError {
             return "calendar.badge.exclamationmark"
         case .networkError:
             return "wifi.exclamationmark"
-        case .invalidEventData:
+        case .failedToLoadEvents:
             return "exclamationmark.bubble"
-        case .eventNotFound:
-            return "magnifyingglass"
-        case .duplicateEvent:
-            return "doc.on.doc"
-        case .syncFailed:
+        case .failedToSyncCalendar:
             return "arrow.triangle.2.circlepath"
-        case .aiProcessingFailed:
-            return "brain.head.profile"
-        case .unknown:
+        case .unknownError:
             return "questionmark.circle"
         }
     }

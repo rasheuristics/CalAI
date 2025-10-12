@@ -96,8 +96,10 @@ class CoreDataPerformanceOptimizer {
         olderThan date: Date,
         context: NSManagedObjectContext
     ) {
-        let request = NSBatchDeleteRequest(entityName: "CachedEvent")
-        request.predicate = NSPredicate(format: "endDate < %@", date as NSDate)
+        let fetchRequest: NSFetchRequest<NSFetchRequestResult> = NSFetchRequest(entityName: "CachedEvent")
+        fetchRequest.predicate = NSPredicate(format: "endDate < %@", date as NSDate)
+
+        let request = NSBatchDeleteRequest(fetchRequest: fetchRequest)
         request.resultType = .resultTypeCount
 
         context.performAndWait {

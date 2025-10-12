@@ -134,7 +134,7 @@ struct EditEventView: View {
     private func loadEventData() {
         title = event.title
         location = event.location ?? ""
-        notes = event.notes ?? ""
+        notes = event.description ?? ""
         startDate = event.startDate
         endDate = event.endDate
         isAllDay = event.isAllDay
@@ -194,7 +194,7 @@ struct EditEventView: View {
         // Update the EKEvent with new data
         ekEvent.title = updatedEvent.title
         ekEvent.location = updatedEvent.location
-        ekEvent.notes = updatedEvent.notes
+        ekEvent.notes = updatedEvent.description
         ekEvent.startDate = updatedEvent.startDate
         ekEvent.endDate = updatedEvent.endDate
         ekEvent.isAllDay = updatedEvent.isAllDay
@@ -217,7 +217,7 @@ struct EditEventView: View {
             startDate: updatedEvent.startDate,
             endDate: updatedEvent.endDate,
             location: updatedEvent.location,
-            description: updatedEvent.notes,
+            description: updatedEvent.description,
             calendarId: "primary", // Default calendar ID
             organizer: nil
         )
@@ -235,7 +235,7 @@ struct EditEventView: View {
             startDate: updatedEvent.startDate,
             endDate: updatedEvent.endDate,
             location: updatedEvent.location,
-            description: updatedEvent.notes,
+            description: updatedEvent.description,
             calendarId: "primary-calendar", // Default calendar ID
             organizer: nil
         )
@@ -260,7 +260,7 @@ struct EditEventView: View {
             isAllDay: false,
             source: .ios,
             organizer: nil,
-            originalEvent: nil
+            originalEvent: Optional<Any>.none as Any
         )
     )
 }

@@ -9,10 +9,7 @@
 /* Begin PBXBuildFile section */
 		0B4318950F3D26CF74B88743 /* Services/SmartNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83CFAD08A20B4CCE575C9CE /* Services/SmartNotificationManager.swift */; };
 		1E7EB73033867405B7E0B1E7 /* Services/MeetingAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0F1CE4910EF893F2C790B2 /* Services/MeetingAnalyzer.swift */; };
-		271C273F5A7F4F70BDF3792C /* EventShareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B797E3AF83D4D13A0A655E6 /* EventShareView.swift */; };
 		3BED07C18D3A4F60BDEA4CE8 /* EventICSExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51D383FDCAED4DE48824B5E1 /* EventICSExporter.swift */; };
-		43792ECFE76A4669A36A7DF6 /* CalAI/Models/MeetingPreparation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A44E332231B48BBAC3F8ED0 /* CalAI/Models/MeetingPreparation.swift */; };
-		4993A60F6661488B9697CA67 /* CalAI/Views/MeetingPreparationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CA5277AB50047889E8D4875 /* CalAI/Views/MeetingPreparationView.swift */; };
 		4B175B2F44E94617A718D88C /* CachedEvent+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B46C131EC34468921A482E /* CachedEvent+CoreDataClass.swift */; };
 		505F673D2E81C6B900C188F0 /* MSAL in Frameworks */ = {isa = PBXBuildFile; productRef = 505F673C2E81C6B900C188F0 /* MSAL */; };
 		506831F72E9AF7F4007A48F5 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 506831E62E9AF7F4007A48F5 /* Info.plist */; };
@@ -20,7 +17,6 @@
 		506831F92E9AF7F4007A48F5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 506831CF2E9AF7F4007A48F5 /* Assets.xcassets */; };
 		506831FA2E9AF7F4007A48F5 /* LoadingSkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506831F22E9AF7F4007A48F5 /* LoadingSkeletonView.swift */; };
 		506831FB2E9AF7F4007A48F5 /* NotificationPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506831CA2E9AF7F4007A48F5 /* NotificationPreferences.swift */; };
-		506831FC2E9AF7F4007A48F5 /* CrashReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506831E82E9AF7F4007A48F5 /* CrashReporter.swift */; };
 		506831FD2E9AF7F4007A48F5 /* AnalyticsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506831C02E9AF7F4007A48F5 /* AnalyticsSettingsView.swift */; };
 		506831FE2E9AF7F4007A48F5 /* VoiceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506831992E9AF7F4007A48F5 /* VoiceManager.swift */; };
 		506831FF2E9AF7F4007A48F5 /* EventFilterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506831EA2E9AF7F4007A48F5 /* EventFilterService.swift */; };
@@ -102,7 +98,6 @@
 		50D8A94F2E99EF81001391E6 /* EventTasksSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50D8A94E2E99EF81001391E6 /* EventTasksSystem.swift */; };
 		550F415622911D2CC80A4805 /* Models/NotificationPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2341A263909C0934BEFEB75 /* Models/NotificationPreferences.swift */; };
 		550F415622911D2CC80A4806 /* Models/AppError.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2341A263909C0934BEFEB76 /* Models/AppError.swift */; };
-		56A2B2DDB1BD402D8872AE35 /* CalAI/Models/MeetingFollowUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65F1AB00CAB948989A4D5701 /* CalAI/Models/MeetingFollowUp.swift */; };
 		58DB234D746C2F1244A1F9F7 /* Services/TravelTimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE36C50958BBC6F3E7ED6F2 /* Services/TravelTimeManager.swift */; };
 		77691F15886B476DAAFD8343 /* CachedEvent+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F2FB17F466422F96CDA475 /* CachedEvent+CoreDataProperties.swift */; };
 		82E1EC0082914E87A8ED4417 /* SyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA8078A8310749E599624E07 /* SyncManager.swift */; };
@@ -115,11 +110,9 @@
 		APPEARANCE001234567890ABC /* AppearanceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPEARANCE001234567890DEF /* AppearanceManager.swift */; };
 		CA4F6786322C4F9D884CB41B /* CoreDataManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B6F6C536014C07B84B54BD /* CoreDataManager.swift */; };
 		D0298C794E0D4AECBA02A89A /* CalAI/Models/SmartRescheduling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09F7B499301A44D7946FDA04 /* CalAI/Models/SmartRescheduling.swift */; };
-		D1625F8B0714498BB912D029 /* CalAI/Views/MeetingFollowUpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C371E44E7E4840A75604A5 /* CalAI/Views/MeetingFollowUpView.swift */; };
 		E19B7AB0C1854764084F7BC1CDE1E0F37 /* FontManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF423B70491E4DA49A127ADF0748A67E /* FontManager.swift */; };
 		E19B7AB0C1854764084F7BC1CDE1E0F38 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF423B70491E4DA49A127ADF0748A67F /* HapticManager.swift */; };
 		E19B7AB0C1854764084F7BC1CDE1E0F40 /* GestureHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF423B70491E4DA49A127ADF0748A681 /* GestureHandler.swift */; };
-		E2834C0A6150440798910364 /* PostMeetingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BA1D74286A54B609D66DA5D /* PostMeetingService.swift */; };
 		E9B304590CFA41F9A923DB08 /* ActionItemsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F51E622EA144E34B877ACAD /* ActionItemsView.swift */; };
 		EC53F5003F3842A6BE0E1AA3 /* CalendarSyncStatus+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D51096E4254421FB0650F02 /* CalendarSyncStatus+CoreDataClass.swift */; };
 		F7730205AB2E419B84B4868C /* CalAI/Views/SmartReschedulingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056B18C7D9EB41CFB2B861B1 /* CalAI/Views/SmartReschedulingView.swift */; };
@@ -861,10 +854,6 @@
 				1E7EB73033867405B7E0B1E7 /* Services/MeetingAnalyzer.swift in Sources */,
 				58DB234D746C2F1244A1F9F7 /* Services/TravelTimeManager.swift in Sources */,
 				0B4318950F3D26CF74B88743 /* Services/SmartNotificationManager.swift in Sources */,
-				43792ECFE76A4669A36A7DF6 /* CalAI/Models/MeetingPreparation.swift in Sources */,
-				4993A60F6661488B9697CA67 /* CalAI/Views/MeetingPreparationView.swift in Sources */,
-				56A2B2DDB1BD402D8872AE35 /* CalAI/Models/MeetingFollowUp.swift in Sources */,
-				D1625F8B0714498BB912D029 /* CalAI/Views/MeetingFollowUpView.swift in Sources */,
 				D0298C794E0D4AECBA02A89A /* CalAI/Models/SmartRescheduling.swift in Sources */,
 				F7730205AB2E419B84B4868C /* CalAI/Views/SmartReschedulingView.swift in Sources */,
 				E2834C0A6150440798910364 /* PostMeetingService.swift in Sources */,

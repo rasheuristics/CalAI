@@ -449,6 +449,7 @@ struct AddEventView: View {
             description: notes.isEmpty ? nil : notes,
             isAllDay: isAllDay,
             source: eventToEdit.source,
+            organizer: eventToEdit.organizer,
             originalEvent: eventToEdit.originalEvent
         )
 

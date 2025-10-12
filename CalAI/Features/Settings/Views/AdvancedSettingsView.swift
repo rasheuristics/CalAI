@@ -34,7 +34,10 @@ struct AdvancedSettingsView: View {
 
                 // Feedback Section
                 Section {
-                    Toggle("Haptic Feedback", isOn: $hapticsEnabled.onChange(handleHapticsToggle))
+                    Toggle("Haptic Feedback", isOn: $hapticsEnabled)
+                        .onChange(of: hapticsEnabled) { enabled in
+                            handleHapticsToggle(enabled)
+                        }
                     Toggle("Sound Effects", isOn: $soundEffectsEnabled)
 
                     Picker("Notification Sound", selection: $notificationSound) {
@@ -116,13 +119,15 @@ struct AdvancedSettingsView: View {
                         Label("Analytics", systemImage: "chart.bar.fill")
                     }
 
-                    NavigationLink(destination: PrivacyPolicyView()) {
-                        Label("Privacy Policy", systemImage: "hand.raised.fill")
-                    }
+                    // TODO: Implement PrivacyPolicyView
+                    // NavigationLink(destination: PrivacyPolicyView()) {
+                    //     Label("Privacy Policy", systemImage: "hand.raised.fill")
+                    // }
 
-                    NavigationLink(destination: TermsOfServiceView()) {
-                        Label("Terms of Service", systemImage: "doc.text.fill")
-                    }
+                    // TODO: Implement TermsOfServiceView
+                    // NavigationLink(destination: TermsOfServiceView()) {
+                    //     Label("Terms of Service", systemImage: "doc.text.fill")
+                    // }
                 } header: {
                     Label("Privacy & Security", systemImage: "lock.shield")
                 }
@@ -256,8 +261,18 @@ struct DiagnosticsView: View {
         Form {
             Section("Performance Metrics") {
                 if let metrics = metrics {
-                    LabeledContent("Memory Usage", value: metrics.formattedMemory)
-                    LabeledContent("CPU Usage", value: metrics.formattedCPU)
+                    HStack {
+                        Text("Memory Usage")
+                        Spacer()
+                        Text(metrics.formattedMemory)
+                            .foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("CPU Usage")
+                        Spacer()
+                        Text(metrics.formattedCPU)
+                            .foregroundColor(.secondary)
+                    }
                 } else {
                     Text("Loading...")
                         .foregroundColor(.secondary)
@@ -270,8 +285,18 @@ struct DiagnosticsView: View {
 
             Section("Cache Statistics") {
                 if let stats = cacheStats {
-                    LabeledContent("Disk Cache Size", value: stats.formattedDiskSize)
-                    LabeledContent("Cache Location", value: stats.diskCacheURL.lastPathComponent)
+                    HStack {
+                        Text("Disk Cache Size")
+                        Spacer()
+                        Text(stats.formattedDiskSize)
+                            .foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("Cache Location")
+                        Spacer()
+                        Text(stats.diskCacheURL.lastPathComponent)
+                            .foregroundColor(.secondary)
+                    }
                 } else {
                     Text("Loading...")
                         .foregroundColor(.secondary)
@@ -284,9 +309,24 @@ struct DiagnosticsView: View {
             }
 
             Section("App Information") {
-                LabeledContent("Version", value: Bundle.main.appVersion)
-                LabeledContent("Build", value: Bundle.main.buildNumber)
-                LabeledContent("Bundle ID", value: Bundle.main.bundleIdentifier ?? "Unknown")
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text(Bundle.main.appVersion)
+                        .foregroundColor(.secondary)
+                }
+                HStack {
+                    Text("Build")
+                    Spacer()
+                    Text(Bundle.main.buildNumber)
+                        .foregroundColor(.secondary)
+                }
+                HStack {
+                    Text("Bundle ID")
+                    Spacer()
+                    Text(Bundle.main.bundleIdentifier ?? "Unknown")
+                        .foregroundColor(.secondary)
+                }
             }
 
             Section("Debug Actions") {
@@ -408,31 +448,8 @@ struct FeatureRow: View {
     }
 }
 
-// MARK: - Bundle Extensions
-
-extension Bundle {
-    var appVersion: String {
-        return infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
-    }
-
-    var buildNumber: String {
-        return infoDictionary?["CFBundleVersion"] as? String ?? "Unknown"
-    }
-}
-
-// MARK: - Binding Extension for onChange
-
-extension Binding {
-    func onChange(_ handler: @escaping (Value) -> Void) -> Binding<Value> {
-        Binding(
-            get: { self.wrappedValue },
-            set: { newValue in
-                self.wrappedValue = newValue
-                handler(newValue)
-            }
-        )
-    }
-}
+// Note: Bundle extensions (appVersion, buildNumber) are defined in CrashReporter.swift
+// Note: Binding.onChange extension removed - use SwiftUI's built-in .onChange modifier instead
 
 // MARK: - Preview
 

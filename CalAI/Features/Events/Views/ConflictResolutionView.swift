@@ -4,10 +4,10 @@ import EventKit
 /// Interactive UI for resolving calendar event conflicts
 struct ConflictResolutionView: View {
     let conflict: EventConflict
-    let onResolve: (ConflictResolution) -> Void
+    let onResolve: (ConflictResolutionResult) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedResolution: ConflictResolutionStrategy = .keepBoth
+    @State private var selectedResolution: ConflictResolutionStrategy = .createSeparate
     @State private var isProcessing = false
     @State private var showingDetails = false
 
@@ -29,7 +29,7 @@ struct ConflictResolutionView: View {
                 }
                 .padding(DesignSystem.Spacing.lg)
             }
-            .background(DesignSystem.Colors.Background.primary)
+            .background(Color(.systemBackground))
             .navigationTitle("Resolve Conflict")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -52,11 +52,11 @@ struct ConflictResolutionView: View {
 
             Text("Sync Conflict Detected")
                 .font(.title2.bold())
-                .foregroundColor(DesignSystem.Colors.Text.primary)
+                .foregroundColor(.primary)
 
-            Text(conflict.description)
+            Text(conflictDescription)
                 .font(.body)
-                .foregroundColor(DesignSystem.Colors.Text.secondary)
+                .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, DesignSystem.Spacing.lg)
         }
@@ -72,54 +72,32 @@ struct ConflictResolutionView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
-                // Local Version
+                // Primary Event
                 EventVersionCard(
                     title: "Your Device",
-                    event: conflict.localEvent,
+                    event: conflict.primaryEvent,
                     icon: "iphone",
                     color: .blue,
-                    isSelected: selectedResolution == .keepLocal
+                    isSelected: selectedResolution == .useLocal
                 )
                 .onTapGesture {
                     HapticManager.shared.selection()
-                    selectedResolution = .keepLocal
+                    selectedResolution = .useLocal
                 }
 
                 // Remote Version
-                EventVersionCard(
-                    title: conflict.remoteSource.displayName,
-                    event: conflict.remoteEvent,
-                    icon: conflict.remoteSource.icon,
-                    color: conflict.remoteSource.color,
-                    isSelected: selectedResolution == .keepRemote
-                )
-                .onTapGesture {
-                    HapticManager.shared.selection()
-                    selectedResolution = .keepRemote
-                }
-            }
-
-            // Differences
-            if !conflict.differences.isEmpty {
-                Button(action: {
-                    showingDetails.toggle()
-                    HapticManager.shared.light()
-                }) {
-                    HStack {
-                        Image(systemName: "list.bullet.rectangle")
-                        Text("View \(conflict.differences.count) Difference\(conflict.differences.count == 1 ? "" : "s")")
-                        Spacer()
-                        Image(systemName: showingDetails ? "chevron.up" : "chevron.down")
+                if let conflictingEvent = conflict.conflictingEvents.first {
+                    EventVersionCard(
+                        title: conflictingEvent.source.displayName,
+                        event: conflictingEvent,
+                        icon: conflictingEvent.source.icon,
+                        color: conflictingEvent.source.color,
+                        isSelected: selectedResolution == .useRemote
+                    )
+                    .onTapGesture {
+                        HapticManager.shared.selection()
+                        selectedResolution = .useRemote
                     }
-                    .font(.subheadline)
-                    .foregroundColor(.blue)
-                    .padding(DesignSystem.Spacing.md)
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(DesignSystem.CornerRadius.md)
-                }
-
-                if showingDetails {
-                    DifferencesListView(differences: conflict.differences)
                 }
             }
         }
@@ -134,36 +112,36 @@ struct ConflictResolutionView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             ResolutionOptionRow(
-                strategy: .keepLocal,
+                strategy: .useLocal,
                 title: "Keep Your Version",
                 description: "Overwrite the remote version with your local changes",
                 icon: "checkmark.circle.fill",
-                isSelected: selectedResolution == .keepLocal
+                isSelected: selectedResolution == .useLocal
             ) {
                 HapticManager.shared.selection()
-                selectedResolution = .keepLocal
+                selectedResolution = .useLocal
             }
 
             ResolutionOptionRow(
-                strategy: .keepRemote,
+                strategy: .useRemote,
                 title: "Keep Remote Version",
                 description: "Discard your local changes and use the remote version",
                 icon: "cloud.fill",
-                isSelected: selectedResolution == .keepRemote
+                isSelected: selectedResolution == .useRemote
             ) {
                 HapticManager.shared.selection()
-                selectedResolution = .keepRemote
+                selectedResolution = .useRemote
             }
 
             ResolutionOptionRow(
-                strategy: .keepBoth,
+                strategy: .createSeparate,
                 title: "Keep Both",
                 description: "Create separate events for both versions",
                 icon: "doc.on.doc.fill",
-                isSelected: selectedResolution == .keepBoth
+                isSelected: selectedResolution == .createSeparate
             ) {
                 HapticManager.shared.selection()
-                selectedResolution = .keepBoth
+                selectedResolution = .createSeparate
             }
 
             ResolutionOptionRow(
@@ -195,7 +173,7 @@ struct ConflictResolutionView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(DesignSystem.Spacing.md)
-                .background(DesignSystem.Colors.Primary.blue)
+                .background(.blue)
                 .foregroundColor(.white)
                 .cornerRadius(DesignSystem.CornerRadius.md)
             }
@@ -209,13 +187,26 @@ struct ConflictResolutionView: View {
         }
     }
 
+    // MARK: - Computed Properties
+
+    private var conflictDescription: String {
+        switch conflict.type {
+        case .duplicate:
+            return "Duplicate event detected across calendar sources."
+        case .timeOverlap:
+            return "This event overlaps with existing events."
+        case .simultaneousEdit:
+            return "This event was modified simultaneously from different sources."
+        }
+    }
+
     // MARK: - Actions
 
     private func resolveConflict() {
         isProcessing = true
         HapticManager.shared.medium()
 
-        let resolution = ConflictResolution(
+        let resolution = ConflictResolutionResult(
             conflictId: conflict.id,
             strategy: selectedResolution,
             timestamp: Date()
@@ -252,7 +243,7 @@ struct EventVersionCard: View {
                     .foregroundColor(color)
                 Text(title)
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(DesignSystem.Colors.Text.secondary)
+                    .foregroundColor(.secondary)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
@@ -266,30 +257,30 @@ struct EventVersionCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(event.title)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundColor(DesignSystem.Colors.Text.primary)
+                    .foregroundColor(.primary)
                     .lineLimit(2)
 
                 Label(event.startDate.formatted(date: .abbreviated, time: .shortened), systemImage: "clock")
                     .font(.caption)
-                    .foregroundColor(DesignSystem.Colors.Text.secondary)
+                    .foregroundColor(.secondary)
 
                 if let location = event.location, !location.isEmpty {
                     Label(location, systemImage: "location")
                         .font(.caption)
-                        .foregroundColor(DesignSystem.Colors.Text.secondary)
+                        .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
 
-                if let notes = event.notes, !notes.isEmpty {
+                if let notes = event.description, !notes.isEmpty {
                     Text(notes)
                         .font(.caption)
-                        .foregroundColor(DesignSystem.Colors.Text.tertiary)
+                        .foregroundColor(Color(.tertiaryLabel))
                         .lineLimit(2)
                 }
             }
         }
         .padding(DesignSystem.Spacing.md)
-        .background(DesignSystem.Colors.Background.secondary)
+        .background(Color(.secondarySystemBackground))
         .cornerRadius(DesignSystem.CornerRadius.md)
         .overlay(
             RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.md)
@@ -319,11 +310,11 @@ struct ResolutionOptionRow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundColor(DesignSystem.Colors.Text.primary)
+                        .foregroundColor(.primary)
 
                     Text(description)
                         .font(.caption)
-                        .foregroundColor(DesignSystem.Colors.Text.secondary)
+                        .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -335,7 +326,7 @@ struct ResolutionOptionRow: View {
                 }
             }
             .padding(DesignSystem.Spacing.md)
-            .background(isSelected ? Color.blue.opacity(0.1) : DesignSystem.Colors.Background.secondary)
+            .background(isSelected ? Color.blue.opacity(0.1) : Color(.secondarySystemBackground))
             .cornerRadius(DesignSystem.CornerRadius.md)
             .overlay(
                 RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.md)
@@ -358,7 +349,7 @@ struct DifferencesListView: View {
             }
         }
         .padding(DesignSystem.Spacing.md)
-        .background(DesignSystem.Colors.Background.tertiary)
+        .background(Color(.systemGray6))
         .cornerRadius(DesignSystem.CornerRadius.md)
     }
 }
@@ -375,29 +366,29 @@ struct DifferenceRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(difference.field)
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(DesignSystem.Colors.Text.primary)
+                    .foregroundColor(.primary)
 
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Local:")
                             .font(.caption2)
-                            .foregroundColor(DesignSystem.Colors.Text.tertiary)
+                            .foregroundColor(Color(.tertiaryLabel))
                         Text(difference.localValue)
                             .font(.caption)
-                            .foregroundColor(DesignSystem.Colors.Text.secondary)
+                            .foregroundColor(.secondary)
                     }
 
                     Image(systemName: "arrow.right")
                         .font(.caption2)
-                        .foregroundColor(DesignSystem.Colors.Text.tertiary)
+                        .foregroundColor(Color(.tertiaryLabel))
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Remote:")
                             .font(.caption2)
-                            .foregroundColor(DesignSystem.Colors.Text.tertiary)
+                            .foregroundColor(Color(.tertiaryLabel))
                         Text(difference.remoteValue)
                             .font(.caption)
-                            .foregroundColor(DesignSystem.Colors.Text.secondary)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
@@ -410,17 +401,10 @@ struct DifferenceRow: View {
 
 // MARK: - Supporting Types
 
-struct EventConflict: Identifiable {
-    let id: String
-    let localEvent: UnifiedEvent
-    let remoteEvent: UnifiedEvent
-    let remoteSource: CalendarSource
-    let differences: [EventDifference]
-    let detectedAt: Date
-
-    var description: String {
-        "This event has been modified on both your device and \(remoteSource.displayName). Choose which version to keep."
-    }
+struct ConflictResolutionResult {
+    let conflictId: UUID
+    let strategy: ConflictResolutionStrategy
+    let timestamp: Date
 }
 
 struct EventDifference: Identifiable {
@@ -431,31 +415,13 @@ struct EventDifference: Identifiable {
 
     var icon: String {
         switch field.lowercased() {
-        case "title":
-            return "textformat"
-        case "time", "start", "end":
-            return "clock"
-        case "location":
-            return "location"
-        case "notes", "description":
-            return "note.text"
-        default:
-            return "pencil"
+        case "title": return "textformat"
+        case "start time", "end time", "time": return "clock"
+        case "location": return "location"
+        case "notes", "description": return "note.text"
+        default: return "pencil"
         }
     }
-}
-
-enum ConflictResolutionStrategy {
-    case keepLocal
-    case keepRemote
-    case keepBoth
-    case merge
-}
-
-struct ConflictResolution {
-    let conflictId: String
-    let strategy: ConflictResolutionStrategy
-    let timestamp: Date
 }
 
 extension CalendarSource {
@@ -491,33 +457,32 @@ extension CalendarSource {
 #Preview {
     ConflictResolutionView(
         conflict: EventConflict(
-            id: "conflict-1",
-            localEvent: UnifiedEvent(
+            type: .simultaneousEdit,
+            primaryEvent: UnifiedEvent(
                 id: "event-1",
                 title: "Team Meeting",
                 startDate: Date(),
                 endDate: Date().addingTimeInterval(3600),
                 location: "Conference Room A",
-                notes: "Discuss Q4 goals",
+                description: "Discuss Q4 goals",
                 isAllDay: false,
-                calendarSource: .ios
+                source: .ios,
+                organizer: nil,
+                originalEvent: Optional<Any>.none as Any
             ),
-            remoteEvent: UnifiedEvent(
-                id: "event-1",
-                title: "Team Meeting (Updated)",
-                startDate: Date().addingTimeInterval(1800),
-                endDate: Date().addingTimeInterval(5400),
-                location: "Conference Room B",
-                notes: "Discuss Q4 goals and budget",
-                isAllDay: false,
-                calendarSource: .google
-            ),
-            remoteSource: .google,
-            differences: [
-                EventDifference(field: "Title", localValue: "Team Meeting", remoteValue: "Team Meeting (Updated)"),
-                EventDifference(field: "Start Time", localValue: "2:00 PM", remoteValue: "2:30 PM"),
-                EventDifference(field: "Location", localValue: "Conference Room A", remoteValue: "Conference Room B"),
-                EventDifference(field: "Notes", localValue: "Discuss Q4 goals", remoteValue: "Discuss Q4 goals and budget")
+            conflictingEvents: [
+                UnifiedEvent(
+                    id: "event-1",
+                    title: "Team Meeting (Updated)",
+                    startDate: Date().addingTimeInterval(1800),
+                    endDate: Date().addingTimeInterval(5400),
+                    location: "Conference Room B",
+                    description: "Discuss Q4 goals and budget",
+                    isAllDay: false,
+                    source: .google,
+                    organizer: nil,
+                    originalEvent: Optional<Any>.none as Any
+                )
             ],
             detectedAt: Date()
         )

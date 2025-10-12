@@ -5,15 +5,17 @@ struct AnalyticsSettingsView: View {
     @State private var showingExportSheet = false
     @State private var exportedData: String?
     @State private var showingClearConfirmation = false
+    @State private var showingShareSheet = false
 
     var body: some View {
         Form {
             // Main Toggle
             Section {
-                Toggle("Enable Analytics", isOn: $analyticsEnabled.onChange { enabled in
-                    AnalyticsService.shared.setEnabled(enabled)
-                    HapticManager.shared.light()
-                })
+                Toggle("Enable Analytics", isOn: $analyticsEnabled)
+                    .onChange(of: analyticsEnabled) { enabled in
+                        AnalyticsService.shared.setEnabled(enabled)
+                        HapticManager.shared.light()
+                    }
             } header: {
                 Label("Usage Analytics", systemImage: "chart.bar.fill")
             } footer: {
@@ -22,28 +24,28 @@ struct AnalyticsSettingsView: View {
 
             // What We Collect
             Section {
-                InfoRow(
+                AnalyticsInfoRow(
                     icon: "eye",
                     iconColor: .blue,
                     title: "What We Collect",
                     description: "Anonymous feature usage, screen views, and app performance metrics"
                 )
 
-                InfoRow(
+                AnalyticsInfoRow(
                     icon: "checkmark.shield.fill",
                     iconColor: .green,
                     title: "Privacy First",
                     description: "All data is anonymized. No personal information, calendar data, or location is collected."
                 )
 
-                InfoRow(
+                AnalyticsInfoRow(
                     icon: "person.fill.questionmark",
                     iconColor: .purple,
                     title: "Anonymous ID",
                     description: "We use a random ID that cannot be linked to you personally"
                 )
 
-                InfoRow(
+                AnalyticsInfoRow(
                     icon: "hand.raised.fill",
                     iconColor: .orange,
                     title: "Opt-In Only",
@@ -163,8 +165,15 @@ struct AnalyticsSettingsView: View {
                             }
                         }
                         ToolbarItem(placement: .navigationBarLeading) {
-                            ShareLink(item: data)
+                            Button(action: {
+                                showingShareSheet = true
+                            }) {
+                                Image(systemName: "square.and.arrow.up")
+                            }
                         }
+                    }
+                    .sheet(isPresented: $showingShareSheet) {
+                        ShareSheet(items: [data])
                     }
                 }
             } else {
@@ -190,7 +199,7 @@ struct AnalyticsSettingsView: View {
 
 // MARK: - Supporting Views
 
-struct InfoRow: View {
+struct AnalyticsInfoRow: View {
     let icon: String
     let iconColor: Color
     let title: String

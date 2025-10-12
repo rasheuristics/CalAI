@@ -99,7 +99,7 @@ class CrashReporter {
     // MARK: - Analytics Events
 
     /// Record a custom event for analytics
-    func recordEvent(_ event: AnalyticsEvent) {
+    func recordEvent(_ event: CrashAnalyticsEvent) {
         logger.info("📊 Event: \(event.name) | Parameters: \(event.parameters)")
         // Firebase: Analytics.logEvent(event.name, parameters: event.parameters)
     }
@@ -219,7 +219,7 @@ struct DeviceInfo {
     }
 }
 
-struct AnalyticsEvent {
+struct CrashAnalyticsEvent {
     let name: String
     let parameters: [String: Any]
 }

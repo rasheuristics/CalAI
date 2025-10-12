@@ -230,7 +230,9 @@ class CacheEntry: NSObject, Codable {
 
         // Decode value as Data
         let valueData = try container.decode(Data.self, forKey: .value)
-        self.value = try JSONDecoder().decode([UnifiedEvent].self, from: valueData)
+        // Note: Cannot decode UnifiedEvent because it's not Codable
+        // Decode as Any for now - specific types should be handled in get<T>
+        self.value = valueData as Any
     }
 
     func encode(to encoder: Encoder) throws {
@@ -269,21 +271,9 @@ extension String {
 
 extension CacheManager {
     /// Warm up cache with frequently accessed data
+    /// Note: Disabled because UnifiedEvent cannot conform to Codable due to originalEvent: Any property
     func warmupCommonData(events: [UnifiedEvent]) {
-        let today = Calendar.current.startOfDay(for: Date())
-
-        // Cache today's events
-        let todayEvents = events.filter { Calendar.current.isDateInToday($0.startDate) }
-        let todayKey = CacheManager.dayEventsKey(date: today)
-        set(todayEvents, forKey: todayKey, ttl: 1800) // 30 min TTL
-
-        // Cache this week's events
-        let weekStart = Calendar.current.dateInterval(of: .weekOfYear, for: Date())?.start ?? today
-        let weekEnd = Calendar.current.date(byAdding: .day, value: 7, to: weekStart)!
-        let weekEvents = events.filter { $0.startDate >= weekStart && $0.startDate <= weekEnd }
-        let weekKey = CacheManager.eventsKey(start: weekStart, end: weekEnd, source: nil)
-        set(weekEvents, forKey: weekKey, ttl: 3600) // 1 hour TTL
-
-        print("🔥 Cache warmed with \(todayEvents.count) today's events and \(weekEvents.count) this week's events")
+        // TODO: Implement caching using a different strategy (e.g., cache event IDs only, or use NSCoding)
+        print("⚠️ Event caching disabled - UnifiedEvent not Codable")
     }
 }

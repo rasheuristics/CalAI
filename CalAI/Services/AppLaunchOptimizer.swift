@@ -145,15 +145,9 @@ class AppLaunchOptimizer {
     }
 
     private func syncCalendarData() {
-        let semaphore = DispatchSemaphore(value: 0)
-
-        DispatchQueue.main.async {
-            CalendarManager.shared.loadEvents()
-            semaphore.signal()
-        }
-
-        semaphore.wait()
-        print("✅ Background calendar sync completed")
+        // Note: CalendarManager doesn't have a shared singleton
+        // Calendar sync should be triggered by the app's main CalendarManager instance
+        print("⚠️ Calendar sync skipped - requires CalendarManager instance")
     }
 
     // MARK: - Performance Monitoring

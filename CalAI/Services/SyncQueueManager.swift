@@ -588,7 +588,7 @@ struct SyncErrorRow: View {
 
             Text(error.timestamp.formatted(date: .abbreviated, time: .shortened))
                 .font(.caption2)
-                .foregroundColor(.tertiary)
+                .foregroundColor(Color(.tertiaryLabel))
         }
         .padding(.vertical, 4)
     }

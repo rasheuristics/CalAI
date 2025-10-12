@@ -14,11 +14,11 @@ struct TooltipView: View {
             HStack(spacing: DesignSystem.Spacing.sm) {
                 Image(systemName: tooltip.icon)
                     .font(.title2)
-                    .foregroundColor(DesignSystem.Colors.Primary.blue)
+                    .foregroundColor(.blue)
 
                 Text(tooltip.title)
                     .font(.headline)
-                    .foregroundColor(DesignSystem.Colors.Text.primary)
+                    .foregroundColor(.primary)
 
                 Spacer()
 
@@ -26,14 +26,14 @@ struct TooltipView: View {
                     dismissTooltip()
                 }) {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(DesignSystem.Colors.Text.tertiary)
+                        .foregroundColor(.secondary)
                 }
             }
 
             // Description
             Text(tooltip.message)
                 .font(.body)
-                .foregroundColor(DesignSystem.Colors.Text.secondary)
+                .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             // Action buttons
@@ -47,7 +47,7 @@ struct TooltipView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, DesignSystem.Spacing.lg)
                     .padding(.vertical, DesignSystem.Spacing.sm)
-                    .background(DesignSystem.Colors.Primary.blue)
+                    .background(.blue)
                     .cornerRadius(DesignSystem.CornerRadius.sm)
                 }
 
@@ -55,17 +55,17 @@ struct TooltipView: View {
                     dismissTooltip()
                 }
                 .font(.subheadline.weight(.medium))
-                .foregroundColor(DesignSystem.Colors.Primary.blue)
+                .foregroundColor(.blue)
                 .padding(.horizontal, DesignSystem.Spacing.lg)
                 .padding(.vertical, DesignSystem.Spacing.sm)
-                .background(DesignSystem.Colors.Primary.blue.opacity(0.1))
+                .background(Color.blue.opacity(0.1))
                 .cornerRadius(DesignSystem.CornerRadius.sm)
             }
         }
         .padding(DesignSystem.Spacing.lg)
         .background(
             RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.lg)
-                .fill(DesignSystem.Colors.Background.primary)
+                .fill(Color(.systemBackground))
                 .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
         )
         .padding(.horizontal, DesignSystem.Spacing.lg)
@@ -159,7 +159,7 @@ struct TooltipOverlay: View {
 
                         TooltipPointer(
                             direction: .down,
-                            color: DesignSystem.Colors.Background.primary
+                            color: Color(.systemBackground)
                         )
                         .offset(x: calculatePointerOffset(targetFrame: targetFrame, in: geometry))
 
@@ -169,7 +169,7 @@ struct TooltipOverlay: View {
 
                         TooltipPointer(
                             direction: .up,
-                            color: DesignSystem.Colors.Background.primary
+                            color: Color(.systemBackground)
                         )
                         .offset(x: calculatePointerOffset(targetFrame: targetFrame, in: geometry))
 

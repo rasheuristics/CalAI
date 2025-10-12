@@ -8,7 +8,7 @@ class SyncManager: ObservableObject {
 
     @Published var isSyncing = false
     @Published var lastSyncDate: Date?
-    @Published var syncErrors: [SyncError] = []
+    @Published var syncErrors: [CalendarSyncError] = []
 
     let coreDataManager = CoreDataManager.shared
     private var cancellables = Set<AnyCancellable>()
@@ -85,7 +85,7 @@ class SyncManager: ObservableObject {
             coreDataManager.updateSyncStatus(for: source, lastSyncDate: Date())
 
         } catch {
-            let syncError = SyncError(source: source, error: error, timestamp: Date())
+            let syncError = CalendarSyncError(source: source, error: error, timestamp: Date())
             await MainActor.run {
                 syncErrors.append(syncError)
             }
@@ -298,7 +298,7 @@ class SyncManager: ObservableObject {
 
 // MARK: - Supporting Types
 
-struct SyncError: Identifiable {
+struct CalendarSyncError: Identifiable {
     let id = UUID()
     let source: CalendarSource
     let error: Error

@@ -13,6 +13,7 @@ struct EventShareView: View {
     @State private var attendeeEmails: String = ""
     @State private var qrCodeImage: UIImage?
     @State private var showShareSheet = false
+    @State private var useGoogleCalendarLink = true
 
     enum EventTab: String, CaseIterable {
         case share = "Share"
@@ -150,6 +151,21 @@ struct EventShareView: View {
                 .dynamicFont(size: 18, weight: .semibold, fontManager: fontManager)
                 .foregroundColor(.primary)
 
+            // Calendar Source Badge
+            HStack(spacing: 6) {
+                Image(systemName: event.source.icon)
+                    .font(.system(size: 12))
+                    .foregroundColor(event.source.color)
+
+                Text("From \(event.source.displayName)")
+                    .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(event.source.color.opacity(0.1))
+            .cornerRadius(12)
+
             if let qrImage = qrCodeImage {
                 Image(uiImage: qrImage)
                     .resizable()
@@ -168,6 +184,35 @@ struct EventShareView: View {
                 .dynamicFont(size: 12, fontManager: fontManager)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
+
+            // QR Code Format Toggle
+            VStack(spacing: 8) {
+                Text("QR Code Format:")
+                    .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
+                    .foregroundColor(.secondary)
+
+                Picker("QR Format", selection: $useGoogleCalendarLink) {
+                    Text("Web Link").tag(true)
+                    Text("ICS File").tag(false)
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .onChange(of: useGoogleCalendarLink) { _ in
+                    generateQRCode()
+                }
+
+                if useGoogleCalendarLink {
+                    Text("✨ Opens \(calendarNameForWebLink) in browser (smaller QR code)")
+                        .dynamicFont(size: 11, fontManager: fontManager)
+                        .foregroundColor(.green)
+                        .multilineTextAlignment(.center)
+                } else {
+                    Text("📋 Standard calendar file format (works with all apps)")
+                        .dynamicFont(size: 11, fontManager: fontManager)
+                        .foregroundColor(.blue)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .padding(.horizontal)
         }
     }
 
@@ -247,13 +292,52 @@ struct EventShareView: View {
     // MARK: - Helper Methods
 
     private func generateQRCode() {
-        let dataURL = EventICSExporter.createDataURL(
-            event: event,
-            organizerEmail: organizerEmail.isEmpty ? nil : organizerEmail,
-            attendeeEmails: parseAttendeeEmails()
-        )
+        let qrContent: String
 
-        qrCodeImage = QRCodeGenerator.generateQRCode(from: dataURL, size: CGSize(width: 512, height: 512))
+        if useGoogleCalendarLink {
+            // Use calendar-specific web link (shorter, universally scannable)
+            qrContent = EventICSExporter.createUniversalCalendarURL(event: event)
+            let calendarType = event.source == .outlook ? "Outlook" : "Google Calendar"
+            print("📱 QR Code Format: Web Link (\(calendarType))")
+        } else {
+            // Use ICS format (more complete but larger)
+            qrContent = EventICSExporter.createDataURL(
+                event: event,
+                organizerEmail: organizerEmail.isEmpty ? nil : organizerEmail,
+                attendeeEmails: parseAttendeeEmails()
+            )
+            print("📱 QR Code Format: ICS File")
+        }
+
+        print("📱 Event Details in QR Code:")
+        print("   - Title: \(event.title)")
+        print("   - Start: \(event.startDate)")
+        print("   - End: \(event.endDate)")
+        print("   - Location: \(event.location ?? "None")")
+        print("   - Description: \(event.description ?? "None")")
+        print("   - All Day: \(event.isAllDay)")
+        print("   - Calendar Source: \(event.source.displayName)")
+        print("📱 QR Content length: \(qrContent.count) characters")
+        print("📱 QR Content preview: \(String(qrContent.prefix(300)))")
+
+        qrCodeImage = QRCodeGenerator.generateQRCode(from: qrContent, size: CGSize(width: 512, height: 512))
+
+        if qrCodeImage != nil {
+            print("✅ QR Code generated successfully")
+        } else {
+            print("❌ Failed to generate QR code - content may be too large")
+        }
+    }
+
+    private var calendarNameForWebLink: String {
+        switch event.source {
+        case .google:
+            return "Google Calendar"
+        case .outlook:
+            return "Outlook Calendar"
+        case .ios:
+            return "Google Calendar (universal)"
+        }
     }
 
     private func parseAttendeeEmails() -> [String] {

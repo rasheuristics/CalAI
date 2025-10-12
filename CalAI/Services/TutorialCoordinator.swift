@@ -331,11 +331,11 @@ struct TutorialLauncherView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(tutorial.title)
                                 .font(.headline)
-                                .foregroundColor(DesignSystem.Colors.Text.primary)
+                                .foregroundColor(.primary)
 
                             Text(tutorial.description)
                                 .font(.subheadline)
-                                .foregroundColor(DesignSystem.Colors.Text.secondary)
+                                .foregroundColor(.secondary)
                         }
 
                         Spacer()
@@ -345,11 +345,11 @@ struct TutorialLauncherView: View {
                                 .foregroundColor(.green)
                         } else {
                             Image(systemName: "chevron.right")
-                                .foregroundColor(DesignSystem.Colors.Text.tertiary)
+                                .foregroundColor(Color(.tertiaryLabel))
                         }
                     }
                     .padding(DesignSystem.Spacing.md)
-                    .background(DesignSystem.Colors.Background.secondary)
+                    .background(Color(.secondarySystemBackground))
                     .cornerRadius(DesignSystem.CornerRadius.md)
                 }
             }

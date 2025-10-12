@@ -122,7 +122,7 @@ class SmartConflictDetector {
             AlternativeTimeSlot(
                 start: $0.start,
                 end: $0.end,
-                reason: "Same day, \($0.reason)",
+                reason: "Same day, \($0.reasons.joined(separator: ", "))",
                 score: $0.score * 1.2 // Bonus for same day
             )
         })
@@ -139,7 +139,7 @@ class SmartConflictDetector {
                 AlternativeTimeSlot(
                     start: $0.start,
                     end: $0.end,
-                    reason: "Tomorrow, \($0.reason)",
+                    reason: "Tomorrow, \($0.reasons.joined(separator: ", "))",
                     score: $0.score * 0.9
                 )
             })
@@ -262,7 +262,8 @@ class SmartConflictDetector {
                         start: currentTime,
                         end: currentTime.addingTimeInterval(duration),
                         score: score,
-                        reason: "Available slot before \(conflict.title ?? "event")"
+                        conflicts: [],
+                        reasons: ["Available slot before \(conflict.title ?? "event")"]
                     ))
                 }
             }
@@ -278,7 +279,8 @@ class SmartConflictDetector {
                     start: currentTime,
                     end: currentTime.addingTimeInterval(duration),
                     score: score,
-                    reason: "End of day availability"
+                    conflicts: [],
+                    reasons: ["End of day availability"]
                 ))
             }
         }

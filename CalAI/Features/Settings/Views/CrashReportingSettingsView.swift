@@ -12,10 +12,11 @@ struct CrashReportingSettingsView: View {
         Form {
             // Enable/Disable Section
             Section {
-                Toggle("Enable Crash Reporting", isOn: $crashReportingEnabled.onChange { enabled in
-                    CrashReporter.shared.setEnabled(enabled)
-                    HapticManager.shared.light()
-                })
+                Toggle("Enable Crash Reporting", isOn: $crashReportingEnabled)
+                    .onChange(of: crashReportingEnabled) { enabled in
+                        CrashReporter.shared.setEnabled(enabled)
+                        HapticManager.shared.light()
+                    }
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Help improve CalAI by automatically sending crash reports.")
@@ -211,19 +212,7 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-// MARK: - Binding Extension
-
-extension Binding {
-    func onChange(_ handler: @escaping (Value) -> Void) -> Binding<Value> {
-        Binding(
-            get: { self.wrappedValue },
-            set: { newValue in
-                self.wrappedValue = newValue
-                handler(newValue)
-            }
-        )
-    }
-}
+// Note: Binding.onChange extension removed - use SwiftUI's built-in .onChange modifier instead
 
 // MARK: - Preview
 

@@ -388,7 +388,7 @@ struct PendingOperationRow: View {
 
                 Text(operation.timestamp.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2)
-                    .foregroundColor(.tertiary)
+                    .foregroundColor(Color(.tertiaryLabel))
             }
 
             Spacer()
