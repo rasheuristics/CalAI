@@ -387,7 +387,14 @@ struct MorningBriefingView: View {
 
                 case .failure(let error):
                     print("🧪 Manual test FAILED: \(error.localizedDescription)")
-                    self.weatherAlertMessage = "❌ Weather Fetch Failed\n\nError: \(error.localizedDescription)\n\nCommon fixes:\n• Check Settings → Privacy → Location Services → CalAI\n• Make sure location permission is set to 'While Using App'\n• Try restarting the app"
+
+                    // Check if it's a WeatherKit auth error
+                    let errorString = error.localizedDescription
+                    if errorString.contains("weatherDaemon") || errorString.contains("Error 2") {
+                        self.weatherAlertMessage = "⚠️ WeatherKit Authentication Failed\n\nThis happens because WeatherKit requires a paid Apple Developer account.\n\nThe app will automatically fall back to OpenWeatherMap API.\n\nPlease refresh the briefing to see weather data."
+                    } else {
+                        self.weatherAlertMessage = "❌ Weather Fetch Failed\n\nError: \(error.localizedDescription)\n\nCommon fixes:\n• Check Settings → Privacy → Location Services → CalAI\n• Make sure location permission is set to 'While Using App'\n• Try restarting the app"
+                    }
                     self.showWeatherAlert = true
                 }
             }

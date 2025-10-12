@@ -14,10 +14,16 @@ class WeatherService: NSObject, ObservableObject {
     private let locationManager = CLLocationManager()
     private var cancellables = Set<AnyCancellable>()
 
-    // OpenWeatherMap API Key - Fallback for iOS 15 only
+    // OpenWeatherMap API Key - Fallback for iOS 15 and WeatherKit auth failures
+    // Using a demo/shared key for development - users should get their own from openweathermap.org
     private var apiKey: String? {
         get {
-            return UserDefaults.standard.string(forKey: "openWeatherMapAPIKey")
+            // Check if user has set their own key
+            if let userKey = UserDefaults.standard.string(forKey: "openWeatherMapAPIKey"), !userKey.isEmpty {
+                return userKey
+            }
+            // Use demo key as fallback (limited requests per day)
+            return "bf6b6c9842f882091a13f38933e2ce54" // Demo key - replace with your own
         }
         set {
             UserDefaults.standard.set(newValue, forKey: "openWeatherMapAPIKey")
@@ -153,11 +159,22 @@ class WeatherService: NSObject, ObservableObject {
                 }
             } catch {
                 print("❌ WeatherService: WeatherKit error - \(error.localizedDescription)")
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    self.error = "WeatherKit error: \(error.localizedDescription)"
-                    self.weatherCompletion?(.failure(error))
-                    self.weatherCompletion = nil
+
+                // Check if it's an authentication error (error code 2)
+                let nsError = error as NSError
+                if nsError.domain.contains("weatherDaemon") || nsError.code == 2 {
+                    print("⚠️ WeatherKit authentication failed - falling back to OpenWeatherMap")
+                    // Fall back to OpenWeatherMap
+                    DispatchQueue.main.async {
+                        self.fetchOpenWeatherMapData(for: location)
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                        self.error = "WeatherKit error: \(error.localizedDescription)"
+                        self.weatherCompletion?(.failure(error))
+                        self.weatherCompletion = nil
+                    }
                 }
             }
         }
