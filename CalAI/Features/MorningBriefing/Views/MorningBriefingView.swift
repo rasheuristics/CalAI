@@ -76,6 +76,65 @@ struct MorningBriefingView: View {
             // Weather Section
             if let weather = briefing.weather {
                 weatherSection(weather)
+            } else {
+                // Debug: Show why weather is missing
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text("Weather Unavailable")
+                            .dynamicFont(size: 20, weight: .semibold, fontManager: fontManager)
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Weather data could not be loaded.")
+                            .dynamicFont(size: 14, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+
+                        Text("Check Xcode Console for details. Common issues:")
+                            .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("• Location permission not granted")
+                            Text("• No internet connection")
+                            Text("• WeatherKit not available (iOS 15)")
+                            Text("• Simulator location not set")
+                        }
+                        .dynamicFont(size: 11, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+
+                        Button(action: {
+                            print("🧪 Manual weather fetch test started...")
+                            WeatherService.shared.fetchCurrentWeather { result in
+                                switch result {
+                                case .success(let weather):
+                                    print("🧪 Manual test SUCCESS: \(weather.temperatureFormatted), \(weather.condition)")
+                                case .failure(let error):
+                                    print("🧪 Manual test FAILED: \(error.localizedDescription)")
+                                }
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: "arrow.clockwise.circle.fill")
+                                Text("Test Weather Fetch")
+                                    .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.orange)
+                            .cornerRadius(6)
+                        }
+                    }
+                    .padding()
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(8)
+                    .padding(.horizontal)
+                }
+                .padding(.vertical, 8)
             }
 
             // Events Summary
