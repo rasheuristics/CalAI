@@ -32,6 +32,17 @@ class WeatherService: NSObject, ObservableObject {
 
     // MARK: - Public Methods
 
+    /// Request location permission proactively
+    func requestLocationPermission() {
+        let status = locationManager.authorizationStatus
+        print("🌦️ WeatherService: Current location status: \(status.rawValue)")
+
+        if status == .notDetermined {
+            print("🌦️ WeatherService: Requesting location permission...")
+            locationManager.requestWhenInUseAuthorization()
+        }
+    }
+
     /// Fetch current weather for device location
     func fetchCurrentWeather(completion: @escaping (Result<WeatherData, Error>) -> Void) {
         // Check location authorization
@@ -40,13 +51,11 @@ class WeatherService: NSObject, ObservableObject {
 
         switch status {
         case .notDetermined:
-            // Request permission
-            print("⚠️ WeatherService: Location permission not determined, requesting...")
+            // Request permission and store completion for later
+            print("⚠️ WeatherService: Location permission not determined, requesting and storing completion...")
+            self.weatherCompletion = completion
             locationManager.requestWhenInUseAuthorization()
-            let error = NSError(domain: "WeatherService", code: 2, userInfo: [
-                NSLocalizedDescriptionKey: "Location permission not granted"
-            ])
-            completion(.failure(error))
+            // Don't fail immediately - wait for authorization response
 
         case .restricted, .denied:
             print("❌ WeatherService: Location permission denied or restricted")
@@ -312,6 +321,19 @@ extension WeatherService: CLLocationManagerDelegate {
         // Handle authorization changes
         let status = manager.authorizationStatus
         print("📍 Location authorization changed: \(status.rawValue)")
+
+        // If we have a pending weather request and permission is now granted, fetch the weather
+        if weatherCompletion != nil && (status == .authorizedWhenInUse || status == .authorizedAlways) {
+            print("✅ Location permission granted, fetching weather for pending request...")
+            locationManager.requestLocation()
+        } else if weatherCompletion != nil && (status == .denied || status == .restricted) {
+            print("❌ Location permission denied after request")
+            let error = NSError(domain: "WeatherService", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "Location permission denied. Enable in Settings."
+            ])
+            weatherCompletion?(.failure(error))
+            weatherCompletion = nil
+        }
     }
 }
 

@@ -133,9 +133,14 @@ class EventICSExporter {
             method: method
         )
 
-        // For QR codes, return raw ICS content (most calendar apps can parse this)
-        // Base64 encoding makes QR codes unnecessarily large
-        return icsContent
+        // Create data URI with base64 encoding for QR codes
+        // This format is recognized by iOS Camera app and other QR scanners
+        if let data = icsContent.data(using: .utf8) {
+            let base64 = data.base64EncodedString()
+            return "data:text/calendar;base64,\(base64)"
+        }
+
+        return ""
     }
 
     /// Create a universal calendar URL that works based on event source

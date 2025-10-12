@@ -13,7 +13,7 @@ struct EventShareView: View {
     @State private var attendeeEmails: String = ""
     @State private var qrCodeImage: UIImage?
     @State private var showShareSheet = false
-    @State private var useGoogleCalendarLink = true
+    @State private var useGoogleCalendarLink = false  // Default to ICS format for better compatibility
 
     enum EventTab: String, CaseIterable {
         case share = "Share"
@@ -192,8 +192,8 @@ struct EventShareView: View {
                     .foregroundColor(.secondary)
 
                 Picker("QR Format", selection: $useGoogleCalendarLink) {
+                    Text("Calendar File").tag(false)
                     Text("Web Link").tag(true)
-                    Text("ICS File").tag(false)
                 }
                 .pickerStyle(SegmentedPickerStyle())
                 .onChange(of: useGoogleCalendarLink) { _ in
@@ -201,15 +201,27 @@ struct EventShareView: View {
                 }
 
                 if useGoogleCalendarLink {
-                    Text("✨ Opens \(calendarNameForWebLink) in browser (smaller QR code)")
-                        .dynamicFont(size: 11, fontManager: fontManager)
-                        .foregroundColor(.green)
-                        .multilineTextAlignment(.center)
+                    VStack(spacing: 4) {
+                        Text("🌐 Opens \(calendarNameForWebLink) in browser")
+                            .dynamicFont(size: 11, fontManager: fontManager)
+                            .foregroundColor(.orange)
+                            .multilineTextAlignment(.center)
+                        Text("Requires internet • User must have account")
+                            .dynamicFont(size: 10, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 } else {
-                    Text("📋 Standard calendar file format (works with all apps)")
-                        .dynamicFont(size: 11, fontManager: fontManager)
-                        .foregroundColor(.blue)
-                        .multilineTextAlignment(.center)
+                    VStack(spacing: 4) {
+                        Text("✅ Add directly to device calendar (Recommended)")
+                            .dynamicFont(size: 11, fontManager: fontManager)
+                            .foregroundColor(.green)
+                            .multilineTextAlignment(.center)
+                        Text("Works offline • No account needed • Universal")
+                            .dynamicFont(size: 10, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
             }
             .padding(.horizontal)

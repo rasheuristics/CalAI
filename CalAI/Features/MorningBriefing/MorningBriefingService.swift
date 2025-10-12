@@ -24,6 +24,9 @@ class MorningBriefingService: ObservableObject {
         self.calendarManager = calendarManager
         self.weatherService = WeatherService.shared
 
+        // Request location permission for weather
+        weatherService?.requestLocationPermission()
+
         // Schedule notification if enabled
         if settings.isEnabled {
             scheduleNotification()
