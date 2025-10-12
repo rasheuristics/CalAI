@@ -21,16 +21,23 @@ class MorningBriefingService: ObservableObject {
     // MARK: - Configuration
 
     func configure(calendarManager: CalendarManager) {
+        print("📋 MorningBriefingService: Configuring...")
         self.calendarManager = calendarManager
         self.weatherService = WeatherService.shared
+        print("📋 MorningBriefingService: WeatherService set to \(weatherService != nil ? "✅ shared instance" : "❌ nil")")
 
         // Request location permission for weather
         weatherService?.requestLocationPermission()
+        print("📋 MorningBriefingService: Location permission requested")
 
         // Schedule notification if enabled
         if settings.isEnabled {
+            print("📋 MorningBriefingService: Scheduling notifications (enabled)")
             scheduleNotification()
+        } else {
+            print("📋 MorningBriefingService: Notifications disabled in settings")
         }
+        print("📋 MorningBriefingService: Configuration complete")
     }
 
     // MARK: - Settings Management
@@ -50,6 +57,7 @@ class MorningBriefingService: ObservableObject {
     // MARK: - Briefing Generation
 
     func generateBriefing(for date: Date = Date(), completion: @escaping (DailyBriefing) -> Void) {
+        print("📋 Starting briefing generation...")
         isGenerating = true
 
         // Get today's events
@@ -58,6 +66,14 @@ class MorningBriefingService: ObservableObject {
             isGenerating = false
             return
         }
+
+        print("📋 CalendarManager configured, checking weather service...")
+        guard let weatherService = weatherService else {
+            print("❌ WeatherService not configured!")
+            isGenerating = false
+            return
+        }
+        print("✅ WeatherService is configured")
 
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: date)
@@ -84,8 +100,9 @@ class MorningBriefingService: ObservableObject {
         // Generate suggestions
         let suggestions = DayAnalyzer.generateSuggestions(for: briefingEvents)
 
+        print("📋 Fetching weather data...")
         // Fetch weather
-        weatherService?.fetchCurrentWeather { [weak self] result in
+        weatherService.fetchCurrentWeather { [weak self] result in
             DispatchQueue.main.async {
                 guard let self = self else { return }
 
@@ -106,6 +123,12 @@ class MorningBriefingService: ObservableObject {
                     events: briefingEvents,
                     suggestions: suggestions
                 )
+
+                print("📋 Briefing created:")
+                print("   - Date: \(date)")
+                print("   - Weather: \(weather != nil ? "✅ Available (\(weather!.temperatureFormatted))" : "❌ Not available")")
+                print("   - Events: \(briefingEvents.count)")
+                print("   - Suggestions: \(suggestions.count)")
 
                 self.todaysBriefing = briefing
                 self.isGenerating = false
