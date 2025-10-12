@@ -226,6 +226,8 @@ class WeatherService: NSObject, ObservableObject {
 
         let currentWeatherURL = "https://api.openweathermap.org/data/2.5/weather?lat=\(lat)&lon=\(lon)&appid=\(apiKey)&units=metric"
 
+        print("🌐 OpenWeatherMap: Fetching from URL: \(currentWeatherURL)")
+
         guard let url = URL(string: currentWeatherURL) else {
             let error = NSError(domain: "WeatherService", code: 5, userInfo: [
                 NSLocalizedDescriptionKey: "Invalid weather API URL"
@@ -242,29 +244,62 @@ class WeatherService: NSObject, ObservableObject {
                 self.isLoading = false
 
                 if let error = error {
+                    print("❌ OpenWeatherMap: Network error - \(error.localizedDescription)")
                     self.error = error.localizedDescription
                     self.weatherCompletion?(.failure(error))
                     self.weatherCompletion = nil
                     return
+                }
+
+                // Check HTTP response
+                if let httpResponse = response as? HTTPURLResponse {
+                    print("🌐 OpenWeatherMap: HTTP Status Code: \(httpResponse.statusCode)")
+
+                    if httpResponse.statusCode != 200 {
+                        // Try to get error message from response
+                        if let data = data, let responseString = String(data: data, encoding: .utf8) {
+                            print("❌ OpenWeatherMap: Error response: \(responseString)")
+
+                            let error = NSError(domain: "WeatherService", code: httpResponse.statusCode, userInfo: [
+                                NSLocalizedDescriptionKey: "OpenWeatherMap API error (code \(httpResponse.statusCode)): \(responseString)"
+                            ])
+                            self.error = error.localizedDescription
+                            self.weatherCompletion?(.failure(error))
+                            self.weatherCompletion = nil
+                            return
+                        }
+                    }
                 }
 
                 guard let data = data else {
                     let error = NSError(domain: "WeatherService", code: 6, userInfo: [
                         NSLocalizedDescriptionKey: "No weather data received"
                     ])
+                    print("❌ OpenWeatherMap: No data received")
                     self.error = error.localizedDescription
                     self.weatherCompletion?(.failure(error))
                     self.weatherCompletion = nil
                     return
                 }
 
+                // Log raw response for debugging
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("🌐 OpenWeatherMap: Raw response: \(responseString)")
+                }
+
                 do {
                     let weatherResponse = try JSONDecoder().decode(OpenWeatherMapResponse.self, from: data)
+                    print("✅ OpenWeatherMap: Successfully decoded response")
                     let weatherData = self.convertOpenWeatherToWeatherData(weatherResponse)
+                    print("✅ OpenWeatherMap: Weather data converted - \(weatherData.temperatureFormatted), \(weatherData.condition)")
                     self.currentWeather = weatherData
                     self.weatherCompletion?(.success(weatherData))
                     self.weatherCompletion = nil
                 } catch {
+                    print("❌ OpenWeatherMap: Failed to parse JSON - \(error.localizedDescription)")
+                    if let decodingError = error as? DecodingError {
+                        print("❌ Decoding error details: \(decodingError)")
+                    }
                     self.error = "Failed to parse weather data: \(error.localizedDescription)"
                     self.weatherCompletion?(.failure(error))
                     self.weatherCompletion = nil

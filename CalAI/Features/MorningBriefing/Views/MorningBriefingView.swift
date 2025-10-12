@@ -391,9 +391,13 @@ struct MorningBriefingView: View {
                     // Check if it's a WeatherKit auth error
                     let errorString = error.localizedDescription
                     if errorString.contains("weatherDaemon") || errorString.contains("Error 2") {
-                        self.weatherAlertMessage = "⚠️ WeatherKit Authentication Failed\n\nThis happens because WeatherKit requires a paid Apple Developer account.\n\nThe app will automatically fall back to OpenWeatherMap API.\n\nPlease refresh the briefing to see weather data."
+                        self.weatherAlertMessage = "⚠️ WeatherKit Authentication Failed\n\nError: \(errorString)\n\nThe app will automatically fall back to OpenWeatherMap API.\n\nPlease refresh the briefing to try again."
+                    } else if errorString.contains("missing") || errorString.contains("couldn't be read") {
+                        self.weatherAlertMessage = "❌ Weather Data Parse Error\n\nError: \(errorString)\n\nThis might be:\n• OpenWeatherMap API key issue\n• API rate limit reached\n• Invalid API response\n\nCheck Xcode Console for details or try again in a few minutes."
+                    } else if errorString.contains("401") || errorString.contains("Unauthorized") {
+                        self.weatherAlertMessage = "❌ API Authentication Failed\n\nThe OpenWeatherMap API key is invalid or expired.\n\nPlease configure your own API key in Settings → Morning Briefing → API Key"
                     } else {
-                        self.weatherAlertMessage = "❌ Weather Fetch Failed\n\nError: \(error.localizedDescription)\n\nCommon fixes:\n• Check Settings → Privacy → Location Services → CalAI\n• Make sure location permission is set to 'While Using App'\n• Try restarting the app"
+                        self.weatherAlertMessage = "❌ Weather Fetch Failed\n\nError: \(errorString)\n\nCommon fixes:\n• Check Settings → Privacy → Location Services → CalAI\n• Make sure location permission is set to 'While Using App'\n• Try restarting the app\n• Check internet connection"
                     }
                     self.showWeatherAlert = true
                 }
