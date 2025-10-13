@@ -201,10 +201,14 @@ struct DayHeaderCell: View {
 
             Text(dateText)
                 .font(.caption)
-                .fontWeight(isToday ? .bold : .medium)
+                .fontWeight(isToday ? .bold : isCurrentWeek ? .semibold : .medium)
                 .foregroundColor(isToday ? .white : .primary)
-                .frame(width: 15, height: 15)
+                .frame(width: 20, height: 20)
                 .background(isToday ? Color.blue : Color.clear)
+                .overlay(
+                    Circle()
+                        .strokeBorder(isCurrentWeek && !isToday ? Color.blue : Color.clear, lineWidth: 1.5)
+                )
                 .clipShape(Circle())
         }
         .frame(maxWidth: .infinity)
@@ -224,6 +228,18 @@ struct DayHeaderCell: View {
 
     private var isToday: Bool {
         Calendar.current.isDateInToday(date)
+    }
+
+    private var isCurrentWeek: Bool {
+        let calendar = Calendar.current
+        let today = Date()
+
+        // Get the start and end of the current week
+        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: today) else {
+            return false
+        }
+
+        return date >= weekInterval.start && date < weekInterval.end
     }
 }
 

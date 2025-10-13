@@ -8,7 +8,7 @@ struct EventShareView: View {
     @ObservedObject var fontManager: FontManager
     @Environment(\.dismiss) var dismiss
 
-    @State private var selectedTab: EventTab = .share
+    @State private var selectedTab: EventTab = .tasks
     @State private var organizerEmail: String = ""
     @State private var attendeeEmails: String = ""
     @State private var qrCodeImage: UIImage?
@@ -16,9 +16,17 @@ struct EventShareView: View {
     @State private var useGoogleCalendarLink = false  // Default to ICS format for better compatibility
 
     enum EventTab: String, CaseIterable {
-        case share = "Share"
         case tasks = "Tasks"
+        case share = "Share"
         case details = "Details"
+
+        var icon: String {
+            switch self {
+            case .tasks: return "sparkles"
+            case .share: return "square.and.arrow.up"
+            case .details: return "info.circle"
+            }
+        }
     }
 
     var body: some View {
@@ -27,7 +35,7 @@ struct EventShareView: View {
                 // Tab Picker
                 Picker("View", selection: $selectedTab) {
                     ForEach(EventTab.allCases, id: \.self) { tab in
-                        Text(tab.rawValue).tag(tab)
+                        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -35,13 +43,13 @@ struct EventShareView: View {
 
                 // Tab Content
                 TabView(selection: $selectedTab) {
+                    // Tasks Tab (First - AI icon)
+                    tasksTabContent
+                        .tag(EventTab.tasks)
+
                     // Share Tab
                     shareTabContent
                         .tag(EventTab.share)
-
-                    // Tasks Tab
-                    tasksTabContent
-                        .tag(EventTab.tasks)
 
                     // Details Tab
                     detailsTabContent

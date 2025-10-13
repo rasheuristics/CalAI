@@ -212,7 +212,7 @@ struct iOSCalendarHeader: View {
                     showingDatePicker = true
                 }) {
                     Text(monthYearText)
-                        .scaledFont(.title3, fontManager: fontManager)
+                        .font(.system(.title3, design: .default).bold())
                         .foregroundColor(.primary)
                 }
                 .accessibilityLabel("Current date: \(monthYearText)")
@@ -1491,30 +1491,31 @@ struct WeekViewWithCompressedTimeline: View {
         let dayNumber = calendar.component(.day, from: date)
         let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
         let isToday = calendar.isDate(date, inSameDayAs: Date())
+        let isTodaysWeek = isDateInCurrentWeek(date)
 
         Text("\(dayNumber)")
-            .font(.system(size: 18, weight: isInCurrentWeek ? .semibold : .regular))
-            .foregroundColor(
-                isSelected ? .white :
-                isToday ? .red :
-                .primary
-            )
+            .font(.system(size: 18, weight: isToday ? .bold : isTodaysWeek ? .semibold : .regular))
+            .foregroundColor(isToday ? .white : .primary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
                 ZStack {
-                    if isSelected {
+                    // Solid blue circle for today
+                    if isToday {
                         Circle()
                             .fill(Color.blue)
                             .frame(width: 32, height: 32)
-                    } else if isToday {
+                    }
+                    // Outlined blue circle for other days in current week
+                    else if isTodaysWeek {
                         Circle()
-                            .fill(Color.red.opacity(0.1))
+                            .strokeBorder(Color.blue, lineWidth: 1.5)
                             .frame(width: 32, height: 32)
                     }
 
-                    if isInCurrentWeek && !isSelected && !isToday {
+                    // Light blue background for selected date (if not today)
+                    if isSelected && !isToday {
                         Circle()
-                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                            .fill(Color.blue.opacity(0.1))
                             .frame(width: 32, height: 32)
                     }
                 }
@@ -1524,6 +1525,14 @@ struct WeekViewWithCompressedTimeline: View {
                 selectedDate = date
                 HapticManager.shared.light()
             }
+    }
+
+    private func isDateInCurrentWeek(_ date: Date) -> Bool {
+        let today = Date()
+        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: today) else {
+            return false
+        }
+        return date >= weekInterval.start && date < weekInterval.end
     }
 
     private func dateForExpandableGrid(week: Int, day: Int) -> Date? {

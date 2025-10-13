@@ -53,6 +53,9 @@ class WeatherService: NSObject, ObservableObject {
     func fetchCurrentWeather(completion: @escaping (Result<WeatherData, Error>) -> Void) {
         // Check location authorization
         let status = locationManager.authorizationStatus
+        print("========================================")
+        print("🔴🔴🔴 WEATHER FETCH STARTED 🔴🔴🔴")
+        print("========================================")
         print("🌦️ WeatherService: Checking location authorization - status: \(status.rawValue)")
 
         switch status {
@@ -111,15 +114,17 @@ class WeatherService: NSObject, ObservableObject {
 
     private func fetchWeather(for location: CLLocation) {
         print("🌦️ WeatherService: Fetching weather for location: \(location.coordinate.latitude), \(location.coordinate.longitude)")
+        print("🌦️ WeatherService: iOS Version: \(ProcessInfo.processInfo.operatingSystemVersion)")
         isLoading = true
         error = nil
 
         // Try WeatherKit first (iOS 16+)
         if #available(iOS 16.0, *) {
-            print("🌦️ WeatherService: Using WeatherKit (iOS 16+)")
+            print("✅ WeatherService: iOS 16+ detected - Attempting WeatherKit...")
+            print("✅ WeatherService: WeatherKit entitlement should be present in app")
             fetchWeatherKitData(for: location)
         } else {
-            print("🌦️ WeatherService: Using OpenWeatherMap fallback (iOS 15)")
+            print("⚠️ WeatherService: iOS 15 detected - Using OpenWeatherMap fallback")
             // Fallback to OpenWeatherMap for iOS 15
             fetchOpenWeatherMapData(for: location)
         }
@@ -129,9 +134,11 @@ class WeatherService: NSObject, ObservableObject {
 
     @available(iOS 16.0, *)
     private func fetchWeatherKitData(for location: CLLocation) {
+        print("🔵 WeatherService: fetchWeatherKitData() called - Starting WeatherKit request...")
         Task {
             do {
-                print("🌦️ WeatherService: Requesting weather from WeatherKit...")
+                print("🌦️ WeatherService: Requesting weather from WeatherKit API...")
+                print("🌦️ WeatherService: Location: \(location.coordinate.latitude), \(location.coordinate.longitude)")
                 let weather = try await WeatherKit.WeatherService.shared.weather(for: location)
                 let currentWeather = weather.currentWeather
                 print("✅ WeatherService: WeatherKit data received - \(currentWeather.temperature.value)°C, \(currentWeather.condition.description)")
@@ -160,21 +167,31 @@ class WeatherService: NSObject, ObservableObject {
             } catch {
                 print("❌ WeatherService: WeatherKit error - \(error.localizedDescription)")
 
-                // Check if it's an authentication error (error code 2)
+                // Detailed error diagnostics
                 let nsError = error as NSError
+                print("   ❌ Error Domain: \(nsError.domain)")
+                print("   ❌ Error Code: \(nsError.code)")
+                print("   ❌ Error UserInfo: \(nsError.userInfo)")
+
+                // Check for common WeatherKit errors
                 if nsError.domain.contains("weatherDaemon") || nsError.code == 2 {
-                    print("⚠️ WeatherKit authentication failed - falling back to OpenWeatherMap")
-                    // Fall back to OpenWeatherMap
-                    DispatchQueue.main.async {
-                        self.fetchOpenWeatherMapData(for: location)
-                    }
+                    print("   ⚠️ This is a WeatherKit authentication/entitlement error")
+                    print("   ⚠️ Common causes:")
+                    print("      1. WeatherKit not enabled on App ID in Developer Portal")
+                    print("      2. Provisioning profile doesn't include WeatherKit (regenerate it)")
+                    print("      3. Not signed with paid Apple Developer account")
+                    print("      4. Bundle ID mismatch")
+                    print("   ⚠️ Falling back to OpenWeatherMap...")
+                } else if nsError.code == 1 {
+                    print("   ⚠️ Network or data unavailable error")
                 } else {
-                    DispatchQueue.main.async {
-                        self.isLoading = false
-                        self.error = "WeatherKit error: \(error.localizedDescription)"
-                        self.weatherCompletion?(.failure(error))
-                        self.weatherCompletion = nil
-                    }
+                    print("   ⚠️ Unknown WeatherKit error")
+                }
+
+                // Always fall back to OpenWeatherMap on any WeatherKit error
+                print("   🔄 Attempting OpenWeatherMap fallback...")
+                DispatchQueue.main.async {
+                    self.fetchOpenWeatherMapData(for: location)
                 }
             }
         }

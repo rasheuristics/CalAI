@@ -25,24 +25,24 @@ struct ContentView: View {
             .ignoresSafeArea()
 
             TabView(selection: $selectedTab) {
+                AITabView(voiceManager: voiceManager, aiManager: aiManager, calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
+                    .tabItem {
+                        Image(systemName: "brain.head.profile")
+                        Text("AI")
+                    }
+                    .tag(0)
+
                 CalendarTabView(calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
                     .tabItem {
                         Image(systemName: "calendar")
                         Text("Calendar")
                     }
-                    .tag(0)
+                    .tag(1)
 
                 EventsTabView(calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
                     .tabItem {
                         Image(systemName: "list.bullet")
                         Text("Events")
-                    }
-                    .tag(1)
-
-                AITabView(voiceManager: voiceManager, aiManager: aiManager, calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
-                    .tabItem {
-                        Image(systemName: "brain.head.profile")
-                        Text("AI")
                     }
                     .tag(2)
 

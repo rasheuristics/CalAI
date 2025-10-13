@@ -2,6 +2,8 @@ import SwiftUI
 import Foundation
 import Combine
 import EventKit
+import CoreLocation
+import MapKit
 
 // MARK: - Event Task Models
 
@@ -695,6 +697,15 @@ struct EventTasksTabView: View {
     @State private var showingAddTask = false
     @State private var showingAISuggestions = false
 
+    // Task entry fields
+    @State private var newTaskTitle: String = ""
+    @State private var newTaskDescription: String = ""
+    @State private var newTaskDueDate: Date = Date()
+    @State private var newTaskPriority: TaskPriority = .medium
+    @State private var showTaskDetails: Bool = false
+    @State private var showDatePicker: Bool = false
+    @FocusState private var isTaskFieldFocused: Bool
+
     private var eventTasks: EventTasks? {
         taskManager.getTasks(for: event.id)
     }
@@ -704,39 +715,45 @@ struct EventTasksTabView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Event Type Header
-                eventTypeHeader
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                // Tasks List
+                ScrollView {
+                    VStack(spacing: 12) {
+                        // Event Type Header (compact)
+                        eventTypeHeaderCompact
 
-                // Progress if tasks exist
-                if let tasks = eventTasks, !tasks.tasks.isEmpty {
-                    progressSection(tasks: tasks)
+                        // AI Suggestion Button (at top)
+                        aiSuggestionButton
+
+                        // Tasks List
+                        if let tasks = eventTasks, !tasks.tasks.isEmpty {
+                            tasksListSection(tasks: tasks)
+                        } else {
+                            emptyStateSection
+                        }
+                    }
+                    .padding()
+                    .padding(.bottom, 80) // Space for floating button
                 }
 
-                // Tasks List or Empty State
-                if let tasks = eventTasks, !tasks.tasks.isEmpty {
-                    tasksListSection(tasks: tasks)
-                } else {
-                    emptyStateSection
+                // Inline Task Entry (appears when adding)
+                if showingAddTask {
+                    taskEntryView
                 }
-
-                // Action Buttons
-                actionButtons
             }
-            .padding()
+
+            // Floating Plus Button
+            if !showingAddTask {
+                floatingPlusButton
+            }
         }
         .onAppear {
             // Auto-generate tasks if needed
             taskManager.ensureTasksExist(for: event)
         }
-        .sheet(isPresented: $showingAddTask) {
-            AddTaskView(event: event, fontManager: fontManager) { newTask in
-                taskManager.addTask(newTask, to: event.id)
-            }
-        }
         .sheet(isPresented: $showingAISuggestions) {
-            AISuggestionsView(event: event, fontManager: fontManager) { selectedTasks in
+            AISuggestionsSheetView(event: event, fontManager: fontManager) { selectedTasks in
                 for task in selectedTasks {
                     taskManager.addTask(task, to: event.id)
                 }
@@ -744,29 +761,30 @@ struct EventTasksTabView: View {
         }
     }
 
-    // MARK: - Event Type Header
+    // MARK: - Event Type Header (Compact)
 
-    private var eventTypeHeader: some View {
+    private var eventTypeHeaderCompact: some View {
         HStack {
             Image(systemName: eventType.icon)
-                .font(.title2)
+                .font(.body)
                 .foregroundColor(.blue)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(eventType.rawValue)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.title)
                     .dynamicFont(size: 14, weight: .semibold, fontManager: fontManager)
-                    .foregroundColor(.secondary)
+                    .lineLimit(1)
 
                 Text(formatEventTime())
-                    .dynamicFont(size: 12, fontManager: fontManager)
+                    .dynamicFont(size: 11, fontManager: fontManager)
                     .foregroundColor(.secondary)
             }
 
             Spacer()
         }
-        .padding()
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
         .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .cornerRadius(8)
     }
 
     // MARK: - Progress Section
@@ -844,44 +862,159 @@ struct EventTasksTabView: View {
         .padding(.vertical, 40)
     }
 
-    // MARK: - Action Buttons
+    // MARK: - AI Suggestion Button
 
-    private var actionButtons: some View {
-        VStack(spacing: 12) {
-            // AI Suggestions Button
-            Button(action: { showingAISuggestions = true }) {
-                HStack {
-                    Image(systemName: "sparkles")
-                    Text("Get AI Task Suggestions")
-                        .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(
-                    LinearGradient(
-                        colors: [.purple, .blue],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .cornerRadius(12)
+    private var aiSuggestionButton: some View {
+        Button(action: { showingAISuggestions = true }) {
+            HStack {
+                Image(systemName: "sparkles")
+                Text("AI Task Suggestions")
+                    .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12))
             }
-
-            // Manual Add Task Button
-            Button(action: { showingAddTask = true }) {
-                HStack {
-                    Image(systemName: "plus.circle")
-                    Text("Add Task Manually")
-                        .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                }
-                .foregroundColor(.blue)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
-            }
+            .foregroundColor(.purple)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .background(Color.purple.opacity(0.1))
+            .cornerRadius(10)
         }
+    }
+
+    // MARK: - Floating Plus Button
+
+    private var floatingPlusButton: some View {
+        Button(action: {
+            showingAddTask = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isTaskFieldFocused = true
+            }
+        }) {
+            Image(systemName: "plus")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 56, height: 56)
+                .background(Color.blue)
+                .clipShape(Circle())
+                .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+        }
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
+    }
+
+    // MARK: - Task Entry View (Google Tasks Style)
+
+    private var taskEntryView: some View {
+        VStack(spacing: 0) {
+            // Task Title Field
+            HStack(alignment: .top, spacing: 12) {
+                Button(action: {
+                    // Save task
+                    saveNewTask()
+                }) {
+                    Image(systemName: "circle")
+                        .font(.system(size: 22))
+                        .foregroundColor(.gray)
+                }
+                .padding(.top, 12)
+
+                TextField("New Task", text: $newTaskTitle)
+                    .dynamicFont(size: 16, fontManager: fontManager)
+                    .focused($isTaskFieldFocused)
+                    .padding(.top, 12)
+            }
+            .padding(.horizontal, 16)
+
+            // Task Details (expandable)
+            if showTaskDetails {
+                VStack(alignment: .leading, spacing: 12) {
+                    Divider()
+
+                    TextEditor(text: $newTaskDescription)
+                        .dynamicFont(size: 14, fontManager: fontManager)
+                        .frame(minHeight: 60, maxHeight: 120)
+                        .padding(8)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                }
+                .padding(.horizontal, 16)
+            }
+
+            // Date Picker Sheet
+            if showDatePicker {
+                VStack(spacing: 0) {
+                    Divider()
+                    DatePicker("Due Date", selection: $newTaskDueDate, displayedComponents: [.date, .hourAndMinute])
+                        .dynamicFont(size: 14, fontManager: fontManager)
+                        .padding()
+                }
+            }
+
+            // Action Bar
+            HStack(spacing: 20) {
+                // Add Details Button
+                Button(action: {
+                    showTaskDetails.toggle()
+                }) {
+                    Image(systemName: showTaskDetails ? "note.text.badge.plus" : "note.text")
+                        .font(.system(size: 20))
+                        .foregroundColor(showTaskDetails ? .blue : .gray)
+                }
+
+                // Date/Time Button
+                Button(action: {
+                    showDatePicker.toggle()
+                }) {
+                    Image(systemName: showDatePicker ? "calendar.badge.clock" : "calendar")
+                        .font(.system(size: 20))
+                        .foregroundColor(showDatePicker ? .blue : .gray)
+                }
+
+                // Priority Button
+                Menu {
+                    Button(action: { newTaskPriority = .high }) {
+                        Label("High", systemImage: "exclamationmark.3")
+                    }
+                    Button(action: { newTaskPriority = .medium }) {
+                        Label("Medium", systemImage: "exclamationmark.2")
+                    }
+                    Button(action: { newTaskPriority = .low }) {
+                        Label("Low", systemImage: "exclamationmark")
+                    }
+                } label: {
+                    Image(systemName: priorityIcon(newTaskPriority))
+                        .font(.system(size: 20))
+                        .foregroundColor(priorityColor(newTaskPriority))
+                }
+
+                Spacer()
+
+                // Save Button
+                Button(action: {
+                    saveNewTask()
+                }) {
+                    Text("Save")
+                        .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 10)
+                        .background(newTaskTitle.isEmpty ? Color.gray : Color.blue)
+                        .cornerRadius(20)
+                }
+                .disabled(newTaskTitle.isEmpty)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color(.systemBackground))
+        }
+        .background(Color(.systemBackground))
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color(.systemGray4)),
+            alignment: .top
+        )
     }
 
     // MARK: - Helpers
@@ -903,6 +1036,79 @@ struct EventTasksTabView: View {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+
+    private func saveNewTask() {
+        guard !newTaskTitle.isEmpty else { return }
+
+        let timing = calculateTaskTiming()
+        let category = detectTaskCategory()
+
+        let newTask = EventTask(
+            title: newTaskTitle,
+            description: newTaskDescription.isEmpty ? nil : newTaskDescription,
+            isCompleted: false,
+            priority: newTaskPriority,
+            category: category,
+            timing: timing,
+            estimatedMinutes: nil
+        )
+
+        taskManager.addTask(newTask, to: event.id)
+
+        // Reset form
+        newTaskTitle = ""
+        newTaskDescription = ""
+        newTaskDueDate = Date()
+        newTaskPriority = .medium
+        showTaskDetails = false
+        showDatePicker = false
+        showingAddTask = false
+    }
+
+    private func calculateTaskTiming() -> TaskTiming {
+        let timeUntilEvent = event.startDate.timeIntervalSince(newTaskDueDate)
+        let hoursUntilEvent = timeUntilEvent / 3600
+
+        if hoursUntilEvent > 0 {
+            return .before(hours: Int(hoursUntilEvent))
+        } else if hoursUntilEvent < -2 {
+            return .after(hours: Int(-hoursUntilEvent))
+        } else {
+            return .during
+        }
+    }
+
+    private func detectTaskCategory() -> TaskCategory {
+        let titleLower = newTaskTitle.lowercased()
+
+        if titleLower.contains("review") || titleLower.contains("prepare") || titleLower.contains("research") {
+            return .preparation
+        } else if titleLower.contains("email") || titleLower.contains("call") || titleLower.contains("contact") {
+            return .communication
+        } else if titleLower.contains("book") || titleLower.contains("reserve") || titleLower.contains("order") {
+            return .logistics
+        } else if titleLower.contains("document") || titleLower.contains("report") || titleLower.contains("notes") {
+            return .documents
+        } else {
+            return .preparation
+        }
+    }
+
+    private func priorityIcon(_ priority: TaskPriority) -> String {
+        switch priority {
+        case .high: return "exclamationmark.3"
+        case .medium: return "exclamationmark.2"
+        case .low: return "exclamationmark"
+        }
+    }
+
+    private func priorityColor(_ priority: TaskPriority) -> Color {
+        switch priority {
+        case .high: return .red
+        case .medium: return .orange
+        case .low: return .gray
+        }
     }
 }
 
@@ -1019,14 +1225,94 @@ struct EventDetailsTabView: View {
     @State private var errorMessage: String?
     @State private var showSuccessMessage: Bool = false
 
+    // New fields for comprehensive editing
+    @State private var selectedCalendar: EKCalendar?
+    @State private var availableCalendars: [EKCalendar] = []
+    @State private var eventURL: String = ""
+    @State private var recurrenceRule: EKRecurrenceRule?
+    @State private var showRecurrencePicker: Bool = false
+    @State private var attendees: [String] = []
+    @State private var newAttendee: String = ""
+    @State private var showAddAttendee: Bool = false
+    @State private var attachmentURLs: [URL] = []
+    @State private var showAttachmentPicker: Bool = false
+    @State private var structuredLocation: CLLocation?
+
     var body: some View {
         Form {
             Section("Event Details") {
                 TextField("Title", text: $title)
                     .dynamicFont(size: 17, fontManager: fontManager)
 
-                TextField("Location", text: $location)
+                // Location Field with Map Preview
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        TextField("Location", text: $location)
+                            .dynamicFont(size: 17, fontManager: fontManager)
+
+                        if event.source == .ios {
+                            Button(action: {
+                                geocodeLocation()
+                            }) {
+                                Image(systemName: "location.circle.fill")
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
+
+                    // Small Map Preview (like iOS Calendar)
+                    if let geoLocation = structuredLocation {
+                        Button(action: {
+                            openInMaps()
+                        }) {
+                            ZStack(alignment: .bottomTrailing) {
+                                // Map preview using Map from MapKit
+                                Map(coordinateRegion: .constant(MKCoordinateRegion(
+                                    center: geoLocation.coordinate,
+                                    span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                                )), annotationItems: [MapLocation(coordinate: geoLocation.coordinate)]) { location in
+                                    MapMarker(coordinate: location.coordinate, tint: .red)
+                                }
+                                .frame(height: 120)
+                                .cornerRadius(8)
+                                .disabled(true)
+
+                                // "Open in Maps" indicator
+                                HStack(spacing: 4) {
+                                    Image(systemName: "map.fill")
+                                        .font(.system(size: 10))
+                                    Text("Tap to open")
+                                        .dynamicFont(size: 10, fontManager: fontManager)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.white.opacity(0.9))
+                                .cornerRadius(4)
+                                .padding(8)
+                            }
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+            }
+
+            // Calendar Selection (iOS events only)
+            if event.source == .ios, !availableCalendars.isEmpty {
+                Section("Calendar") {
+                    Picker("Calendar", selection: $selectedCalendar) {
+                        ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
+                            HStack {
+                                Circle()
+                                    .fill(Color(cgColor: calendar.cgColor))
+                                    .frame(width: 12, height: 12)
+                                Text(calendar.title)
+                                    .dynamicFont(size: 17, fontManager: fontManager)
+                            }
+                            .tag(calendar as EKCalendar?)
+                        }
+                    }
                     .dynamicFont(size: 17, fontManager: fontManager)
+                }
             }
 
             Section("Date & Time") {
@@ -1052,6 +1338,125 @@ struct EventDetailsTabView: View {
                 TextEditor(text: $notes)
                     .dynamicFont(size: 17, fontManager: fontManager)
                     .frame(minHeight: 100)
+            }
+
+            // URL Section
+            Section("URL") {
+                TextField("Event URL", text: $eventURL)
+                    .dynamicFont(size: 17, fontManager: fontManager)
+                    .keyboardType(.URL)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+            }
+
+            // Recurrence/Repeat Section (iOS events only)
+            if event.source == .ios {
+                Section("Repeat") {
+                    if let rule = recurrenceRule {
+                        HStack {
+                            Text(recurrenceRuleDescription(rule))
+                                .dynamicFont(size: 17, fontManager: fontManager)
+                            Spacer()
+                            Button("Edit") {
+                                showRecurrencePicker = true
+                            }
+                            .dynamicFont(size: 17, fontManager: fontManager)
+                        }
+                    } else {
+                        Button("Add Repeat Rule") {
+                            showRecurrencePicker = true
+                        }
+                        .dynamicFont(size: 17, fontManager: fontManager)
+                    }
+                }
+                .sheet(isPresented: $showRecurrencePicker) {
+                    RecurrencePickerView(
+                        recurrenceRule: $recurrenceRule,
+                        fontManager: fontManager
+                    )
+                }
+            }
+
+            // Attendees & Invitees Section (iOS events only)
+            if event.source == .ios {
+                Section("Invitees & Attendees") {
+                    ForEach(attendees, id: \.self) { attendee in
+                        HStack {
+                            Image(systemName: "person.circle.fill")
+                                .foregroundColor(.blue)
+                            Text(attendee)
+                                .dynamicFont(size: 17, fontManager: fontManager)
+                            Spacer()
+                            Button(action: {
+                                removeAttendee(attendee)
+                            }) {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundColor(.red)
+                            }
+                        }
+                    }
+
+                    Button(action: {
+                        showAddAttendee = true
+                    }) {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Add Attendee")
+                                .dynamicFont(size: 17, fontManager: fontManager)
+                        }
+                    }
+                }
+                .alert("Add Attendee", isPresented: $showAddAttendee) {
+                    TextField("Email or name", text: $newAttendee)
+                    Button("Add") {
+                        if !newAttendee.isEmpty {
+                            attendees.append(newAttendee)
+                            newAttendee = ""
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {
+                        newAttendee = ""
+                    }
+                }
+            }
+
+            // Attachments Section (iOS events only)
+            if event.source == .ios {
+                Section("Attachments") {
+                    if attachmentURLs.isEmpty {
+                        Text("No attachments")
+                            .dynamicFont(size: 17, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(attachmentURLs, id: \.self) { url in
+                            HStack {
+                                Image(systemName: "paperclip")
+                                    .foregroundColor(.blue)
+                                Text(url.lastPathComponent)
+                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                Spacer()
+                                Button(action: {
+                                    removeAttachment(url)
+                                }) {
+                                    Image(systemName: "trash")
+                                        .foregroundColor(.red)
+                                }
+                            }
+                        }
+                    }
+
+                    Button(action: {
+                        showAttachmentPicker = true
+                    }) {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Add Attachment")
+                                .dynamicFont(size: 17, fontManager: fontManager)
+                        }
+                    }
+                }
             }
 
             Section("Calendar Source") {
@@ -1126,6 +1531,44 @@ struct EventDetailsTabView: View {
         startDate = event.startDate
         endDate = event.endDate
         isAllDay = event.isAllDay
+
+        // Load iOS-specific fields
+        if event.source == .ios, let ekEvent = event.originalEvent as? EKEvent {
+            // Load available calendars
+            let calendars = calendarManager.eventStore.calendars(for: .event)
+            availableCalendars = calendars.filter { $0.allowsContentModifications }
+
+            // Set current calendar
+            selectedCalendar = ekEvent.calendar
+
+            // Load URL
+            if let url = ekEvent.url {
+                eventURL = url.absoluteString
+            }
+
+            // Load recurrence rule
+            recurrenceRule = ekEvent.recurrenceRules?.first
+
+            // Load attendees
+            if let ekAttendees = ekEvent.attendees {
+                attendees = ekAttendees.compactMap { participant in
+                    // participant.url is non-optional URL
+                    let urlString = participant.url.absoluteString
+                    if urlString.hasPrefix("mailto:") {
+                        return urlString.replacingOccurrences(of: "mailto:", with: "")
+                    }
+                    return participant.name ?? urlString
+                }
+            }
+
+            // Note: EKEvent.attachments is not available in EventKit API
+            // Attachments are not accessible programmatically
+
+            // Load structured location
+            if let structured = ekEvent.structuredLocation {
+                structuredLocation = structured.geoLocation
+            }
+        }
     }
 
     private func saveEvent() {
@@ -1185,13 +1628,58 @@ struct EventDetailsTabView: View {
             return
         }
 
-        // Update the EKEvent with new data
+        // Update basic event data
         ekEvent.title = updatedEvent.title
         ekEvent.location = updatedEvent.location
         ekEvent.notes = updatedEvent.description
         ekEvent.startDate = updatedEvent.startDate
         ekEvent.endDate = updatedEvent.endDate
         ekEvent.isAllDay = updatedEvent.isAllDay
+
+        // Update calendar if changed
+        if let newCalendar = selectedCalendar, newCalendar.calendarIdentifier != ekEvent.calendar.calendarIdentifier {
+            ekEvent.calendar = newCalendar
+        }
+
+        // Update URL
+        if !eventURL.isEmpty, let url = URL(string: eventURL) {
+            ekEvent.url = url
+        } else {
+            ekEvent.url = nil
+        }
+
+        // Update recurrence rule
+        if let rule = recurrenceRule {
+            ekEvent.recurrenceRules = [rule]
+        } else {
+            ekEvent.recurrenceRules = nil
+        }
+
+        // Note: Attendees cannot be directly modified in EventKit
+        // They are managed by the calendar server
+        // We add them to notes for reference
+        if !attendees.isEmpty {
+            let attendeeNote = "\n\nAttendees: " + attendees.joined(separator: ", ")
+            if let existingNotes = ekEvent.notes {
+                // Remove old attendee list if present
+                let notesWithoutAttendees = existingNotes.components(separatedBy: "\n\nAttendees:").first ?? existingNotes
+                ekEvent.notes = notesWithoutAttendees + attendeeNote
+            } else {
+                ekEvent.notes = attendeeNote
+            }
+        }
+
+        // Update structured location
+        if let geoLocation = structuredLocation {
+            let structuredLoc = EKStructuredLocation(title: location)
+            structuredLoc.geoLocation = geoLocation
+            ekEvent.structuredLocation = structuredLoc
+        } else {
+            ekEvent.structuredLocation = nil
+        }
+
+        // Note: Attachments in EventKit are read-only
+        // They cannot be added or modified programmatically
 
         do {
             try calendarManager.eventStore.save(ekEvent, span: .thisEvent)
@@ -1237,6 +1725,265 @@ struct EventDetailsTabView: View {
         calendarManager.outlookCalendarManager?.updateEvent(outlookEvent) { success, error in
             completion(success, error)
         }
+    }
+
+    // MARK: - Helper Methods for New Fields
+
+    private func removeAttendee(_ attendee: String) {
+        attendees.removeAll { $0 == attendee }
+    }
+
+    private func removeAttachment(_ url: URL) {
+        attachmentURLs.removeAll { $0 == url }
+    }
+
+    private func geocodeLocation() {
+        // Convert the location string to coordinates using CLGeocoder
+        guard !location.isEmpty else {
+            errorMessage = "Please enter a location first"
+            return
+        }
+
+        let geocoder = CLGeocoder()
+        geocoder.geocodeAddressString(location) { placemarks, error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Failed to geocode location: \(error.localizedDescription)"
+                }
+                return
+            }
+
+            if let placemark = placemarks?.first, let location = placemark.location {
+                DispatchQueue.main.async {
+                    self.structuredLocation = location
+                }
+            } else {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Could not find coordinates for location"
+                }
+            }
+        }
+    }
+
+    private func openInMaps() {
+        guard let geoLocation = structuredLocation else { return }
+
+        let coordinate = geoLocation.coordinate
+        let placemark = MKPlacemark(coordinate: coordinate)
+        let mapItem = MKMapItem(placemark: placemark)
+        mapItem.name = location
+
+        // Open in Apple Maps - this allows Maps to use learned routes and provide traffic updates
+        mapItem.openInMaps(launchOptions: [
+            MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving
+        ])
+    }
+
+    private func recurrenceRuleDescription(_ rule: EKRecurrenceRule) -> String {
+        let frequency: String
+        switch rule.frequency {
+        case .daily:
+            frequency = "Daily"
+        case .weekly:
+            frequency = "Weekly"
+        case .monthly:
+            frequency = "Monthly"
+        case .yearly:
+            frequency = "Yearly"
+        @unknown default:
+            frequency = "Custom"
+        }
+
+        let interval = rule.interval
+        if interval == 1 {
+            return frequency
+        } else {
+            return "Every \(interval) \(frequency.lowercased())"
+        }
+    }
+}
+
+// MARK: - Map Location Helper
+
+/// Helper struct for Map annotations
+struct MapLocation: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+}
+
+// MARK: - Recurrence Picker View
+
+/// View for selecting recurrence rules for calendar events
+struct RecurrencePickerView: View {
+    @Binding var recurrenceRule: EKRecurrenceRule?
+    @ObservedObject var fontManager: FontManager
+
+    @Environment(\.dismiss) var dismiss
+
+    @State private var frequency: EKRecurrenceFrequency = .weekly
+    @State private var interval: Int = 1
+    @State private var selectedDays: Set<EKRecurrenceDayOfWeek> = []
+    @State private var endDate: Date?
+    @State private var useEndDate: Bool = false
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Frequency") {
+                    Picker("Repeat", selection: $frequency) {
+                        Text("Daily").tag(EKRecurrenceFrequency.daily)
+                        Text("Weekly").tag(EKRecurrenceFrequency.weekly)
+                        Text("Monthly").tag(EKRecurrenceFrequency.monthly)
+                        Text("Yearly").tag(EKRecurrenceFrequency.yearly)
+                    }
+                    .dynamicFont(size: 17, fontManager: fontManager)
+                    .pickerStyle(.menu)
+                }
+
+                Section("Interval") {
+                    Stepper("Every \(interval) \(frequencyLabel)", value: $interval, in: 1...99)
+                        .dynamicFont(size: 17, fontManager: fontManager)
+                }
+
+                if frequency == .weekly {
+                    Section("Repeat On") {
+                        ForEach(allWeekdays, id: \.self) { weekday in
+                            Button(action: {
+                                toggleWeekday(weekday)
+                            }) {
+                                HStack {
+                                    Text(weekdayName(weekday))
+                                        .dynamicFont(size: 17, fontManager: fontManager)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                    if selectedDays.contains(weekday) {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Section("End Repeat") {
+                    Toggle("Set End Date", isOn: $useEndDate)
+                        .dynamicFont(size: 17, fontManager: fontManager)
+
+                    if useEndDate {
+                        DatePicker("End Date", selection: Binding(
+                            get: { endDate ?? Date().addingTimeInterval(30*24*60*60) },
+                            set: { endDate = $0 }
+                        ), displayedComponents: .date)
+                        .dynamicFont(size: 17, fontManager: fontManager)
+                    }
+                }
+
+                Section {
+                    Button("Remove Repeat") {
+                        recurrenceRule = nil
+                        dismiss()
+                    }
+                    .dynamicFont(size: 17, fontManager: fontManager)
+                    .foregroundColor(.red)
+                }
+            }
+            .navigationTitle("Repeat")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .dynamicFont(size: 17, fontManager: fontManager)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        saveRecurrenceRule()
+                        dismiss()
+                    }
+                    .dynamicFont(size: 17, fontManager: fontManager)
+                }
+            }
+        }
+        .onAppear {
+            loadExistingRule()
+        }
+    }
+
+    private var frequencyLabel: String {
+        switch frequency {
+        case .daily: return interval == 1 ? "day" : "days"
+        case .weekly: return interval == 1 ? "week" : "weeks"
+        case .monthly: return interval == 1 ? "month" : "months"
+        case .yearly: return interval == 1 ? "year" : "years"
+        @unknown default: return "times"
+        }
+    }
+
+    private var allWeekdays: [EKRecurrenceDayOfWeek] {
+        return [
+            EKRecurrenceDayOfWeek(.sunday),
+            EKRecurrenceDayOfWeek(.monday),
+            EKRecurrenceDayOfWeek(.tuesday),
+            EKRecurrenceDayOfWeek(.wednesday),
+            EKRecurrenceDayOfWeek(.thursday),
+            EKRecurrenceDayOfWeek(.friday),
+            EKRecurrenceDayOfWeek(.saturday)
+        ]
+    }
+
+    private func weekdayName(_ weekday: EKRecurrenceDayOfWeek) -> String {
+        let dayNumber = weekday.dayOfTheWeek.rawValue
+        let formatter = DateFormatter()
+        return formatter.weekdaySymbols[dayNumber - 1]
+    }
+
+    private func toggleWeekday(_ weekday: EKRecurrenceDayOfWeek) {
+        if selectedDays.contains(weekday) {
+            selectedDays.remove(weekday)
+        } else {
+            selectedDays.insert(weekday)
+        }
+    }
+
+    private func loadExistingRule() {
+        guard let rule = recurrenceRule else { return }
+
+        frequency = rule.frequency
+        interval = rule.interval
+
+        if frequency == .weekly, let daysOfTheWeek = rule.daysOfTheWeek {
+            selectedDays = Set(daysOfTheWeek)
+        }
+
+        if let ruleEnd = rule.recurrenceEnd {
+            if let date = ruleEnd.endDate {
+                useEndDate = true
+                endDate = date
+            }
+        }
+    }
+
+    private func saveRecurrenceRule() {
+        var end: EKRecurrenceEnd?
+        if useEndDate, let date = endDate {
+            end = EKRecurrenceEnd(end: date)
+        }
+
+        let daysOfWeek = frequency == .weekly && !selectedDays.isEmpty ? Array(selectedDays) : nil
+
+        recurrenceRule = EKRecurrenceRule(
+            recurrenceWith: frequency,
+            interval: interval,
+            daysOfTheWeek: daysOfWeek,
+            daysOfTheMonth: nil,
+            monthsOfTheYear: nil,
+            weeksOfTheYear: nil,
+            daysOfTheYear: nil,
+            setPositions: nil,
+            end: end
+        )
     }
 }
 
@@ -1377,7 +2124,7 @@ struct AddTaskView: View {
 // MARK: - AI Suggestions View
 
 /// View for displaying and selecting AI-suggested tasks
-struct AISuggestionsView: View {
+struct AISuggestionsSheetView: View {
     let event: UnifiedEvent
     @ObservedObject var fontManager: FontManager
     var onSelect: ([EventTask]) -> Void
