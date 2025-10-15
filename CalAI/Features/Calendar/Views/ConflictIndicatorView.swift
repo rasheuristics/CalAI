@@ -240,7 +240,7 @@ struct ConflictListView: View {
                                 selectedConflict = conflict
                                 showingConflictResolution = true
                             }) {
-                                ConflictDetailsCard(conflict: conflict)
+                                ConflictDetailsCard(conflict: conflict, onDeleteEvent: nil)
                             }
                             .buttonStyle(.plain)
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -354,7 +354,7 @@ struct ConflictResolutionView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 // Conflict details
-                ConflictDetailsCard(conflict: conflict)
+                ConflictDetailsCard(conflict: conflict, onDeleteEvent: nil)
 
                 // AI Suggestions section
                 HStack {

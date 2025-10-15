@@ -3292,28 +3292,17 @@ struct ConflictListView: View {
                                 selectedConflict = conflict
                                 showingResolution = true
                             }) {
-                                ConflictDetailsCard(conflict: conflict)
+                                ConflictDetailsCard(
+                                    conflict: conflict,
+                                    onDeleteEvent: { event in
+                                        deleteEventFromConflict(event)
+                                    }
+                                )
                             }
                             .buttonStyle(.plain)
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                ForEach(conflict.conflictingEvents) { event in
-                                    Button(role: .destructive) {
-                                        deleteEventFromConflict(event)
-                                    } label: {
-                                        VStack(spacing: 4) {
-                                            Image(systemName: "trash.fill")
-                                                .font(.title3)
-                                            Text(event.title)
-                                                .font(.caption2)
-                                                .lineLimit(1)
-                                        }
-                                    }
-                                    .tint(.red)
-                                }
-                            }
                         }
                     }
                     .listStyle(.plain)
@@ -3535,7 +3524,7 @@ struct ConflictResolutionView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 // Conflict details
-                ConflictDetailsCard(conflict: conflict)
+                ConflictDetailsCard(conflict: conflict, onDeleteEvent: nil)
 
                 // AI Suggestions section
                 HStack {
@@ -3771,6 +3760,7 @@ fileprivate struct ResolutionSuggestionCard: View {
 /// Detailed card showing conflict information
 struct ConflictDetailsCard: View {
     let conflict: ScheduleConflict
+    let onDeleteEvent: ((UnifiedEvent) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -3818,7 +3808,7 @@ struct ConflictDetailsCard: View {
             // Conflicting events
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(conflict.conflictingEvents) { event in
-                    ConflictEventRow(event: event)
+                    ConflictEventRow(event: event, onDelete: onDeleteEvent)
                 }
             }
         }
@@ -3848,6 +3838,7 @@ struct ConflictDetailsCard: View {
 /// Individual event row within a conflict card
 struct ConflictEventRow: View {
     let event: UnifiedEvent
+    let onDelete: ((UnifiedEvent) -> Void)?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -3877,6 +3868,23 @@ struct ConflictEventRow: View {
             }
 
             Spacer()
+
+            // Delete button
+            if let onDelete = onDelete {
+                Button(action: {
+                    onDelete(event)
+                }) {
+                    Image(systemName: "trash.fill")
+                        .font(.caption)
+                        .foregroundColor(.white)
+                        .padding(8)
+                        .background(
+                            Circle()
+                                .fill(Color.red)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(8)
         .background(
