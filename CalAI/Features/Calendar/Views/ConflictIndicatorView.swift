@@ -213,24 +213,26 @@ struct ConflictListView: View {
 
     var body: some View {
         NavigationView {
-            ScrollView {
+            Group {
                 if calendarManager.detectedConflicts.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 60))
-                            .foregroundColor(.green)
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 60))
+                                .foregroundColor(.green)
 
-                        Text("No Conflicts Detected")
-                            .font(.title2)
-                            .fontWeight(.semibold)
+                            Text("No Conflicts Detected")
+                                .font(.title2)
+                                .fontWeight(.semibold)
 
-                        Text("All your events are scheduled without overlaps")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
+                            Text("All your events are scheduled without overlaps")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
                         ForEach(calendarManager.detectedConflicts) { conflict in
