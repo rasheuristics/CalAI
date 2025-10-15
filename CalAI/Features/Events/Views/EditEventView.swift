@@ -181,8 +181,16 @@ struct EditEventView: View {
                     // Refresh calendar data to reflect changes
                     calendarManager.refreshAllCalendars()
 
-                    // Re-detect conflicts to update conflict count and list
-                    calendarManager.detectAllConflicts()
+                    // Wait for calendar to refresh, then reload unified events and re-detect conflicts
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        print("🔍 Reloading unified events...")
+                        calendarManager.loadAllUnifiedEvents()
+
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            print("🔍 Re-detecting conflicts after update...")
+                            calendarManager.detectAllConflicts()
+                        }
+                    }
 
                     dismiss()
                 } else {
@@ -205,8 +213,16 @@ struct EditEventView: View {
                     // Refresh calendar data to reflect changes
                     calendarManager.refreshAllCalendars()
 
-                    // Re-detect conflicts to update conflict count and list
-                    calendarManager.detectAllConflicts()
+                    // Wait for calendar to refresh, then reload unified events and re-detect conflicts
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        print("🔍 Reloading unified events...")
+                        calendarManager.loadAllUnifiedEvents()
+
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            print("🔍 Re-detecting conflicts after deletion...")
+                            calendarManager.detectAllConflicts()
+                        }
+                    }
 
                     dismiss()
                 } else {
