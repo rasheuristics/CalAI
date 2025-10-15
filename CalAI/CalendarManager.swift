@@ -833,6 +833,7 @@ class CalendarManager: ObservableObject {
 
         // Add cached events ONLY if they don't already exist in fresh events
         // This handles offline scenarios where fresh events aren't available
+        let beforeCachedCount = allEvents.count
         for cachedEvent in cachedEvents {
             if !allEvents.contains(where: {
                 $0.id == cachedEvent.id &&
@@ -842,7 +843,8 @@ class CalendarManager: ObservableObject {
                 allEvents.append(cachedEvent)
             }
         }
-        print("💾 Added \(cachedEvents.count - (allEvents.count - iosEvents.count - (googleCalendarManager?.googleEvents.count ?? 0) - (outlookCalendarManager?.outlookEvents.count ?? 0))) cached events as fallback")
+        let addedCachedCount = allEvents.count - beforeCachedCount
+        print("💾 Added \(addedCachedCount) cached events as fallback")
 
         // Sort all events by start date
         unifiedEvents = allEvents.sorted { $0.startDate < $1.startDate }
