@@ -77,6 +77,19 @@ struct EditEventView: View {
                             .dynamicFont(size: 14, fontManager: fontManager)
                     }
                 }
+
+                Section {
+                    Button(action: deleteEvent) {
+                        HStack {
+                            Spacer()
+                            Text("Delete Event")
+                                .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+                                .foregroundColor(.red)
+                            Spacer()
+                        }
+                    }
+                    .disabled(isLoading)
+                }
             }
             .navigationTitle("Edit Event")
             .navigationBarTitleDisplayMode(.inline)
@@ -172,6 +185,62 @@ struct EditEventView: View {
                 }
             }
         }
+    }
+
+    private func deleteEvent() {
+        isLoading = true
+        errorMessage = nil
+
+        deleteEventFromCalendar(event) { success, error in
+            DispatchQueue.main.async {
+                isLoading = false
+
+                if success {
+                    // Refresh calendar data to reflect changes
+                    calendarManager.refreshAllCalendars()
+                    dismiss()
+                } else {
+                    errorMessage = error ?? "Failed to delete event"
+                }
+            }
+        }
+    }
+
+    private func deleteEventFromCalendar(_ eventToDelete: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
+        switch eventToDelete.source {
+        case .ios:
+            deleteIOSEvent(eventToDelete, completion: completion)
+        case .google:
+            deleteGoogleEvent(eventToDelete, completion: completion)
+        case .outlook:
+            deleteOutlookEvent(eventToDelete, completion: completion)
+        }
+    }
+
+    private func deleteIOSEvent(_ eventToDelete: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
+        guard let ekEvent = eventToDelete.originalEvent as? EKEvent else {
+            completion(false, "Could not find original iOS event")
+            return
+        }
+
+        do {
+            try calendarManager.eventStore.remove(ekEvent, span: .thisEvent)
+            completion(true, nil)
+        } catch {
+            completion(false, "Failed to delete event: \(error.localizedDescription)")
+        }
+    }
+
+    private func deleteGoogleEvent(_ eventToDelete: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
+        // Use CalendarManager's delete method
+        calendarManager.deleteEvent(eventToDelete)
+        completion(true, nil)
+    }
+
+    private func deleteOutlookEvent(_ eventToDelete: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
+        // Use CalendarManager's delete method
+        calendarManager.deleteEvent(eventToDelete)
+        completion(true, nil)
     }
 
     private func updateEventInCalendar(_ updatedEvent: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {

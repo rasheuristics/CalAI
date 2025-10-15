@@ -161,7 +161,7 @@ struct CalendarTabView: View {
             }
         }
         .sheet(isPresented: $showingConflictList) {
-            ConflictListView(calendarManager: calendarManager)
+            ConflictListView(calendarManager: calendarManager, fontManager: fontManager)
         }
         .onAppear {
             // Always reset to day view showing today
@@ -3258,6 +3258,7 @@ struct ConflictAlertBanner: View {
 /// Full-screen view showing all conflicts
 struct ConflictListView: View {
     @ObservedObject var calendarManager: CalendarManager
+    @ObservedObject var fontManager: FontManager
     @Environment(\.dismiss) var dismiss
     @State private var selectedConflict: ScheduleConflict?
     @State private var showingResolution = false
@@ -3318,7 +3319,7 @@ struct ConflictListView: View {
             }
             .sheet(isPresented: $showingResolution) {
                 if let conflict = selectedConflict {
-                    ConflictResolutionView(conflict: conflict, calendarManager: calendarManager)
+                    ConflictResolutionView(conflict: conflict, calendarManager: calendarManager, fontManager: fontManager)
                 }
             }
         }
@@ -3458,12 +3459,12 @@ fileprivate class LocalConflictResolutionAI {
 struct ConflictResolutionView: View {
     let conflict: ScheduleConflict
     @ObservedObject var calendarManager: CalendarManager
+    @ObservedObject var fontManager: FontManager
     @State private var resolutionSuggestions: [ResolutionSuggestion] = []
     @State private var isLoadingSuggestions = false
     @State private var showingEditEvent = false
     @State private var eventToEdit: UnifiedEvent?
     @Environment(\.dismiss) var dismiss
-    @EnvironmentObject var fontManager: FontManager
 
     private let conflictAI = LocalConflictResolutionAI()
 
