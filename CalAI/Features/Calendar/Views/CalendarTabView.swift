@@ -3262,6 +3262,8 @@ struct ConflictListView: View {
     @Environment(\.dismiss) var dismiss
     @State private var selectedConflict: ScheduleConflict?
     @State private var showingResolution = false
+    @State private var eventToDelete: UnifiedEvent?
+    @State private var showingDeleteConfirmation = false
 
     var body: some View {
         NavigationView {
@@ -3332,31 +3334,23 @@ struct ConflictListView: View {
                     ConflictResolutionView(conflict: conflict, calendarManager: calendarManager, fontManager: fontManager)
                 }
             }
+            .alert("Delete Event", isPresented: $showingDeleteConfirmation, presenting: eventToDelete) { event in
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    performDeleteEvent(event)
+                }
+            } message: { event in
+                Text("Delete '\(event.title)'? This will remove the event from your calendar and resolve the conflict.")
+            }
         }
     }
 
     // MARK: - Delete Event from Conflict
 
     private func deleteEventFromConflict(_ event: UnifiedEvent) {
-        print("🗑️ Swipe delete triggered for: \(event.title)")
-
-        // Show confirmation alert
-        let alert = UIAlertController(
-            title: "Delete Event",
-            message: "Delete '\(event.title)'? This will remove the event from your calendar and resolve the conflict.",
-            preferredStyle: .alert
-        )
-
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { _ in
-            self.performDeleteEvent(event)
-        })
-
-        // Present alert
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootViewController = windowScene.windows.first?.rootViewController {
-            rootViewController.present(alert, animated: true)
-        }
+        print("🗑️ Delete button tapped for: \(event.title)")
+        eventToDelete = event
+        showingDeleteConfirmation = true
     }
 
     private func performDeleteEvent(_ event: UnifiedEvent) {
