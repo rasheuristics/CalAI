@@ -208,6 +208,8 @@ struct ConflictEventRow: View {
 struct ConflictListView: View {
     @ObservedObject var calendarManager: CalendarManager
     @Environment(\.dismiss) var dismiss
+    @State private var selectedConflict: ScheduleConflict?
+    @State private var showingConflictResolution = false
 
     var body: some View {
         NavigationView {
@@ -232,29 +234,40 @@ struct ConflictListView: View {
                 } else {
                     List {
                         ForEach(calendarManager.detectedConflicts) { conflict in
-                            NavigationLink(destination: ConflictResolutionView(conflict: conflict, calendarManager: calendarManager)) {
+                            Button(action: {
+                                selectedConflict = conflict
+                                showingConflictResolution = true
+                            }) {
                                 ConflictDetailsCard(conflict: conflict)
                             }
+                            .buttonStyle(.plain)
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 ForEach(conflict.conflictingEvents) { event in
                                     Button(role: .destructive) {
                                         deleteEventFromConflict(event)
                                     } label: {
                                         VStack(spacing: 4) {
-                                            Image(systemName: "trash")
+                                            Image(systemName: "trash.fill")
+                                                .font(.title3)
                                             Text(event.title)
                                                 .font(.caption2)
                                                 .lineLimit(1)
                                         }
                                     }
+                                    .tint(.red)
                                 }
                             }
                         }
                     }
                     .listStyle(.plain)
+                    .sheet(isPresented: $showingConflictResolution) {
+                        if let conflict = selectedConflict {
+                            ConflictResolutionView(conflict: conflict, calendarManager: calendarManager)
+                        }
+                    }
                 }
             }
             .navigationTitle("Schedule Conflicts")
