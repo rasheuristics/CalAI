@@ -177,8 +177,13 @@ struct EditEventView: View {
                 isLoading = false
 
                 if success {
+                    print("✅ Event updated successfully, refreshing calendar and conflicts...")
                     // Refresh calendar data to reflect changes
                     calendarManager.refreshAllCalendars()
+
+                    // Re-detect conflicts to update conflict count and list
+                    calendarManager.detectAllConflicts()
+
                     dismiss()
                 } else {
                     errorMessage = error ?? "Failed to update event"
@@ -196,8 +201,13 @@ struct EditEventView: View {
                 isLoading = false
 
                 if success {
+                    print("✅ Event deleted successfully, refreshing calendar and conflicts...")
                     // Refresh calendar data to reflect changes
                     calendarManager.refreshAllCalendars()
+
+                    // Re-detect conflicts to update conflict count and list
+                    calendarManager.detectAllConflicts()
+
                     dismiss()
                 } else {
                     errorMessage = error ?? "Failed to delete event"
