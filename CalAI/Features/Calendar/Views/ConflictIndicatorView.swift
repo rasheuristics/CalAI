@@ -230,15 +230,31 @@ struct ConflictListView: View {
                     .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    LazyVStack(spacing: 16) {
+                    List {
                         ForEach(calendarManager.detectedConflicts) { conflict in
                             NavigationLink(destination: ConflictResolutionView(conflict: conflict, calendarManager: calendarManager)) {
                                 ConflictDetailsCard(conflict: conflict)
                             }
-                            .buttonStyle(PlainButtonStyle())
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                ForEach(conflict.conflictingEvents) { event in
+                                    Button(role: .destructive) {
+                                        deleteEventFromConflict(event)
+                                    } label: {
+                                        VStack(spacing: 4) {
+                                            Image(systemName: "trash")
+                                            Text(event.title)
+                                                .font(.caption2)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
-                    .padding()
+                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Schedule Conflicts")
@@ -261,6 +277,48 @@ struct ConflictListView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Delete Event from Conflict
+
+    private func deleteEventFromConflict(_ event: UnifiedEvent) {
+        print("🗑️ Swipe delete triggered for: \(event.title)")
+
+        // Show confirmation alert
+        let alert = UIAlertController(
+            title: "Delete Event",
+            message: "Delete '\(event.title)'? This will remove the event from your calendar and resolve the conflict.",
+            preferredStyle: .alert
+        )
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { _ in
+            self.performDeleteEvent(event)
+        })
+
+        // Present alert
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootViewController = windowScene.windows.first?.rootViewController {
+            rootViewController.present(alert, animated: true)
+        }
+    }
+
+    private func performDeleteEvent(_ event: UnifiedEvent) {
+        print("🗑️ Deleting event: \(event.title) (ID: \(event.id))")
+
+        // Delete the event (don't refresh unified events - we'll handle it manually)
+        calendarManager.deleteEvent(event, refreshUnifiedEvents: false)
+
+        // Immediately remove from unified events
+        calendarManager.unifiedEvents.removeAll { $0.id == event.id }
+        print("📊 Removed event from unified events. Count: \(calendarManager.unifiedEvents.count)")
+
+        // Re-detect conflicts with updated list
+        calendarManager.detectAllConflicts()
+        print("📊 Conflicts after deletion: \(calendarManager.detectedConflicts.count)")
+
+        // Haptic feedback
+        HapticManager.shared.success()
     }
 }
 
