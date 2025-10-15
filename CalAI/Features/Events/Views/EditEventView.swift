@@ -286,11 +286,9 @@ struct EditEventView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         dismiss()
 
-                        // Refresh calendar data after dismissing, without reloading unified events
-                        // (we've already removed the deleted event from the array)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            self.calendarManager.refreshAllCalendars()
-                        }
+                        // Note: We don't call refreshAllCalendars() here because it would
+                        // call loadAllUnifiedEvents() which would restore the deleted event!
+                        // The event is already removed from unifiedEvents and conflicts re-detected.
                     }
                 } else {
                     errorMessage = error ?? "Failed to delete event"

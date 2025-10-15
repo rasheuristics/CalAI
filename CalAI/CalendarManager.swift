@@ -2580,7 +2580,8 @@ class CalendarManager: ObservableObject {
 
     /// Detect all conflicts across all events in the current view
     func detectAllConflicts() {
-        print("🔍 Scanning all events for conflicts...")
+        print("🔍 ========== DETECTING CONFLICTS ==========")
+        print("🔍 Scanning \(unifiedEvents.count) events for conflicts...")
 
         var conflicts: [ScheduleConflict] = []
         var processedPairs = Set<String>()
@@ -2638,8 +2639,13 @@ class CalendarManager: ObservableObject {
 
         DispatchQueue.main.async {
             self.detectedConflicts = conflicts
+            print("🔍 ========== CONFLICT DETECTION COMPLETE ==========")
             if !conflicts.isEmpty {
                 print("🚨 Total conflicts found: \(conflicts.count)")
+                for conflict in conflicts {
+                    let eventTitles = conflict.conflictingEvents.map { $0.title }.joined(separator: " ↔ ")
+                    print("   - \(eventTitles)")
+                }
                 self.showConflictAlert = true
             } else {
                 print("✅ No conflicts detected")
