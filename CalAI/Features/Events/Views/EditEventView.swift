@@ -178,21 +178,30 @@ struct EditEventView: View {
 
                 if success {
                     print("✅ Event updated successfully, refreshing calendar and conflicts...")
-                    // Refresh calendar data to reflect changes
-                    calendarManager.refreshAllCalendars()
+                    print("📊 Current conflict count BEFORE refresh: \(calendarManager.detectedConflicts.count)")
 
-                    // Wait for calendar to refresh, then reload unified events and re-detect conflicts
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        print("🔍 Reloading unified events...")
-                        calendarManager.loadAllUnifiedEvents()
+                    // Dismiss first to return to conflict list
+                    dismiss()
 
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            print("🔍 Re-detecting conflicts after update...")
-                            calendarManager.detectAllConflicts()
+                    // Then refresh calendar data
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        print("🔄 Step 1: Refreshing all calendars...")
+                        calendarManager.refreshAllCalendars()
+
+                        // Wait for calendar to refresh, then reload unified events and re-detect conflicts
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            print("🔄 Step 2: Reloading unified events...")
+                            print("📊 Unified events count BEFORE reload: \(calendarManager.unifiedEvents.count)")
+                            calendarManager.loadAllUnifiedEvents()
+
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                print("📊 Unified events count AFTER reload: \(calendarManager.unifiedEvents.count)")
+                                print("🔄 Step 3: Re-detecting conflicts...")
+                                calendarManager.detectAllConflicts()
+                                print("📊 Current conflict count AFTER detect: \(calendarManager.detectedConflicts.count)")
+                            }
                         }
                     }
-
-                    dismiss()
                 } else {
                     errorMessage = error ?? "Failed to update event"
                 }
@@ -210,21 +219,30 @@ struct EditEventView: View {
 
                 if success {
                     print("✅ Event deleted successfully, refreshing calendar and conflicts...")
-                    // Refresh calendar data to reflect changes
-                    calendarManager.refreshAllCalendars()
+                    print("📊 Current conflict count BEFORE refresh: \(calendarManager.detectedConflicts.count)")
 
-                    // Wait for calendar to refresh, then reload unified events and re-detect conflicts
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        print("🔍 Reloading unified events...")
-                        calendarManager.loadAllUnifiedEvents()
+                    // Dismiss first to return to conflict list
+                    dismiss()
 
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            print("🔍 Re-detecting conflicts after deletion...")
-                            calendarManager.detectAllConflicts()
+                    // Then refresh calendar data
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        print("🔄 Step 1: Refreshing all calendars...")
+                        calendarManager.refreshAllCalendars()
+
+                        // Wait for calendar to refresh, then reload unified events and re-detect conflicts
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            print("🔄 Step 2: Reloading unified events...")
+                            print("📊 Unified events count BEFORE reload: \(calendarManager.unifiedEvents.count)")
+                            calendarManager.loadAllUnifiedEvents()
+
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                print("📊 Unified events count AFTER reload: \(calendarManager.unifiedEvents.count)")
+                                print("🔄 Step 3: Re-detecting conflicts...")
+                                calendarManager.detectAllConflicts()
+                                print("📊 Current conflict count AFTER detect: \(calendarManager.detectedConflicts.count)")
+                            }
                         }
                     }
-
-                    dismiss()
                 } else {
                     errorMessage = error ?? "Failed to delete event"
                 }
