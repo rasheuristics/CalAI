@@ -2,39 +2,75 @@ import SwiftUI
 
 struct MonthCalendarView: View {
     @Binding var selectedDate: Date
-    @State private var visibleMonthDate: Date = Date()
-
+    
+    @State private var topMonth: Date
+    
+    private var months: [Date]
     private let calendar = Calendar.current
+
+    init(selectedDate: Binding<Date>) {
+        self._selectedDate = selectedDate
+        self._topMonth = State(initialValue: Calendar.current.startOfMonth(for: selectedDate.wrappedValue) ?? Date())
+        
+        let today = calendar.startOfDay(for: Date())
+        var monthArray: [Date] = []
+        for i in -24...24 {
+            if let month = calendar.date(byAdding: .month, value: i, to: today) {
+                if let startOfMonth = calendar.startOfMonth(for: month) {
+                    monthArray.append(startOfMonth)
+                }
+            }
+        }
+        self.months = monthArray
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Fixed weekday header at top
             WeekdayHeader()
+                .padding(.horizontal, 8)
+                .background(Color(.systemBackground).opacity(0.8))
+                .zIndex(1)
 
-            // Scrollable date grid
             ScrollViewReader { proxy in
-                GeometryReader { geometry in
-                    ScrollView(.vertical, showsIndicators: true) {
-                        LazyVStack(spacing: 0) {
-                            ContinuousMonthGrid(
-                                selectedDate: $selectedDate,
-                                visibleMonthDate: $visibleMonthDate,
-                                scrollViewHeight: geometry.size.height
-                            )
+                ScrollView(.vertical) {
+                    LazyVStack(spacing: 30) {
+                        ForEach(months, id: \.self) { month in
+                            SingleMonthBlockView(monthDate: month, selectedDate: $selectedDate)
+                                .id(month)
+                                .background(
+                                    GeometryReader { geo -> Color in
+                                        let frame = geo.frame(in: .named("scroll"))
+                                        if frame.minY < 100 && frame.minY > -100 {
+                                            DispatchQueue.main.async {
+                                                self.topMonth = month
+                                            }
+                                        }
+                                        return Color.clear
+                                    }
+                                )
                         }
                     }
-                    .coordinateSpace(name: "scroll")
-                    .onChange(of: visibleMonthDate) { newMonth in
-                        // Update selectedDate to match the visible month
-                        if !calendar.isDate(selectedDate, equalTo: newMonth, toGranularity: .month) {
-                            selectedDate = newMonth
-                        }
+                    .padding(.top, 20)
+                }
+                .coordinateSpace(name: "scroll")
+                .onAppear {
+                    if let today = Calendar.current.startOfMonth(for: Date()) {
+                        proxy.scrollTo(today, anchor: .center)
                     }
-                    .onAppear {
-                        // Scroll to current month on appear
-                        let today = Date()
-                        let monthKey = calendar.component(.year, from: today) * 12 + calendar.component(.month, from: today)
-                        proxy.scrollTo(monthKey, anchor: .top)
+                }
+                .onChange(of: topMonth) { newMonth in
+                    if !calendar.isDate(selectedDate, equalTo: newMonth, toGranularity: .month) {
+                        selectedDate = newMonth
+                    }
+                }
+                .onChange(of: selectedDate) { newDate in
+                    // If the date is set to today (e.g., by the "Today" button), scroll to the current month.
+                    if calendar.isDateInToday(newDate) {
+                        if let currentMonth = calendar.startOfMonth(for: Date()) {
+                            withAnimation(.easeInOut(duration: 0.4)) {
+                                proxy.scrollTo(currentMonth, anchor: .center)
+                            }
+                        }
                     }
                 }
             }
@@ -42,394 +78,125 @@ struct MonthCalendarView: View {
     }
 }
 
-// Fixed weekday header
-struct WeekdayHeader: View {
-    private let calendar = Calendar.current
+// MARK: - Subviews
 
+private struct WeekdayHeader: View {
+    private let calendar = Calendar.current
     var body: some View {
         HStack(spacing: 0) {
             ForEach(calendar.shortWeekdaySymbols, id: \.self) { weekday in
                 Text(weekday)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.gray)
-                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
             }
         }
-        .background(Color(.systemGray6))
-        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
     }
 }
 
-// Continuous scrolling grid showing multiple months
-struct ContinuousMonthGrid: View {
-    @Binding var selectedDate: Date
-    @Binding var visibleMonthDate: Date
-    let scrollViewHeight: CGFloat
-
-    private let calendar = Calendar.current
-
-    var body: some View {
-        // Show 24 months: 12 past, current, 11 future
-        ForEach(-12...11, id: \.self) { monthOffset in
-            if let monthDate = calendar.date(byAdding: .month, value: monthOffset, to: Date()) {
-                GeometryReader { geo in
-                    MonthSection(
-                        monthDate: monthDate,
-                        selectedDate: $selectedDate
-                    )
-                    .onAppear {
-                        updateVisibleMonth(geo: geo, monthDate: monthDate)
-                    }
-                    .onChange(of: geo.frame(in: .named("scroll")).minY) { _ in
-                        updateVisibleMonth(geo: geo, monthDate: monthDate)
-                    }
-                }
-                .frame(minHeight: 300)
-                .id(calendar.component(.year, from: monthDate) * 12 + calendar.component(.month, from: monthDate))
-            }
-        }
-    }
-
-    private func updateVisibleMonth(geo: GeometryProxy, monthDate: Date) {
-        let frame = geo.frame(in: .named("scroll"))
-        // Check if this month section is visible at the top of the scroll view
-        // (within the first 100 points from the top, below the header)
-        if frame.minY < 100 && frame.maxY > 50 {
-            visibleMonthDate = monthDate
-        }
-    }
-}
-
-// Single month section with month label and dates
-struct MonthSection: View {
+private struct SingleMonthBlockView: View {
     let monthDate: Date
     @Binding var selectedDate: Date
-
+    
     private let calendar = Calendar.current
+    private let monthFormatter: DateFormatter
+    
+    private var days: [Date] { calendar.daysInMonth(for: monthDate) }
+    private var startingSpaces: Int { calendar.firstWeekdayOffset(for: monthDate) }
+    private let columns = Array(repeating: GridItem(.flexible()), count: 7)
+
+    init(monthDate: Date, selectedDate: Binding<Date>) {
+        self.monthDate = monthDate
+        self._selectedDate = selectedDate
+        self.monthFormatter = DateFormatter()
+        self.monthFormatter.dateFormat = "MMM"
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Month label row (grid-based to align with day 1 below)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
-                // Empty cells before the month label
-                ForEach(0..<firstWeekdayOffset, id: \.self) { _ in
-                    Color.clear
-                        .frame(height: 50)
+        VStack(spacing: 10) {
+            // Grid for the month identifier
+            LazyVGrid(columns: columns) {
+                ForEach(0..<startingSpaces, id: \.self) { _ in
+                    Color.clear.frame(height: 1) // Occupy space but be invisible
                 }
-
-                // Month label positioned above day 1
-                Text(monthAbbreviation)
-                    .font(.system(size: 20, weight: .bold))
+                Text(monthFormatter.string(from: monthDate))
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundColor(.primary)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-
-                // Fill remaining cells in the month label row
-                ForEach((firstWeekdayOffset + 1)..<7, id: \.self) { _ in
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            
+            // Grid for the days of the month
+            LazyVGrid(columns: columns, spacing: 10) {
+                ForEach(0..<startingSpaces, id: \.self) { _ in
                     Color.clear
-                        .frame(height: 50)
                 }
-            }
-            .frame(height: 50)
-            .padding(.horizontal, 8)
-
-            // Date grid for this month
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
-                // Empty cells before first day of month (to align with weekday)
-                ForEach(0..<firstWeekdayOffset, id: \.self) { _ in
-                    Color.clear
-                        .frame(height: 50)
+                ForEach(days, id: \.self) { day in
+                    SimpleMonthDayCell(date: day, selectedDate: $selectedDate)
                 }
-
-                // Actual date cells (day 1 appears in column matching its weekday, directly below month label)
-                ForEach(datesInMonth, id: \.self) { date in
-                    SimpleMonthDayCell(date: date, selectedDate: $selectedDate)
-                }
-            }
-            .padding(.horizontal, 8)
-        }
-    }
-
-    private var monthAbbreviation: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM"
-        return formatter.string(from: monthDate)
-    }
-
-    private var datesInMonth: [Date] {
-        guard let monthInterval = calendar.dateInterval(of: .month, for: monthDate) else {
-            return []
-        }
-
-        var dates: [Date] = []
-        var date = monthInterval.start
-
-        while date < monthInterval.end {
-            dates.append(date)
-            date = calendar.date(byAdding: .day, value: 1, to: date) ?? date
-        }
-
-        return dates
-    }
-
-    private var firstWeekdayOffset: Int {
-        guard let monthInterval = calendar.dateInterval(of: .month, for: monthDate) else {
-            return 0
-        }
-
-        let firstDayOfMonth = monthInterval.start
-        let weekday = calendar.component(.weekday, from: firstDayOfMonth)
-        // weekday is 1-based (Sunday = 1), subtract 1 for 0-based offset
-        return weekday - 1
-    }
-}
-
-// Simple day cell for continuous month view
-struct SimpleMonthDayCell: View {
-    let date: Date
-    @Binding var selectedDate: Date
-
-    private let calendar = Calendar.current
-
-    var body: some View {
-        Text("\(calendar.component(.day, from: date))")
-            .font(.system(size: 16))
-            .fontWeight(isToday ? .bold : isCurrentWeek ? .semibold : .regular)
-            .foregroundColor(isToday ? .white : .primary)
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .background(
-                ZStack {
-                    // Solid blue circle for today
-                    if isToday {
-                        Circle()
-                            .fill(Color.blue)
-                            .frame(width: 32, height: 32)
-                    }
-                    // Outlined blue circle for current week (not today)
-                    else if isCurrentWeek {
-                        Circle()
-                            .strokeBorder(Color.blue, lineWidth: 1.5)
-                            .frame(width: 32, height: 32)
-                    }
-
-                    // Light blue background for selected date (if not today)
-                    if isSelected && !isToday {
-                        Circle()
-                            .fill(Color.blue.opacity(0.1))
-                            .frame(width: 32, height: 32)
-                    }
-                }
-            )
-            .contentShape(Rectangle())
-            .onTapGesture {
-                selectedDate = date
-            }
-    }
-
-    private var isToday: Bool {
-        calendar.isDateInToday(date)
-    }
-
-    private var isCurrentWeek: Bool {
-        let today = Date()
-        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: today) else {
-            return false
-        }
-        return date >= weekInterval.start && date < weekInterval.end
-    }
-
-    private var isSelected: Bool {
-        calendar.isDate(date, inSameDayAs: selectedDate)
-    }
-}
-
-// Legacy views kept for compatibility
-struct FiveWeekBlock: View {
-    @Binding var selectedDate: Date
-    let baseDate: Date
-
-    private let calendar = Calendar.current
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Days of week header
-            HStack(spacing: 0) {
-                ForEach(weekdayHeaders, id: \.self) { weekday in
-                    Text(weekday)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.gray)
-                        .frame(maxWidth: .infinity, minHeight: 40)
-                }
-            }
-            .background(Color.gray.opacity(0.1))
-
-            // 5 weeks grid
-            ForEach(0..<5, id: \.self) { weekIndex in
-                WeekRow(
-                    selectedDate: $selectedDate,
-                    weekStart: getWeekStart(offset: weekIndex)
-                )
             }
         }
         .padding(.horizontal, 8)
     }
-
-    private var weekdayHeaders: [String] {
-        calendar.shortWeekdaySymbols
-    }
-
-    private func getWeekStart(offset: Int) -> Date {
-        calendar.date(byAdding: .weekOfYear, value: offset, to: baseDate) ?? baseDate
-    }
 }
 
-struct WeekRow: View {
-    @Binding var selectedDate: Date
-    let weekStart: Date
-
-    private let calendar = Calendar.current
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(0..<7, id: \.self) { dayIndex in
-                if let date = calendar.date(byAdding: .day, value: dayIndex, to: weekStart) {
-                    DayCell(date: date, selectedDate: $selectedDate)
-                }
-            }
-        }
-    }
-}
-
-struct DayCell: View {
+private struct SimpleMonthDayCell: View {
     let date: Date
     @Binding var selectedDate: Date
 
     private let calendar = Calendar.current
+    private var isToday: Bool { calendar.isDateInToday(date) }
+    private var isSelected: Bool { calendar.isDate(date, inSameDayAs: selectedDate) }
 
     var body: some View {
         Text("\(calendar.component(.day, from: date))")
-            .font(.system(size: 16))
-            .fontWeight(isToday ? .bold : isCurrentWeek ? .semibold : .regular)
-            .foregroundColor(isToday ? .white : .primary)
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .background(isToday ? Color.blue : Color.clear)
-            .overlay(
-                Circle()
-                    .strokeBorder(isCurrentWeek && !isToday ? Color.blue : Color.clear, lineWidth: 1.5)
-                    .padding(12)
-            )
-            .background(
-                calendar.isDate(date, inSameDayAs: selectedDate) && !isToday ?
-                Color.blue.opacity(0.1) : Color.clear
-            )
-            .onTapGesture {
-                selectedDate = date
-            }
+            .font(.system(size: 18))
+            .fontWeight(isToday ? .bold : .regular)
+            .foregroundColor(textColor)
+            .frame(maxWidth: .infinity, minHeight: 36)
+            .background(backgroundCircle)
+            .contentShape(Rectangle())
+            .onTapGesture { selectedDate = date }
     }
-
-    private var isToday: Bool {
-        calendar.isDateInToday(date)
+    
+    private var textColor: Color {
+        if isSelected { return .white }
+        if isToday { return .white }
+        return .primary
     }
-
-    private var isCurrentWeek: Bool {
-        let today = Date()
-        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: today) else {
-            return false
+    
+    @ViewBuilder
+    private var backgroundCircle: some View {
+        if isSelected {
+            Circle().fill(Color.blue)
+        } else if isToday {
+            Circle().fill(Color.red)
         }
-        return date >= weekInterval.start && date < weekInterval.end
     }
 }
 
-struct SingleMonthView: View {
-    @Binding var selectedDate: Date
-    let displayDate: Date
+// MARK: - Calendar Helpers
 
-    private let calendar = Calendar.current
-    private let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter
-    }()
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Month/Year header
-            Text(dateFormatter.string(from: displayDate))
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.gray)
-                .padding(.bottom, 8)
-
-            // Days of week header
-            HStack(spacing: 0) {
-                ForEach(weekdayHeaders, id: \.self) { weekday in
-                    Text(weekday)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.gray)
-                        .frame(maxWidth: .infinity, minHeight: 40)
-                }
-            }
-            .background(Color.gray.opacity(0.1))
-
-            // Calendar grid
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
-                // Add empty cells for the days before the first day of the month
-                ForEach(0..<firstWeekdayOffset, id: \.self) { _ in
-                    Text("")
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-
-                ForEach(calendarDays, id: \.self) { date in
-                    Text("\(calendar.component(.day, from: date))")
-                        .font(.system(size: 16))
-                        .foregroundColor(.primary)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(
-                            calendar.isDate(date, inSameDayAs: selectedDate) ?
-                            Color.blue.opacity(0.3) : Color.clear
-                        )
-                        .onTapGesture {
-                            selectedDate = date
-                        }
-                }
-            }
-        }
-    }
-
-    private var weekdayHeaders: [String] {
-        let symbols = calendar.shortWeekdaySymbols
-        return symbols
-    }
-
-    private var calendarDays: [Date] {
-        guard let monthInterval = calendar.dateInterval(of: .month, for: displayDate) else {
+fileprivate extension Calendar {
+    func daysInMonth(for date: Date) -> [Date] {
+        guard let monthInterval = dateInterval(of: .month, for: date),
+              let days = dateComponents([.day], from: monthInterval.start, to: monthInterval.end).day else {
             return []
         }
-
-        var days: [Date] = []
-        var date = monthInterval.start
-
-        while date < monthInterval.end {
-            days.append(date)
-            date = calendar.date(byAdding: .day, value: 1, to: date) ?? date
+        var dates: [Date] = []
+        for dayOffset in 0..<days {
+            if let newDate = self.date(byAdding: .day, value: dayOffset, to: monthInterval.start) {
+                dates.append(newDate)
+            }
         }
-
-        return days
+        return dates
     }
-
-    private func isDateInMonth(_ date: Date) -> Bool {
-        calendar.isDate(date, equalTo: displayDate, toGranularity: .month)
-    }
-
-    private var firstWeekdayOffset: Int {
-        guard let monthInterval = calendar.dateInterval(of: .month, for: displayDate) else {
+    
+    func firstWeekdayOffset(for date: Date) -> Int {
+        guard let firstDayOfMonth = startOfMonth(for: date) else {
             return 0
         }
-
-        let firstDayOfMonth = monthInterval.start
-        let weekday = calendar.component(.weekday, from: firstDayOfMonth)
-        // weekday is 1-based (Sunday = 1), so we subtract 1 to get 0-based offset
-        return weekday - 1
+        let weekday = component(.weekday, from: firstDayOfMonth)
+        return (weekday - firstWeekday + 7) % 7
     }
 }
-
-// MonthDayCell moved to CalendarTabView.swift to match exact design requirements

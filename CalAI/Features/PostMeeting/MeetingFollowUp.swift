@@ -11,8 +11,8 @@ struct MeetingFollowUp: Identifiable {
     let meetingDate: Date
 
     let summary: MeetingSummary
-    let actionItems: [ActionItem]
-    let decisions: [Decision]
+    var actionItems: [ActionItem]
+    var decisions: [Decision]
     let followUpMeetings: [FollowUpMeeting]
     let participants: [String]
 

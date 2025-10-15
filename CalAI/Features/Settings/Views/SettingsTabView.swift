@@ -182,6 +182,15 @@ struct SettingsTabView: View {
                         }
                         .padding(.vertical, 8)
                     }
+
+                    NavigationLink(destination: AISettingsView()) {
+                        HStack {
+                            Image(systemName: "waveform.circle")
+                                .foregroundColor(.purple)
+                            Text("Voice & Output Settings")
+                                .dynamicFont(size: 16, fontManager: fontManager)
+                        }
+                    }
                 }
 
                 Section("App Permissions") {

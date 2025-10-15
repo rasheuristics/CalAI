@@ -1,432 +1,679 @@
 import Foundation
 import UserNotifications
 import CoreLocation
-import UIKit
+import MapKit
 
+// MARK: - Smart Notification Models
+
+/// Represents an intelligent notification with context awareness
+struct SmartNotification: Identifiable {
+    let id: UUID
+    let eventId: String
+    let eventTitle: String
+    let eventStartDate: Date
+    let eventLocation: String?
+    let notificationType: NotificationType
+    let scheduledDate: Date
+    let context: NotificationContext
+    var isDelivered: Bool = false
+    var isActedUpon: Bool = false
+
+    init(eventId: String, eventTitle: String, eventStartDate: Date, eventLocation: String?, type: NotificationType, scheduledDate: Date, context: NotificationContext) {
+        self.id = UUID()
+        self.eventId = eventId
+        self.eventTitle = eventTitle
+        self.eventStartDate = eventStartDate
+        self.eventLocation = eventLocation
+        self.notificationType = type
+        self.scheduledDate = scheduledDate
+        self.context = context
+    }
+}
+
+/// Types of smart notifications
+enum NotificationType: String, Codable {
+    case standard = "Standard Reminder"
+    case departureAlert = "Time to Leave"
+    case trafficWarning = "Traffic Alert"
+    case weatherAlert = "Weather Advisory"
+    case meetingPrep = "Meeting Preparation"
+    case locationReminder = "Location-Based Reminder"
+
+    var icon: String {
+        switch self {
+        case .standard: return "bell.fill"
+        case .departureAlert: return "car.fill"
+        case .trafficWarning: return "exclamationmark.triangle.fill"
+        case .weatherAlert: return "cloud.rain.fill"
+        case .meetingPrep: return "doc.text.fill"
+        case .locationReminder: return "location.fill"
+        }
+    }
+
+    var priority: Int {
+        switch self {
+        case .trafficWarning: return 5
+        case .departureAlert: return 4
+        case .weatherAlert: return 3
+        case .meetingPrep: return 2
+        case .locationReminder: return 2
+        case .standard: return 1
+        }
+    }
+}
+
+/// Context information for intelligent notifications
+struct NotificationContext: Codable {
+    var currentLocation: LocationInfo?
+    var eventLocation: LocationInfo?
+    var travelTime: TimeInterval?
+    var trafficCondition: TrafficCondition?
+    var weatherCondition: WeatherCondition?
+    var meetingPrepInfo: MeetingPrepInfo?
+
+    struct LocationInfo: Codable {
+        let latitude: Double
+        let longitude: Double
+        let address: String?
+
+        init(coordinate: CLLocationCoordinate2D, address: String? = nil) {
+            self.latitude = coordinate.latitude
+            self.longitude = coordinate.longitude
+            self.address = address
+        }
+
+        var coordinate: CLLocationCoordinate2D {
+            CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+        }
+    }
+
+    struct TrafficCondition: Codable {
+        let severity: TrafficSeverity
+        let expectedDelay: TimeInterval
+        let suggestedDepartureTime: Date?
+        let route: String?
+
+        enum TrafficSeverity: String, Codable {
+            case clear = "Clear"
+            case light = "Light"
+            case moderate = "Moderate"
+            case heavy = "Heavy"
+            case severe = "Severe"
+
+            var color: String {
+                switch self {
+                case .clear: return "green"
+                case .light: return "yellow"
+                case .moderate: return "orange"
+                case .heavy: return "red"
+                case .severe: return "purple"
+                }
+            }
+        }
+    }
+
+    struct WeatherCondition: Codable {
+        let condition: String
+        let temperature: Double
+        let precipitation: Double
+        let advisory: String?
+
+        var shouldAlert: Bool {
+            return precipitation > 50 || temperature < 0 || temperature > 35 || condition.lowercased().contains("storm")
+        }
+
+        var icon: String {
+            let lowercased = condition.lowercased()
+            if lowercased.contains("rain") {
+                return "cloud.rain.fill"
+            } else if lowercased.contains("snow") {
+                return "snow"
+            } else if lowercased.contains("cloud") {
+                return "cloud.fill"
+            } else if lowercased.contains("sun") || lowercased.contains("clear") {
+                return "sun.max.fill"
+            } else {
+                return "cloud.sun.fill"
+            }
+        }
+    }
+
+    struct MeetingPrepInfo: Codable {
+        let participants: [String]
+        let hasAgenda: Bool
+        let hasDocuments: Bool
+        let suggestedPrepTime: TimeInterval
+        let prepItems: [String]
+    }
+}
+
+/// User preferences for smart notifications
+struct SmartNotificationPreferences: Codable {
+    var isEnabled: Bool = true
+    var enableLocationAwareness: Bool = true
+    var enableTrafficAlerts: Bool = true
+    var enableWeatherAlerts: Bool = true
+    var enableMeetingPrep: Bool = true
+
+    var standardReminderMinutes: Int = 15
+    var meetingPrepMinutes: Int = 30
+    var departureBufferMinutes: Int = 10
+
+    var minimumTrafficDelayMinutes: Int = 10
+    var weatherAlertPrecipitationThreshold: Double = 60
+
+    var soundEnabled: Bool = true
+    var criticalAlertsEnabled: Bool = false
+
+    static let userDefaultsKey = "SmartNotificationPreferences"
+
+    static func load() -> SmartNotificationPreferences {
+        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
+              let prefs = try? JSONDecoder().decode(SmartNotificationPreferences.self, from: data) else {
+            return SmartNotificationPreferences()
+        }
+        return prefs
+    }
+
+    func save() {
+        if let data = try? JSONEncoder().encode(self) {
+            UserDefaults.standard.set(data, forKey: Self.userDefaultsKey)
+        }
+    }
+}
+
+// MARK: - Smart Notification Manager
+
+/// Manages intelligent, context-aware notifications for calendar events
 class SmartNotificationManager: NSObject, ObservableObject {
     static let shared = SmartNotificationManager()
 
-    private let notificationCenter = UNUserNotificationCenter.current()
-    private let analyzer = MeetingAnalyzer.shared
-    private let travelManager = TravelTimeManager.shared
-
+    @Published var preferences = SmartNotificationPreferences.load()
+    @Published var scheduledNotifications: [SmartNotification] = []
+    @Published var hasNotificationPermission = false
     @Published var isAuthorized = false
-    @Published var preferences = NotificationPreferences.load()
 
-    private override init() {
+    private let notificationCenter = UNUserNotificationCenter.current()
+    private let locationManager = CLLocationManager()
+    private var currentLocation: CLLocation?
+
+    override private init() {
         super.init()
-        notificationCenter.delegate = self
-        checkAuthorization()
+        locationManager.delegate = self
+        checkNotificationPermission()
+        requestLocationPermission()
     }
 
     // MARK: - Permission Management
 
-    /// Request notification permission with time-sensitive capability
-    func requestNotificationPermission(completion: @escaping (Bool) -> Void) {
-        let options: UNAuthorizationOptions = [.alert, .sound, .badge, .timeSensitive]
-
-        notificationCenter.requestAuthorization(options: options) { granted, error in
+    func checkNotificationPermission() {
+        notificationCenter.getNotificationSettings { [weak self] settings in
             DispatchQueue.main.async {
-                self.isAuthorized = granted
-
-                if let error = error {
-                    print("❌ Notification permission error: \(error.localizedDescription)")
-                    completion(false)
-                    return
-                }
-
-                if granted {
-                    print("✅ Time-sensitive notification permission granted")
-                    completion(true)
-                } else {
-                    print("❌ Notification permission denied")
-                    completion(false)
-                }
+                let authorized = settings.authorizationStatus == .authorized
+                self?.hasNotificationPermission = authorized
+                self?.isAuthorized = authorized
             }
         }
     }
 
-    /// Check current authorization status
+    /// Alias for checkNotificationPermission for compatibility
     func checkAuthorization() {
-        notificationCenter.getNotificationSettings { settings in
+        checkNotificationPermission()
+    }
+
+    func requestNotificationPermission(completion: @escaping (Bool) -> Void) {
+        notificationCenter.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, error in
             DispatchQueue.main.async {
-                self.isAuthorized = settings.authorizationStatus == .authorized
-                print("🔵 Notification authorization status: \(settings.authorizationStatus.rawValue)")
+                self?.hasNotificationPermission = granted
+                self?.isAuthorized = granted
+                if let error = error {
+                    print("❌ Notification permission error: \(error)")
+                }
+                completion(granted)
             }
         }
+    }
+
+    private func requestLocationPermission() {
+        locationManager.requestWhenInUseAuthorization()
+        locationManager.startUpdatingLocation()
     }
 
     // MARK: - Smart Notification Scheduling
 
-    /// Schedule a smart notification for a meeting
-    func scheduleMeetingNotification(
-        title: String,
-        location: String?,
-        notes: String?,
-        startDate: Date,
-        endDate: Date
-    ) {
-        guard preferences.enableSmartNotifications else {
-            print("⚠️ Smart notifications disabled in preferences")
+    /// Schedule smart notifications for an event
+    func scheduleSmartNotifications(for event: UnifiedEvent) {
+        guard preferences.isEnabled, hasNotificationPermission else {
+            print("⚠️ Smart notifications disabled or no permission")
             return
         }
 
-        // Analyze the meeting
-        let meetingInfo = analyzer.analyze(
-            title: title,
-            location: location,
-            notes: notes,
-            startDate: startDate,
-            endDate: endDate
-        )
+        print("📅 Scheduling smart notifications for: \(event.title)")
 
-        print("🔵 Scheduling notification for '\(meetingInfo.title)'")
-        print("   Type: \(meetingInfo.type)")
+        // Schedule different types of notifications based on event characteristics
+        var notifications: [SmartNotification] = []
 
-        // Schedule universal 15-minute reminder if enabled
-        if preferences.enable15MinuteReminder {
-            schedule15MinuteReminder(meetingInfo: meetingInfo)
+        // 1. Standard reminder
+        if let standardNotif = createStandardReminder(for: event) {
+            notifications.append(standardNotif)
         }
 
-        // Schedule based on meeting type
-        switch meetingInfo.type {
-        case .physical(let location):
-            schedulePhysicalMeetingNotification(meetingInfo: meetingInfo, location: location)
-
-        case .virtual(let link, let platform):
-            scheduleVirtualMeetingNotification(meetingInfo: meetingInfo, link: link, platform: platform)
-
-        case .hybrid(let location, let link, let platform):
-            // For hybrid, schedule both and use the earlier notification time
-            scheduleHybridMeetingNotification(meetingInfo: meetingInfo, location: location, link: link, platform: platform)
-
-        case .unknown:
-            // Fall back to standard reminder
-            scheduleStandardNotification(meetingInfo: meetingInfo)
-        }
-    }
-
-    // MARK: - Universal 15-Minute Reminder
-
-    private func schedule15MinuteReminder(meetingInfo: MeetingInfo) {
-        let notificationTime = meetingInfo.startDate.addingTimeInterval(-15 * 60)
-
-        createAndScheduleNotification(
-            meetingInfo: meetingInfo,
-            notificationTime: notificationTime,
-            title: "Meeting in 15 Minutes",
-            body: "'\(meetingInfo.title)' starts in 15 minutes.",
-            categoryIdentifier: "FIFTEEN_MINUTE_REMINDER",
-            userInfo: ["meetingType": "15min_reminder"],
-            identifier: "15min_\(meetingInfo.title)_\(meetingInfo.startDate.timeIntervalSince1970)"
-        )
-    }
-
-    // MARK: - Physical Meeting Notifications
-
-    private func schedulePhysicalMeetingNotification(meetingInfo: MeetingInfo, location: String) {
-        guard preferences.enableTravelTimeCalculation && preferences.enableTravelTimeReminder else {
-            // If travel time calculation is disabled, use standard notification
-            scheduleStandardNotification(meetingInfo: meetingInfo)
-            return
-        }
-
-        // Geocode the location
-        analyzer.geocodeLocation(location) { [weak self] coordinate in
-            guard let self = self, let coordinate = coordinate else {
-                print("⚠️ Could not geocode location, using standard notification")
-                self?.scheduleStandardNotification(meetingInfo: meetingInfo)
-                return
+        // 2. Meeting prep reminder (if enabled and event has location/participants)
+        if preferences.enableMeetingPrep, !event.isAllDay {
+            if let prepNotif = createMeetingPrepReminder(for: event) {
+                notifications.append(prepNotif)
             }
+        }
 
-            // Calculate departure time
-            self.travelManager.calculateDepartureTime(
-                meetingStartTime: meetingInfo.startDate,
-                destinationCoordinate: coordinate,
-                bufferMinutes: self.preferences.physicalMeetingBufferMinutes
-            ) { departureTime, travelTime in
-                guard let departureTime = departureTime,
-                      let travelTime = travelTime else {
-                    print("⚠️ Could not calculate departure time, using standard notification")
-                    self.scheduleStandardNotification(meetingInfo: meetingInfo)
-                    return
+        // 3. Location/traffic-aware departure alert
+        if preferences.enableTrafficAlerts, let location = event.location, !location.isEmpty, !event.isAllDay {
+            Task {
+                if let departureNotif = await createDepartureAlert(for: event, location: location) {
+                    await MainActor.run {
+                        notifications.append(departureNotif)
+                    }
+                }
+            }
+        }
+
+        // 4. Weather alert (if outdoor event or has location)
+        if preferences.enableWeatherAlerts, let location = event.location, !location.isEmpty {
+            Task {
+                if let weatherNotif = await createWeatherAlert(for: event, location: location) {
+                    await MainActor.run {
+                        notifications.append(weatherNotif)
+                    }
+                }
+            }
+        }
+
+        // Deliver notifications
+        for notification in notifications {
+            deliverNotification(notification)
+        }
+
+        scheduledNotifications.append(contentsOf: notifications)
+    }
+
+    // MARK: - Notification Creators
+
+    private func createStandardReminder(for event: UnifiedEvent) -> SmartNotification? {
+        let reminderTime = event.startDate.addingTimeInterval(-Double(preferences.standardReminderMinutes * 60))
+
+        guard reminderTime > Date() else {
+            print("⏰ Event starts too soon for standard reminder")
+            return nil
+        }
+
+        let context = NotificationContext()
+
+        return SmartNotification(
+            eventId: event.id,
+            eventTitle: event.title,
+            eventStartDate: event.startDate,
+            eventLocation: event.location,
+            type: .standard,
+            scheduledDate: reminderTime,
+            context: context
+        )
+    }
+
+    private func createMeetingPrepReminder(for event: UnifiedEvent) -> SmartNotification? {
+        let prepTime = event.startDate.addingTimeInterval(-Double(preferences.meetingPrepMinutes * 60))
+
+        guard prepTime > Date() else {
+            print("⏰ Event starts too soon for prep reminder")
+            return nil
+        }
+
+        // Create meeting prep info
+        let prepInfo = NotificationContext.MeetingPrepInfo(
+            participants: [], // Would be populated from event attendees
+            hasAgenda: false,
+            hasDocuments: false,
+            suggestedPrepTime: Double(preferences.meetingPrepMinutes * 60),
+            prepItems: generatePrepItems(for: event)
+        )
+
+        var context = NotificationContext()
+        context.meetingPrepInfo = prepInfo
+
+        return SmartNotification(
+            eventId: event.id,
+            eventTitle: event.title,
+            eventStartDate: event.startDate,
+            eventLocation: event.location,
+            type: .meetingPrep,
+            scheduledDate: prepTime,
+            context: context
+        )
+    }
+
+    private func createDepartureAlert(for event: UnifiedEvent, location: String) async -> SmartNotification? {
+        guard let currentLoc = currentLocation else {
+            print("📍 Current location unavailable")
+            return nil
+        }
+
+        // Geocode event location
+        guard let eventCoordinate = await geocodeLocation(location) else {
+            print("📍 Unable to geocode event location: \(location)")
+            return nil
+        }
+
+        // Calculate travel time with traffic
+        let travelInfo = await calculateTravelTime(
+            from: currentLoc.coordinate,
+            to: eventCoordinate
+        )
+
+        // Add buffer time
+        let bufferTime = Double(preferences.departureBufferMinutes) * 60.0
+        let totalTravelTime = travelInfo.travelTime + bufferTime
+        let departureTime = event.startDate.addingTimeInterval(-totalTravelTime)
+
+        guard departureTime > Date() else {
+            print("⏰ Departure time has passed")
+            return nil
+        }
+
+        var context = NotificationContext()
+        context.currentLocation = NotificationContext.LocationInfo(coordinate: currentLoc.coordinate)
+        context.eventLocation = NotificationContext.LocationInfo(coordinate: eventCoordinate, address: location)
+        context.travelTime = totalTravelTime
+        context.trafficCondition = travelInfo.traffic
+
+        let notifType: NotificationType = (travelInfo.traffic?.severity ?? .clear) == .clear ? .departureAlert : .trafficWarning
+
+        return SmartNotification(
+            eventId: event.id,
+            eventTitle: event.title,
+            eventStartDate: event.startDate,
+            eventLocation: event.location,
+            type: notifType,
+            scheduledDate: departureTime,
+            context: context
+        )
+    }
+
+    private func createWeatherAlert(for event: UnifiedEvent, location: String) async -> SmartNotification? {
+        guard let eventCoordinate = await geocodeLocation(location) else {
+            return nil
+        }
+
+        guard let weather = await fetchWeather(for: eventCoordinate, at: event.startDate) else {
+            return nil
+        }
+
+        // Only create alert if weather is noteworthy
+        guard weather.shouldAlert else {
+            return nil
+        }
+
+        let alertTime = event.startDate.addingTimeInterval(-Double(preferences.standardReminderMinutes * 60))
+
+        guard alertTime > Date() else {
+            return nil
+        }
+
+        var context = NotificationContext()
+        context.weatherCondition = weather
+        context.eventLocation = NotificationContext.LocationInfo(coordinate: eventCoordinate, address: location)
+
+        return SmartNotification(
+            eventId: event.id,
+            eventTitle: event.title,
+            eventStartDate: event.startDate,
+            eventLocation: event.location,
+            type: .weatherAlert,
+            scheduledDate: alertTime,
+            context: context
+        )
+    }
+
+    // MARK: - Helper Methods
+
+    private func generatePrepItems(for event: UnifiedEvent) -> [String] {
+        var items: [String] = []
+
+        items.append("Review meeting agenda")
+
+        if let location = event.location, !location.isEmpty {
+            items.append("Check directions to \(location)")
+        }
+
+        items.append("Prepare questions or discussion points")
+        items.append("Test video/audio if remote meeting")
+
+        return items
+    }
+
+    private func geocodeLocation(_ address: String) async -> CLLocationCoordinate2D? {
+        let geocoder = CLGeocoder()
+
+        do {
+            let placemarks = try await geocoder.geocodeAddressString(address)
+            return placemarks.first?.location?.coordinate
+        } catch {
+            print("❌ Geocoding error: \(error)")
+            return nil
+        }
+    }
+
+    private func calculateTravelTime(from source: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async -> (travelTime: TimeInterval, traffic: NotificationContext.TrafficCondition?) {
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: source))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+        request.transportType = .automobile
+        request.requestsAlternateRoutes = false
+
+        let directions = MKDirections(request: request)
+
+        do {
+            let response = try await directions.calculate()
+
+            if let route = response.routes.first {
+                let travelTime = route.expectedTravelTime
+
+                // Estimate traffic severity based on travel time vs distance
+                // This is a simple heuristic; real traffic data would require external API
+                let averageSpeed = (route.distance / 1000) / (travelTime / 3600) // km/h
+                let trafficSeverity: NotificationContext.TrafficCondition.TrafficSeverity
+
+                if averageSpeed > 50 {
+                    trafficSeverity = .clear
+                } else if averageSpeed > 30 {
+                    trafficSeverity = .light
+                } else if averageSpeed > 20 {
+                    trafficSeverity = .moderate
+                } else if averageSpeed > 10 {
+                    trafficSeverity = .heavy
+                } else {
+                    trafficSeverity = .severe
                 }
 
-                let travelMinutes = Int(travelTime / 60)
-
-                // Check if travel time meets minimum threshold
-                if travelMinutes < self.preferences.minimumTravelTimeThresholdMinutes {
-                    print("⚠️ Travel time (\(travelMinutes) min) below threshold, using standard notification")
-                    self.scheduleStandardNotification(meetingInfo: meetingInfo)
-                    return
-                }
-
-                // Schedule the notification
-                self.createAndScheduleNotification(
-                    meetingInfo: meetingInfo,
-                    notificationTime: departureTime,
-                    title: "Time to Leave",
-                    body: "Leave now for '\(meetingInfo.title)' at \(location). Travel time: \(travelMinutes) min.",
-                    categoryIdentifier: "PHYSICAL_MEETING",
-                    userInfo: [
-                        "meetingType": "physical",
-                        "location": location,
-                        "travelMinutes": travelMinutes,
-                        "destinationLat": coordinate.latitude,
-                        "destinationLon": coordinate.longitude
-                    ],
-                    identifier: "travel_\(meetingInfo.title)_\(meetingInfo.startDate.timeIntervalSince1970)"
+                let traffic = NotificationContext.TrafficCondition(
+                    severity: trafficSeverity,
+                    expectedDelay: 0, // Would be calculated with real-time data
+                    suggestedDepartureTime: nil,
+                    route: route.name
                 )
+
+                return (travelTime, traffic)
             }
+        } catch {
+            print("❌ Directions error: \(error)")
         }
+
+        // Default to 30 minutes if calculation fails
+        return (1800, nil)
     }
 
-    // MARK: - Virtual Meeting Notifications
-
-    private func scheduleVirtualMeetingNotification(meetingInfo: MeetingInfo, link: String, platform: MeetingType.VirtualPlatform) {
-        // Schedule 5-minute join reminder if enabled
-        if preferences.enable5MinuteVirtualReminder {
-            let fiveMinNotificationTime = meetingInfo.startDate.addingTimeInterval(-5 * 60)
-
-            createAndScheduleNotification(
-                meetingInfo: meetingInfo,
-                notificationTime: fiveMinNotificationTime,
-                title: "Join Meeting Now",
-                body: "'\(meetingInfo.title)' starts in 5 minutes on \(platform.rawValue). Tap to join.",
-                categoryIdentifier: "VIRTUAL_MEETING",
-                userInfo: [
-                    "meetingType": "virtual",
-                    "meetingLink": link,
-                    "platform": platform.rawValue
-                ],
-                identifier: "virtual_5min_\(meetingInfo.title)_\(meetingInfo.startDate.timeIntervalSince1970)"
-            )
-        }
+    private func fetchWeather(for coordinate: CLLocationCoordinate2D, at date: Date) async -> NotificationContext.WeatherCondition? {
+        // This would integrate with WeatherKit or another weather API
+        // For now, return nil as placeholder
+        // TODO: Integrate with WeatherManager if available
+        return nil
     }
 
-    // MARK: - Hybrid Meeting Notifications
+    // MARK: - Notification Delivery
 
-    private func scheduleHybridMeetingNotification(meetingInfo: MeetingInfo, location: String, link: String, platform: MeetingType.VirtualPlatform) {
-        // For hybrid meetings, give user both options
-        // Schedule virtual meeting notification (shorter lead time)
-        let virtualLeadMinutes = preferences.virtualMeetingLeadMinutes
-        let virtualNotificationTime = meetingInfo.startDate.addingTimeInterval(-TimeInterval(virtualLeadMinutes * 60))
+    private func deliverNotification(_ notification: SmartNotification) {
+        let content = UNMutableNotificationContent()
+        content.title = notification.notificationType.rawValue
+        content.body = buildNotificationBody(for: notification)
+        content.sound = preferences.soundEnabled ? .default : nil
+        content.categoryIdentifier = "CALENDAR_EVENT"
+        content.userInfo = [
+            "eventId": notification.eventId,
+            "notificationType": notification.notificationType.rawValue
+        ]
 
-        createAndScheduleNotification(
-            meetingInfo: meetingInfo,
-            notificationTime: virtualNotificationTime,
-            title: "Meeting Options Available",
-            body: "'\(meetingInfo.title)' starts in \(virtualLeadMinutes) min. Join virtually or check travel time.",
-            categoryIdentifier: "HYBRID_MEETING",
-            userInfo: [
-                "meetingType": "hybrid",
-                "location": location,
-                "meetingLink": link,
-                "platform": platform.rawValue
-            ]
-        )
-    }
+        // Calculate time interval
+        let timeInterval = notification.scheduledDate.timeIntervalSinceNow
 
-    // MARK: - Standard Notification (Fallback)
-
-    private func scheduleStandardNotification(meetingInfo: MeetingInfo) {
-        let leadMinutes = 15
-        let notificationTime = meetingInfo.startDate.addingTimeInterval(-TimeInterval(leadMinutes * 60))
-
-        createAndScheduleNotification(
-            meetingInfo: meetingInfo,
-            notificationTime: notificationTime,
-            title: "Upcoming Meeting",
-            body: "'\(meetingInfo.title)' starts in \(leadMinutes) minutes.",
-            categoryIdentifier: "STANDARD_MEETING",
-            userInfo: ["meetingType": "standard"]
-        )
-    }
-
-    // MARK: - Core Notification Creation
-
-    private func createAndScheduleNotification(
-        meetingInfo: MeetingInfo,
-        notificationTime: Date,
-        title: String,
-        body: String,
-        categoryIdentifier: String,
-        userInfo: [String: Any],
-        identifier: String? = nil
-    ) {
-        // Don't schedule if notification time is in the past
-        guard notificationTime > Date() else {
-            print("⚠️ Notification time is in the past, skipping")
+        guard timeInterval > 0 else {
+            print("⚠️ Notification time has passed: \(notification.eventTitle)")
             return
         }
 
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        content.interruptionLevel = .timeSensitive
-        content.categoryIdentifier = categoryIdentifier
+        // Set category for interactive actions
+        content.categoryIdentifier = "CALENDAR_EVENT"
 
-        // Add user info for handling actions
-        var fullUserInfo = userInfo
-        fullUserInfo["meetingTitle"] = meetingInfo.title
-        fullUserInfo["meetingStartTime"] = meetingInfo.startDate.timeIntervalSince1970
-        content.userInfo = fullUserInfo
-
-        // Create trigger
-        let timeInterval = notificationTime.timeIntervalSinceNow
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: timeInterval, repeats: false)
-
-        // Use custom identifier or create unique one
-        let notificationIdentifier = identifier ?? "meeting_\(meetingInfo.title)_\(meetingInfo.startDate.timeIntervalSince1970)"
-
-        let request = UNNotificationRequest(identifier: notificationIdentifier, content: content, trigger: trigger)
+        let request = UNNotificationRequest(
+            identifier: notification.id.uuidString,
+            content: content,
+            trigger: trigger
+        )
 
         notificationCenter.add(request) { error in
             if let error = error {
-                print("❌ Failed to schedule notification: \(error.localizedDescription)")
+                print("❌ Failed to schedule notification: \(error)")
             } else {
-                let formatter = DateFormatter()
-                formatter.timeStyle = .short
-                print("✅ Scheduled '\(title)' notification for \(formatter.string(from: notificationTime))")
+                print("✅ Scheduled \(notification.notificationType.rawValue) for \(notification.eventTitle)")
             }
         }
     }
 
-    // MARK: - Notification Categories & Actions
+    private func buildNotificationBody(for notification: SmartNotification) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
 
-    func setupNotificationCategories() {
-        // Physical meeting actions
-        let getDirectionsAction = UNNotificationAction(
-            identifier: "GET_DIRECTIONS",
-            title: "Get Directions",
-            options: .foreground
-        )
+        switch notification.notificationType {
+        case .standard:
+            return "\(notification.eventTitle) starts at \(formatter.string(from: notification.eventStartDate))"
 
-        let physicalCategory = UNNotificationCategory(
-            identifier: "PHYSICAL_MEETING",
-            actions: [getDirectionsAction],
-            intentIdentifiers: [],
-            options: []
-        )
+        case .departureAlert:
+            if let travelTime = notification.context.travelTime {
+                let minutes = Int(travelTime / 60)
+                return "Time to leave for \(notification.eventTitle). Travel time: \(minutes) min"
+            }
+            return "Time to leave for \(notification.eventTitle)"
 
-        // Virtual meeting actions
-        let joinMeetingAction = UNNotificationAction(
-            identifier: "JOIN_MEETING",
-            title: "Join Meeting",
-            options: .foreground
-        )
+        case .trafficWarning:
+            if let traffic = notification.context.trafficCondition {
+                return "⚠️ \(traffic.severity.rawValue) traffic on your route to \(notification.eventTitle). Leave now!"
+            }
+            return "Traffic alert for \(notification.eventTitle)"
 
-        let virtualCategory = UNNotificationCategory(
-            identifier: "VIRTUAL_MEETING",
-            actions: [joinMeetingAction],
-            intentIdentifiers: [],
-            options: []
-        )
+        case .weatherAlert:
+            if let weather = notification.context.weatherCondition {
+                return "🌧️ \(weather.condition) expected at \(notification.eventTitle). Bring an umbrella!"
+            }
+            return "Weather advisory for \(notification.eventTitle)"
 
-        // Hybrid meeting actions
-        let hybridCategory = UNNotificationCategory(
-            identifier: "HYBRID_MEETING",
-            actions: [joinMeetingAction, getDirectionsAction],
-            intentIdentifiers: [],
-            options: []
-        )
+        case .meetingPrep:
+            if let prep = notification.context.meetingPrepInfo {
+                return "\(notification.eventTitle) in \(preferences.meetingPrepMinutes) min. \(prep.prepItems.first ?? "Get ready!")"
+            }
+            return "Prepare for \(notification.eventTitle)"
 
-        notificationCenter.setNotificationCategories([physicalCategory, virtualCategory, hybridCategory])
-        print("✅ Notification categories configured")
+        case .locationReminder:
+            return "You're near the location for \(notification.eventTitle)"
+        }
     }
 
-    // MARK: - Utility Methods
+    // MARK: - Management
 
-    /// Remove all pending meeting notifications
-    func removeAllPendingNotifications() {
-        notificationCenter.removeAllPendingNotificationRequests()
-        print("🔵 Removed all pending notifications")
+    func cancelNotification(id: UUID) {
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: [id.uuidString])
+        scheduledNotifications.removeAll { $0.id == id }
     }
 
-    /// Update preferences and save
-    func updatePreferences(_ newPreferences: NotificationPreferences) {
+    func cancelAllNotifications(for eventId: String) {
+        let idsToRemove = scheduledNotifications
+            .filter { $0.eventId == eventId }
+            .map { $0.id.uuidString }
+
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: idsToRemove)
+        scheduledNotifications.removeAll { $0.eventId == eventId }
+    }
+
+    func updatePreferences(_ newPreferences: SmartNotificationPreferences) {
         preferences = newPreferences
         preferences.save()
-        print("✅ Preferences updated and saved")
+        print("✅ Smart notification preferences updated")
+    }
+
+    /// Update preferences from old NotificationPreferences model (for compatibility)
+    func updatePreferences(_ oldPreferences: NotificationPreferences) {
+        // Map old preferences to new SmartNotificationPreferences
+        var newPrefs = SmartNotificationPreferences()
+        newPrefs.isEnabled = oldPreferences.enableSmartNotifications
+        newPrefs.standardReminderMinutes = 15
+        newPrefs.meetingPrepMinutes = oldPreferences.virtualMeetingLeadMinutes
+        newPrefs.departureBufferMinutes = oldPreferences.physicalMeetingBufferMinutes
+        newPrefs.soundEnabled = oldPreferences.useHapticFeedback
+
+        // Enable features based on old preferences
+        newPrefs.enableLocationAwareness = oldPreferences.enableTravelTimeCalculation
+        newPrefs.enableTrafficAlerts = oldPreferences.enableTravelTimeReminder
+        newPrefs.enableMeetingPrep = oldPreferences.enable15MinuteReminder
+
+        updatePreferences(newPrefs)
+    }
+
+    /// Setup notification categories for interactive notifications
+    func setupNotificationCategories() {
+        let viewAction = UNNotificationAction(
+            identifier: "VIEW_EVENT",
+            title: "View Event",
+            options: .foreground
+        )
+
+        let dismissAction = UNNotificationAction(
+            identifier: "DISMISS",
+            title: "Dismiss",
+            options: []
+        )
+
+        let snoozeAction = UNNotificationAction(
+            identifier: "SNOOZE",
+            title: "Snooze 10 min",
+            options: []
+        )
+
+        let category = UNNotificationCategory(
+            identifier: "CALENDAR_EVENT",
+            actions: [viewAction, snoozeAction, dismissAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        notificationCenter.setNotificationCategories([category])
+        print("✅ Notification categories registered")
     }
 }
 
-// MARK: - UNUserNotificationCenterDelegate
-extension SmartNotificationManager: UNUserNotificationCenterDelegate {
-    // Handle notification when app is in foreground
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        print("🔔 Notification received while app in foreground")
-        completionHandler([.banner, .sound, .badge])
+// MARK: - CLLocationManagerDelegate
+
+extension SmartNotificationManager: CLLocationManagerDelegate {
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        currentLocation = locations.last
     }
 
-    // Handle user interaction with notification
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping () -> Void
-    ) {
-        let userInfo = response.notification.request.content.userInfo
-        let actionIdentifier = response.actionIdentifier
-
-        print("🔔 Notification action: \(actionIdentifier)")
-
-        switch actionIdentifier {
-        case "GET_DIRECTIONS":
-            handleGetDirections(userInfo: userInfo)
-
-        case "JOIN_MEETING":
-            handleJoinMeeting(userInfo: userInfo)
-
-        case UNNotificationDefaultActionIdentifier:
-            // User tapped the notification
-            print("🔵 User tapped notification")
-
-        default:
-            break
-        }
-
-        completionHandler()
-    }
-
-    // MARK: - Action Handlers
-
-    private func handleGetDirections(userInfo: [AnyHashable: Any]) {
-        guard let lat = userInfo["destinationLat"] as? Double,
-              let lon = userInfo["destinationLon"] as? Double else {
-            print("⚠️ No destination coordinates in notification")
-            return
-        }
-
-        let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-        let urlString = "http://maps.apple.com/?daddr=\(coordinate.latitude),\(coordinate.longitude)"
-
-        if let url = URL(string: urlString) {
-            DispatchQueue.main.async {
-                #if os(iOS)
-                UIApplication.shared.open(url)
-                print("✅ Opening Apple Maps for directions")
-                #endif
-            }
-        }
-    }
-
-    private func handleJoinMeeting(userInfo: [AnyHashable: Any]) {
-        guard let meetingLink = userInfo["meetingLink"] as? String,
-              let url = URL(string: meetingLink) else {
-            print("⚠️ No valid meeting link in notification")
-            return
-        }
-
-        DispatchQueue.main.async {
-            #if os(iOS)
-            UIApplication.shared.open(url)
-            print("✅ Opening meeting link: \(meetingLink)")
-            #endif
-        }
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("❌ Location error: \(error)")
     }
 }

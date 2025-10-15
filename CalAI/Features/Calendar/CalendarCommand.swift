@@ -99,8 +99,8 @@ struct CalendarCommand: Codable {
 }
 
 struct AICalendarResponse: Codable {
-    let message: String
-    let command: CalendarCommand?
+    var message: String
+    var command: CalendarCommand?
     let requiresConfirmation: Bool
     let confirmationMessage: String?
     let needsMoreInfo: Bool
