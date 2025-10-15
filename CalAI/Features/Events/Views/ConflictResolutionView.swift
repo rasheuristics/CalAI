@@ -1,8 +1,8 @@
 import SwiftUI
 import EventKit
 
-/// Interactive UI for resolving calendar event conflicts
-struct ConflictResolutionView: View {
+/// Interactive UI for resolving sync/version conflicts between calendars
+struct SyncConflictResolutionView: View {
     let conflict: EventConflict
     let onResolve: (ConflictResolutionResult) -> Void
 
@@ -455,7 +455,7 @@ extension CalendarSource {
 // MARK: - Preview
 
 #Preview {
-    ConflictResolutionView(
+    SyncConflictResolutionView(
         conflict: EventConflict(
             type: .simultaneousEdit,
             primaryEvent: UnifiedEvent(

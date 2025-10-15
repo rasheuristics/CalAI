@@ -3,7 +3,7 @@ import EventKit
 import Combine
 import SwiftUI
 
-enum CalendarSource: Equatable {
+enum CalendarSource: String, Equatable, CaseIterable {
     case ios
     case google
     case outlook
@@ -60,6 +60,115 @@ struct ConflictResult {
     }
 }
 
+// MARK: - Schedule Conflict Models
+
+/// Represents a scheduling conflict between two or more events
+struct ScheduleConflict: Identifiable, Equatable {
+    let id: UUID
+    let conflictingEvents: [UnifiedEvent]
+    let overlapStart: Date
+    let overlapEnd: Date
+    let severity: ConflictSeverity
+
+    init(events: [UnifiedEvent], overlapStart: Date, overlapEnd: Date) {
+        self.id = UUID()
+        self.conflictingEvents = events
+        self.overlapStart = overlapStart
+        self.overlapEnd = overlapEnd
+        self.severity = ConflictSeverity.calculate(for: events, overlapDuration: overlapEnd.timeIntervalSince(overlapStart))
+    }
+
+    var overlapDuration: TimeInterval {
+        overlapEnd.timeIntervalSince(overlapStart)
+    }
+
+    var overlapDurationFormatted: String {
+        let hours = Int(overlapDuration) / 3600
+        let minutes = (Int(overlapDuration) % 3600) / 60
+
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+
+    static func == (lhs: ScheduleConflict, rhs: ScheduleConflict) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+/// Severity level of a scheduling conflict
+enum ConflictSeverity: String, CaseIterable {
+    case low = "Low"
+    case medium = "Medium"
+    case high = "High"
+    case critical = "Critical"
+
+    var color: String {
+        switch self {
+        case .low: return "yellow"
+        case .medium: return "orange"
+        case .high: return "red"
+        case .critical: return "purple"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .low: return "exclamationmark.circle"
+        case .medium: return "exclamationmark.triangle"
+        case .high: return "exclamationmark.octagon"
+        case .critical: return "exclamationmark.bubble"
+        }
+    }
+
+    /// Calculate severity based on event characteristics and overlap duration
+    static func calculate(for events: [UnifiedEvent], overlapDuration: TimeInterval) -> ConflictSeverity {
+        var score = 0
+
+        // More events = higher severity
+        if events.count >= 3 {
+            score += 2
+        } else if events.count == 2 {
+            score += 1
+        }
+
+        // Longer overlap = higher severity
+        let overlapMinutes = Int(overlapDuration) / 60
+        if overlapMinutes >= 60 {
+            score += 3
+        } else if overlapMinutes >= 30 {
+            score += 2
+        } else if overlapMinutes >= 15 {
+            score += 1
+        }
+
+        // All-day events are less severe
+        let hasAllDayEvent = events.contains { $0.isAllDay }
+        if hasAllDayEvent {
+            score -= 1
+        }
+
+        // Events from different sources suggest higher importance
+        let uniqueSources = Set(events.map { $0.source })
+        if uniqueSources.count >= 2 {
+            score += 1
+        }
+
+        // Map score to severity
+        if score >= 5 {
+            return .critical
+        } else if score >= 3 {
+            return .high
+        } else if score >= 1 {
+            return .medium
+        } else {
+            return .low
+        }
+    }
+}
+
 class CalendarManager: ObservableObject {
     @Published var events: [EKEvent] = []
     @Published var unifiedEvents: [UnifiedEvent] = []
@@ -73,6 +182,8 @@ class CalendarManager: ObservableObject {
     // Conflict detection state
     @Published var pendingConflictResult: ConflictResult?
     @Published var pendingEventDetails: (title: String, startDate: Date, endDate: Date, location: String?, notes: String?, participants: [String]?, calendarSource: String?)?
+    @Published var detectedConflicts: [ScheduleConflict] = []
+    @Published var showConflictAlert: Bool = false
 
     // Lazy loading configuration
     @Published var monthsBackToLoad: Int = 3  // Initial load: 3 months back
@@ -109,6 +220,10 @@ class CalendarManager: ObservableObject {
         setupAdvancedSyncAsync()
         // Listen for event time updates from drag-and-drop
         setupEventUpdateListener()
+        // Listen for iOS calendar changes for real-time sync
+        setupCalendarChangeNotification()
+        // Start periodic sync timer
+        startPeriodicSync()
     }
 
     private func setupEventUpdateListener() {
@@ -130,6 +245,53 @@ class CalendarManager: ObservableObject {
             print("📥 Received event update notification for \(eventId)")
             self.updateEventTime(eventId: eventId, newStart: newStart, newEnd: newEnd, source: source)
         }
+    }
+
+    // MARK: - Real-Time Sync
+
+    private func setupCalendarChangeNotification() {
+        // Listen for iOS EventKit calendar changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(calendarDatabaseChanged),
+            name: .EKEventStoreChanged,
+            object: eventStore
+        )
+        print("👂 Listening for iOS calendar changes")
+    }
+
+    @objc private func calendarDatabaseChanged() {
+        print("🔄 iOS calendar database changed - syncing...")
+        // Debounce: wait a bit in case multiple changes happen quickly
+        syncDebounceWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            print("🔄 Performing real-time sync...")
+            self.loadAllUnifiedEvents()
+        }
+
+        syncDebounceWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: workItem)
+    }
+
+    private var syncTimer: Timer?
+    private var syncDebounceWorkItem: DispatchWorkItem?
+
+    private func startPeriodicSync() {
+        // Sync every 5 minutes when app is active
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            print("⏰ Periodic sync triggered")
+            self.loadAllUnifiedEvents()
+        }
+        print("⏰ Periodic sync timer started (every 5 minutes)")
+    }
+
+    func stopPeriodicSync() {
+        syncTimer?.invalidate()
+        syncTimer = nil
+        print("⏹️ Periodic sync timer stopped")
     }
 
     private func updateEventTime(eventId: String, newStart: Date, newEnd: Date, source: CalendarSource) {
@@ -703,6 +865,9 @@ class CalendarManager: ObservableObject {
 
         // Schedule smart notifications for all upcoming events
         scheduleSmartNotificationsForEvents(unifiedEvents)
+
+        // Detect conflicts across all events
+        detectAllConflicts()
     }
 
     func refreshAllCalendars() {
@@ -780,6 +945,124 @@ class CalendarManager: ObservableObject {
 
     var syncErrors: [CalendarSyncError] {
         syncManager.syncErrors
+    }
+
+    // MARK: - Event Modification Methods
+
+    /// Update a unified event with new details
+    func updateEvent(_ event: UnifiedEvent) {
+        print("📝 Updating event: \(event.title)")
+
+        switch event.source {
+        case .ios:
+            updateIOSEvent(event)
+        case .google:
+            updateGoogleEvent(event)
+        case .outlook:
+            updateOutlookEvent(event)
+        }
+
+        // Update in Core Data
+        coreDataManager.saveEvent(event, syncStatus: .pending)
+
+        // Refresh unified events
+        DispatchQueue.main.async {
+            self.loadAllUnifiedEvents()
+        }
+    }
+
+    /// Delete a unified event
+    func deleteEvent(_ event: UnifiedEvent) {
+        print("🗑️ Deleting event: \(event.title)")
+
+        switch event.source {
+        case .ios:
+            deleteIOSEventById(event.id)
+        case .google:
+            deleteGoogleEvent(event)
+        case .outlook:
+            deleteOutlookEvent(event)
+        }
+
+        // Delete from Core Data
+        coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: event.source)
+
+        // Refresh unified events
+        DispatchQueue.main.async {
+            self.loadAllUnifiedEvents()
+        }
+    }
+
+    // MARK: - Private Update Helpers
+
+    private func updateIOSEvent(_ event: UnifiedEvent) {
+        guard hasCalendarAccess else {
+            print("❌ No calendar access for iOS event update")
+            return
+        }
+
+        // Find the existing event
+        guard let ekEvent = eventStore.event(withIdentifier: event.id) else {
+            print("❌ iOS event not found: \(event.id)")
+            return
+        }
+
+        // Update properties
+        ekEvent.title = event.title
+        ekEvent.startDate = event.startDate
+        ekEvent.endDate = event.endDate
+        ekEvent.location = event.location
+        ekEvent.notes = event.description
+        ekEvent.isAllDay = event.isAllDay
+
+        do {
+            try eventStore.save(ekEvent, span: .thisEvent, commit: true)
+            print("✅ iOS event updated successfully")
+        } catch {
+            print("❌ Failed to update iOS event: \(error)")
+        }
+    }
+
+    private func updateGoogleEvent(_ event: UnifiedEvent) {
+        // Google Calendar update would go through Google Calendar API
+        // For now, just update in Core Data
+        print("⚠️ Google Calendar API update not yet implemented")
+        coreDataManager.saveEvent(event, syncStatus: .pending)
+    }
+
+    private func updateOutlookEvent(_ event: UnifiedEvent) {
+        // Outlook update would go through Outlook API
+        // For now, just update in Core Data
+        print("⚠️ Outlook API update not yet implemented")
+        coreDataManager.saveEvent(event, syncStatus: .pending)
+    }
+
+    private func deleteIOSEventById(_ eventId: String) {
+        guard hasCalendarAccess else {
+            print("❌ No calendar access for iOS event deletion")
+            return
+        }
+
+        guard let ekEvent = eventStore.event(withIdentifier: eventId) else {
+            print("❌ iOS event not found: \(eventId)")
+            return
+        }
+
+        deleteEvent(ekEvent)
+    }
+
+    private func deleteGoogleEvent(_ event: UnifiedEvent) {
+        // Google Calendar delete would go through Google Calendar API
+        // For now, just delete from Core Data
+        print("⚠️ Google Calendar API delete not yet implemented")
+        coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: .google)
+    }
+
+    private func deleteOutlookEvent(_ event: UnifiedEvent) {
+        // Outlook delete would go through Outlook API
+        // For now, just delete from Core Data
+        print("⚠️ Outlook API delete not yet implemented")
+        coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: .outlook)
     }
 
     // MARK: - Advanced Sync Features (Phase 6)
@@ -1368,71 +1651,7 @@ class CalendarManager: ObservableObject {
         }
     }
 
-    // Legacy method for backwards compatibility
-    func handleAIResponse(_ response: AIResponse) {
-        print("📅 CalendarManager handling legacy AI response: action=\(response.action), title=\(response.eventTitle ?? "nil")")
-
-        switch response.action {
-        case .createEvent:
-            if let title = response.eventTitle,
-               let startDate = response.startDate {
-                print("✅ Creating event: \(title) at \(startDate)")
-                createEvent(title: title, startDate: startDate, endDate: response.endDate)
-            } else {
-                print("❌ Missing title or start date for event creation")
-            }
-        case .queryEvents:
-            print("📋 Loading events")
-            if let queryDate = response.startDate {
-                checkAvailability(for: queryDate) { [weak self] isAvailable, conflictingEvents in
-                    DispatchQueue.main.async {
-                        self?.handleAvailabilityResult(isAvailable: isAvailable,
-                                                     conflictingEvents: conflictingEvents,
-                                                     queryDate: queryDate)
-                    }
-                }
-            } else {
-                loadEvents()
-            }
-        case .rescheduleEvent:
-            print("🔄 Reschedule event: \(response.eventTitle ?? "event")")
-            // TODO: Implement reschedule functionality
-
-        case .cancelEvent:
-            print("❌ Cancel event: \(response.eventTitle ?? "event")")
-            // TODO: Implement cancel functionality
-
-        case .findTimeSlot:
-            print("🔍 Find time slot: duration=\(response.timeSlotDuration ?? 3600)")
-            // TODO: Implement time slot finding
-
-        case .blockTime:
-            print("🚫 Block time: \(response.eventTitle ?? "blocked time")")
-            if let title = response.eventTitle,
-               let startDate = response.startDate {
-                createEvent(title: title, startDate: startDate, endDate: response.endDate)
-            }
-
-        case .extendEvent:
-            print("⏱️ Extend event: \(response.eventTitle ?? "event")")
-            // TODO: Implement extend functionality
-
-        case .moveEvent:
-            print("📅 Move event: \(response.eventTitle ?? "event")")
-            // TODO: Implement move functionality
-
-        case .batchOperation:
-            print("📦 Batch operation: \(response.searchCriteria ?? "multiple events")")
-            // TODO: Implement batch operations
-
-        case .needsMoreInfo:
-            print("ℹ️ AI needs more information: \(response.message)")
-            // No action needed - user will provide more info in next turn
-
-        case .unknown:
-            print("❓ Unknown AI response: \(response.message)")
-        }
-    }
+    
 
     // MARK: - Availability Checking
 
@@ -2368,6 +2587,107 @@ class CalendarManager: ObservableObject {
         return "\(event.sourceLabel) Calendar"
     }
 
+    // MARK: - Enhanced Conflict Detection
+
+    /// Detect all conflicts across all events in the current view
+    func detectAllConflicts() {
+        print("🔍 Scanning all events for conflicts...")
+
+        var conflicts: [ScheduleConflict] = []
+        var processedPairs = Set<String>()
+
+        // Sort events by start date for efficient checking
+        let sortedEvents = unifiedEvents.sorted { $0.startDate < $1.startDate }
+
+        for i in 0..<sortedEvents.count {
+            let event1 = sortedEvents[i]
+
+            // Skip all-day events for conflict detection
+            if event1.isAllDay {
+                continue
+            }
+
+            // Check against subsequent events
+            for j in (i + 1)..<sortedEvents.count {
+                let event2 = sortedEvents[j]
+
+                // Skip all-day events
+                if event2.isAllDay {
+                    continue
+                }
+
+                // If event2 starts after event1 ends, no need to check further
+                if event2.startDate >= event1.endDate {
+                    break
+                }
+
+                // Check for overlap
+                if eventsOverlap(event1, event2) {
+                    // Create a unique pair ID to avoid duplicate conflicts
+                    let pairId = createPairId(event1.id, event2.id)
+
+                    if !processedPairs.contains(pairId) {
+                        processedPairs.insert(pairId)
+
+                        // Calculate overlap period
+                        let overlapStart = max(event1.startDate, event2.startDate)
+                        let overlapEnd = min(event1.endDate, event2.endDate)
+
+                        // Create conflict
+                        let conflict = ScheduleConflict(
+                            events: [event1, event2],
+                            overlapStart: overlapStart,
+                            overlapEnd: overlapEnd
+                        )
+
+                        conflicts.append(conflict)
+                        print("⚠️ Conflict detected: \(event1.title) ↔ \(event2.title) (\(conflict.severity.rawValue))")
+                    }
+                }
+            }
+        }
+
+        DispatchQueue.main.async {
+            self.detectedConflicts = conflicts
+            if !conflicts.isEmpty {
+                print("🚨 Total conflicts found: \(conflicts.count)")
+                self.showConflictAlert = true
+            } else {
+                print("✅ No conflicts detected")
+            }
+        }
+    }
+
+    /// Check if two events overlap
+    private func eventsOverlap(_ event1: UnifiedEvent, _ event2: UnifiedEvent) -> Bool {
+        return event1.startDate < event2.endDate && event1.endDate > event2.startDate
+    }
+
+    /// Create a unique pair ID for two events
+    private func createPairId(_ id1: String, _ id2: String) -> String {
+        let sorted = [id1, id2].sorted()
+        return "\(sorted[0])|\(sorted[1])"
+    }
+
+    /// Get conflicts for a specific date
+    func getConflictsForDate(_ date: Date) -> [ScheduleConflict] {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
+            return []
+        }
+
+        return detectedConflicts.filter { (conflict: ScheduleConflict) -> Bool in
+            conflict.overlapStart < endOfDay && conflict.overlapEnd > startOfDay
+        }
+    }
+
+    /// Clear all detected conflicts
+    func clearConflicts() {
+        detectedConflicts = []
+        showConflictAlert = false
+    }
+
     /// Create event with conflict override
     func createEventOverridingConflict() {
         guard let details = pendingEventDetails else { return }
@@ -2437,30 +2757,26 @@ class CalendarManager: ObservableObject {
     private func scheduleSmartNotificationsForEvents(_ events: [UnifiedEvent]) {
         let notificationManager = SmartNotificationManager.shared
 
-        // Filter to only upcoming events in the next 24 hours
+        // Filter to only upcoming events in the next 7 days
         let now = Date()
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now
+        let nextWeek = Calendar.current.date(byAdding: .day, value: 7, to: now) ?? now
 
         let upcomingEvents = events.filter { event in
-            event.startDate > now && event.startDate <= tomorrow
+            event.startDate > now && event.startDate <= nextWeek
         }
 
         print("🔔 Scheduling smart notifications for \(upcomingEvents.count) upcoming events")
 
         for event in upcomingEvents {
-            notificationManager.scheduleMeetingNotification(
-                title: event.title,
-                location: event.location,
-                notes: event.description,
-                startDate: event.startDate,
-                endDate: event.endDate
-            )
+            notificationManager.scheduleSmartNotifications(for: event)
         }
     }
 
     deinit {
+        stopPeriodicSync()
+        syncDebounceWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
-        print("🧹 CalendarManager deinitialized - observers removed")
+        print("🧹 CalendarManager deinitialized - observers and timers removed")
     }
 }
 

@@ -21,6 +21,7 @@ struct CalendarTabView: View {
     @State private var showingEditView = false
     @State private var selectedEventForShare: UnifiedEvent? = nil
     @State private var showingShareView = false
+    @State private var showingConflictList = false
 
     private let eventFilterService = EventFilterService()
 
@@ -46,12 +47,25 @@ struct CalendarTabView: View {
                     .animation(.spring(response: 0.3, dampingFraction: 0.8), value: calendarManager.errorState)
                 }
 
+                // Conflict alert banner
+                if !calendarManager.detectedConflicts.isEmpty {
+                    ConflictAlertBanner(
+                        conflictCount: calendarManager.detectedConflicts.count,
+                        onTap: {
+                            showingConflictList = true
+                        }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: calendarManager.detectedConflicts.count)
+                }
+
                 // Native iOS Calendar Header
                 iOSCalendarHeader(
                     selectedDate: $selectedDate,
                     currentViewType: $currentViewType,
                     showingDatePicker: $showingDatePicker,
-                    fontManager: fontManager
+                    fontManager: fontManager,
+                    calendarManager: calendarManager
                 )
 
                 // Main calendar content
@@ -146,6 +160,9 @@ struct CalendarTabView: View {
                 )
             }
         }
+        .sheet(isPresented: $showingConflictList) {
+            ConflictListView(calendarManager: calendarManager)
+        }
         .onAppear {
             // Always reset to day view showing today
             currentViewType = .day
@@ -193,6 +210,13 @@ struct CalendarTabView: View {
 
         return unique
     }
+
+    // Check if an event has conflicts
+    private func eventHasConflict(_ eventId: String) -> ScheduleConflict? {
+        return calendarManager.detectedConflicts.first { conflict in
+            conflict.conflictingEvents.contains { $0.id == eventId }
+        }
+    }
 }
 
 // MARK: - Native iOS Calendar Header
@@ -201,6 +225,8 @@ struct iOSCalendarHeader: View {
     @Binding var currentViewType: CalendarViewType
     @Binding var showingDatePicker: Bool
     @ObservedObject var fontManager: FontManager
+    @ObservedObject var calendarManager: CalendarManager
+    @State private var isRefreshing = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -219,6 +245,20 @@ struct iOSCalendarHeader: View {
                 .accessibilityHint("Double tap to open date picker")
 
                 Spacer()
+
+                // Refresh button
+                Button(action: refreshCalendar) {
+                    Image(systemName: isRefreshing ? "arrow.clockwise" : "arrow.clockwise")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.blue)
+                        .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                        .animation(isRefreshing ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                }
+                .disabled(isRefreshing)
+                .accessibilityLabel("Refresh calendar")
+                .padding(.trailing, 8)
+
+                Spacer().frame(width: 8)
 
                 // View switcher - exact iOS style
                 HStack(spacing: 0) {
@@ -326,6 +366,21 @@ struct iOSCalendarHeader: View {
             case .year:
                 selectedDate = calendar.date(byAdding: .year, value: 1, to: selectedDate) ?? selectedDate
             }
+        }
+    }
+
+    private func refreshCalendar() {
+        guard !isRefreshing else { return }
+
+        HapticManager.shared.light()
+        isRefreshing = true
+
+        print("🔄 Manual refresh triggered from UI")
+        calendarManager.loadAllUnifiedEvents()
+
+        // Stop animation after 2 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            isRefreshing = false
         }
     }
 }
@@ -3150,5 +3205,711 @@ struct iOSDatePicker: View {
                     }
                 }
         }
+    }
+}
+
+// MARK: - Conflict UI Components
+
+/// Banner that appears at the top of the calendar to show conflict count
+struct ConflictAlertBanner: View {
+    let conflictCount: Int
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.title3)
+                    .foregroundColor(.orange)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(conflictCount) Scheduling Conflict\(conflictCount == 1 ? "" : "s")")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+
+                    Text("Tap to view and resolve")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.orange.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+}
+
+/// Full-screen view showing all conflicts
+struct ConflictListView: View {
+    @ObservedObject var calendarManager: CalendarManager
+    @Environment(\.dismiss) var dismiss
+    @State private var selectedConflict: ScheduleConflict?
+    @State private var showingResolution = false
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                if calendarManager.detectedConflicts.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.green)
+
+                        Text("No Conflicts Detected")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+
+                        Text("All your events are scheduled without overlaps")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    LazyVStack(spacing: 16) {
+                        ForEach(calendarManager.detectedConflicts) { conflict in
+                            Button(action: {
+                                selectedConflict = conflict
+                                showingResolution = true
+                            }) {
+                                ConflictDetailsCard(conflict: conflict)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    .padding()
+                }
+            }
+            .navigationTitle("Schedule Conflicts")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+
+                if !calendarManager.detectedConflicts.isEmpty {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: {
+                            calendarManager.detectAllConflicts()
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showingResolution) {
+                if let conflict = selectedConflict {
+                    ConflictResolutionView(conflict: conflict, calendarManager: calendarManager)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Conflict Resolution Types
+
+/// Types of resolution actions
+fileprivate enum ResolutionType: String, CaseIterable {
+    case reschedule = "Reschedule"
+    case decline = "Decline"
+    case shorten = "Shorten"
+    case markOptional = "Mark Optional"
+    case noAction = "Keep Both"
+
+    var icon: String {
+        switch self {
+        case .reschedule: return "calendar.badge.clock"
+        case .decline: return "xmark.circle"
+        case .shorten: return "arrow.down.right.and.arrow.up.left"
+        case .markOptional: return "questionmark.circle"
+        case .noAction: return "checkmark.circle"
+        }
+    }
+}
+
+/// Individual resolution suggestion
+fileprivate struct ResolutionSuggestion: Identifiable, Equatable {
+    let id: UUID
+    let type: ResolutionType
+    let title: String
+    let description: String
+    let targetEvent: UnifiedEvent?
+    let suggestedTime: Date?
+    let confidence: Double // 0.0 to 1.0
+
+    init(type: ResolutionType, title: String, description: String, targetEvent: UnifiedEvent? = nil, suggestedTime: Date? = nil, confidence: Double = 0.8) {
+        self.id = UUID()
+        self.type = type
+        self.title = title
+        self.description = description
+        self.targetEvent = targetEvent
+        self.suggestedTime = suggestedTime
+        self.confidence = confidence
+    }
+
+    static func == (lhs: ResolutionSuggestion, rhs: ResolutionSuggestion) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+/// AI-generated suggestions for resolving conflicts (local version)
+fileprivate struct LocalConflictResolution: Identifiable {
+    let id: UUID
+    let conflict: ScheduleConflict
+    let suggestions: [ResolutionSuggestion]
+
+    init(conflict: ScheduleConflict, suggestions: [ResolutionSuggestion]) {
+        self.id = UUID()
+        self.conflict = conflict
+        self.suggestions = suggestions
+    }
+}
+
+/// AI-powered conflict resolution suggestion generator (local version)
+fileprivate class LocalConflictResolutionAI {
+    /// Generate rule-based suggestions for resolving a conflict
+    func generateSuggestions(for conflict: ScheduleConflict, allEvents: [UnifiedEvent], completion: @escaping (LocalConflictResolution) -> Void) {
+        guard conflict.conflictingEvents.count >= 2 else {
+            completion(LocalConflictResolution(conflict: conflict, suggestions: []))
+            return
+        }
+
+        let event1 = conflict.conflictingEvents[0]
+        let event2 = conflict.conflictingEvents[1]
+
+        var suggestions: [ResolutionSuggestion] = []
+
+        // Determine which event is earlier and which is later
+        let earlierEvent = event1.startDate < event2.startDate ? event1 : event2
+        let laterEvent = event1.startDate < event2.startDate ? event2 : event1
+
+        // Suggestion 1: Reschedule the shorter event to after the longer one ends
+        let shorterEvent = event1.endDate.timeIntervalSince(event1.startDate) < event2.endDate.timeIntervalSince(event2.startDate) ? event1 : event2
+        let longerEvent = shorterEvent.id == event1.id ? event2 : event1
+
+        // Suggest rescheduling to 15 minutes after the longer event ends
+        let rescheduleTime = longerEvent.endDate.addingTimeInterval(15 * 60)
+
+        suggestions.append(ResolutionSuggestion(
+            type: .reschedule,
+            title: "Reschedule \(shorterEvent.title)",
+            description: "Move to \(formatTime(rescheduleTime)) (after \(longerEvent.title) ends)",
+            targetEvent: shorterEvent,
+            suggestedTime: rescheduleTime,
+            confidence: 0.8
+        ))
+
+        // Suggestion 2: Shorten the later event to start when the earlier one ends
+        let shortenTime = earlierEvent.endDate
+
+        suggestions.append(ResolutionSuggestion(
+            type: .shorten,
+            title: "Shorten \(laterEvent.title)",
+            description: "Start at \(formatTime(shortenTime)) instead (after \(earlierEvent.title) ends)",
+            targetEvent: laterEvent,
+            suggestedTime: shortenTime,
+            confidence: 0.7
+        ))
+
+        // Suggestion 3: Keep both
+        suggestions.append(ResolutionSuggestion(
+            type: .noAction,
+            title: "Keep Both",
+            description: "Keep both events and manage the overlap manually",
+            confidence: 0.6
+        ))
+
+        let resolution = LocalConflictResolution(conflict: conflict, suggestions: suggestions)
+        DispatchQueue.main.async {
+            completion(resolution)
+        }
+    }
+
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - Schedule Conflict Resolution View
+
+/// View for resolving time-based scheduling conflicts with AI suggestions
+/// (For sync conflicts between calendar versions, see SyncConflictResolutionView)
+struct ConflictResolutionView: View {
+    let conflict: ScheduleConflict
+    @ObservedObject var calendarManager: CalendarManager
+    @State private var resolutionSuggestions: [ResolutionSuggestion] = []
+    @State private var isLoadingSuggestions = false
+    @Environment(\.dismiss) var dismiss
+
+    private let conflictAI = LocalConflictResolutionAI()
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Conflict details
+                ConflictDetailsCard(conflict: conflict)
+
+                // AI Suggestions section
+                HStack {
+                    Text("AI-Powered Suggestions")
+                        .font(.headline)
+
+                    if isLoadingSuggestions {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .padding(.leading, 8)
+                    }
+                }
+                .padding(.horizontal)
+
+                if resolutionSuggestions.isEmpty && !isLoadingSuggestions {
+                    VStack(spacing: 12) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 40))
+                            .foregroundColor(.blue)
+
+                        Text("Generating smart suggestions...")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                } else {
+                    VStack(spacing: 12) {
+                        ForEach(resolutionSuggestions) { suggestion in
+                            ResolutionSuggestionCard(
+                                suggestion: suggestion,
+                                onSelect: {
+                                    handleSuggestion(suggestion)
+                                }
+                            )
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            .padding(.vertical)
+        }
+        .navigationTitle("Resolve Conflict")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            loadAISuggestions()
+        }
+    }
+
+    private func loadAISuggestions() {
+        isLoadingSuggestions = true
+
+        conflictAI.generateSuggestions(
+            for: conflict,
+            allEvents: calendarManager.unifiedEvents
+        ) { resolution in
+            resolutionSuggestions = resolution.suggestions
+            isLoadingSuggestions = false
+        }
+    }
+
+    private func handleSuggestion(_ suggestion: ResolutionSuggestion) {
+        print("🎯 User selected suggestion: \(suggestion.type.rawValue)")
+        HapticManager.shared.light()
+
+        switch suggestion.type {
+        case .reschedule:
+            rescheduleEvent(suggestion)
+        case .decline:
+            declineEvent(suggestion)
+        case .shorten:
+            shortenEvent(suggestion)
+        case .markOptional:
+            markAsOptional(suggestion)
+        case .noAction:
+            keepBoth(suggestion)
+        }
+    }
+
+    // MARK: - Resolution Actions
+
+    private func rescheduleEvent(_ suggestion: ResolutionSuggestion) {
+        guard let targetEvent = suggestion.targetEvent,
+              let newTime = suggestion.suggestedTime else {
+            print("❌ Missing target event or suggested time")
+            return
+        }
+
+        HapticManager.shared.medium()
+
+        // Calculate duration of original event
+        let duration = targetEvent.endDate.timeIntervalSince(targetEvent.startDate)
+        let newEndTime = newTime.addingTimeInterval(duration)
+
+        // Create updated event
+        let updatedEvent = UnifiedEvent(
+            id: targetEvent.id,
+            title: targetEvent.title,
+            startDate: newTime,
+            endDate: newEndTime,
+            location: targetEvent.location,
+            description: targetEvent.description,
+            isAllDay: targetEvent.isAllDay,
+            source: targetEvent.source,
+            organizer: targetEvent.organizer,
+            originalEvent: targetEvent.originalEvent
+        )
+
+        // Update in calendar manager
+        calendarManager.updateEvent(updatedEvent)
+
+        HapticManager.shared.success()
+        showSuccessMessage("Event rescheduled to \(formatTime(newTime))")
+
+        // Refresh conflicts
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            calendarManager.detectAllConflicts()
+            dismiss()
+        }
+    }
+
+    private func declineEvent(_ suggestion: ResolutionSuggestion) {
+        guard let targetEvent = suggestion.targetEvent else {
+            print("❌ Missing target event")
+            return
+        }
+
+        HapticManager.shared.medium()
+
+        // Delete the event
+        calendarManager.deleteEvent(targetEvent)
+
+        HapticManager.shared.success()
+        showSuccessMessage("Event '\(targetEvent.title)' declined")
+
+        // Refresh conflicts
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            calendarManager.detectAllConflicts()
+            dismiss()
+        }
+    }
+
+    private func shortenEvent(_ suggestion: ResolutionSuggestion) {
+        guard let targetEvent = suggestion.targetEvent,
+              let newEndTime = suggestion.suggestedTime else {
+            print("❌ Missing target event or suggested time")
+            return
+        }
+
+        HapticManager.shared.medium()
+
+        // Create updated event with shortened duration
+        let updatedEvent = UnifiedEvent(
+            id: targetEvent.id,
+            title: targetEvent.title,
+            startDate: targetEvent.startDate,
+            endDate: newEndTime,
+            location: targetEvent.location,
+            description: targetEvent.description,
+            isAllDay: targetEvent.isAllDay,
+            source: targetEvent.source,
+            organizer: targetEvent.organizer,
+            originalEvent: targetEvent.originalEvent
+        )
+
+        // Update in calendar manager
+        calendarManager.updateEvent(updatedEvent)
+
+        HapticManager.shared.success()
+        showSuccessMessage("Event shortened to end at \(formatTime(newEndTime))")
+
+        // Refresh conflicts
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            calendarManager.detectAllConflicts()
+            dismiss()
+        }
+    }
+
+    private func markAsOptional(_ suggestion: ResolutionSuggestion) {
+        guard let targetEvent = suggestion.targetEvent else {
+            print("❌ Missing target event")
+            return
+        }
+
+        HapticManager.shared.light()
+
+        // Update event notes to indicate it's optional
+        let optionalNote = (targetEvent.description ?? "") + "\n\n[OPTIONAL - Can skip if needed]"
+
+        let updatedEvent = UnifiedEvent(
+            id: targetEvent.id,
+            title: "⚪️ \(targetEvent.title)", // Add indicator to title
+            startDate: targetEvent.startDate,
+            endDate: targetEvent.endDate,
+            location: targetEvent.location,
+            description: optionalNote,
+            isAllDay: targetEvent.isAllDay,
+            source: targetEvent.source,
+            organizer: targetEvent.organizer,
+            originalEvent: targetEvent.originalEvent
+        )
+
+        // Update in calendar manager
+        calendarManager.updateEvent(updatedEvent)
+
+        HapticManager.shared.success()
+        showSuccessMessage("Event marked as optional")
+
+        // Refresh conflicts
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            calendarManager.detectAllConflicts()
+            dismiss()
+        }
+    }
+
+    private func keepBoth(_ suggestion: ResolutionSuggestion) {
+        HapticManager.shared.light()
+
+        showSuccessMessage("Keeping both events as scheduled")
+
+        // Just dismiss - user accepts the conflict
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            dismiss()
+        }
+    }
+
+    // MARK: - Helper Methods
+
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func showSuccessMessage(_ message: String) {
+        print("✅ \(message)")
+        // TODO: Show toast notification to user
+    }
+}
+
+// MARK: - Resolution Suggestion Card
+
+fileprivate struct ResolutionSuggestionCard: View {
+    let suggestion: ResolutionSuggestion
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                // Icon
+                Image(systemName: suggestion.type.icon)
+                    .font(.title2)
+                    .foregroundColor(typeColor)
+                    .frame(width: 40)
+
+                // Content
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(suggestion.title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+
+                    Text(suggestion.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+
+                    // Confidence indicator
+                    HStack(spacing: 4) {
+                        ForEach(0..<5) { index in
+                            Image(systemName: index < Int(suggestion.confidence * 5) ? "star.fill" : "star")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.systemGray6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(typeColor.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    private var typeColor: Color {
+        switch suggestion.type {
+        case .reschedule:
+            return .blue
+        case .decline:
+            return .red
+        case .shorten:
+            return .orange
+        case .markOptional:
+            return .purple
+        case .noAction:
+            return .green
+        }
+    }
+}
+
+/// Detailed card showing conflict information
+struct ConflictDetailsCard: View {
+    let conflict: ScheduleConflict
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header with severity indicator
+            HStack {
+                Image(systemName: conflict.severity.icon)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(6)
+                    .background(
+                        Circle()
+                            .fill(severityColor)
+                    )
+
+                Text("\(conflict.severity.rawValue) Conflict")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+
+                Spacer()
+
+                Text(conflict.overlapDurationFormatted)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color(.systemGray6))
+                    )
+            }
+
+            // Overlapping period
+            HStack(spacing: 4) {
+                Image(systemName: "clock.fill")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Text(timeRangeString)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Divider()
+
+            // Conflicting events
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(conflict.conflictingEvents) { event in
+                    ConflictEventRow(event: event)
+                }
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.systemGray6))
+        )
+    }
+
+    private var severityColor: Color {
+        switch conflict.severity {
+        case .low: return .yellow
+        case .medium: return .orange
+        case .high: return .red
+        case .critical: return .purple
+        }
+    }
+
+    private var timeRangeString: String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return "\(formatter.string(from: conflict.overlapStart)) - \(formatter.string(from: conflict.overlapEnd))"
+    }
+}
+
+/// Individual event row within a conflict card
+struct ConflictEventRow: View {
+    let event: UnifiedEvent
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // Source icon
+            Text(sourceEmoji)
+                .font(.caption)
+
+            // Event details
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                Text(timeString)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if let location = event.location, !location.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.fill")
+                            .font(.caption2)
+                        Text(location)
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(.systemBackground))
+        )
+    }
+
+    private var sourceEmoji: String {
+        switch event.source {
+        case .ios: return "📱"
+        case .google: return "🟢"
+        case .outlook: return "🔵"
+        }
+    }
+
+    private var timeString: String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return "\(formatter.string(from: event.startDate)) - \(formatter.string(from: event.endDate))"
     }
 }
