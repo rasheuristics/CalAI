@@ -3460,7 +3460,10 @@ struct ConflictResolutionView: View {
     @ObservedObject var calendarManager: CalendarManager
     @State private var resolutionSuggestions: [ResolutionSuggestion] = []
     @State private var isLoadingSuggestions = false
+    @State private var showingEditEvent = false
+    @State private var eventToEdit: UnifiedEvent?
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var fontManager: FontManager
 
     private let conflictAI = LocalConflictResolutionAI()
 
@@ -3516,6 +3519,11 @@ struct ConflictResolutionView: View {
         .onAppear {
             loadAISuggestions()
         }
+        .sheet(isPresented: $showingEditEvent) {
+            if let event = eventToEdit {
+                EditEventView(calendarManager: calendarManager, fontManager: fontManager, event: event)
+            }
+        }
     }
 
     private func loadAISuggestions() {
@@ -3534,179 +3542,88 @@ struct ConflictResolutionView: View {
         print("🎯 User selected suggestion: \(suggestion.type.rawValue)")
         HapticManager.shared.light()
 
+        guard let targetEvent = suggestion.targetEvent else {
+            print("❌ Missing target event")
+            return
+        }
+
+        // Create modified event based on suggestion type
+        let modifiedEvent: UnifiedEvent
+
         switch suggestion.type {
         case .reschedule:
-            rescheduleEvent(suggestion)
-        case .decline:
-            declineEvent(suggestion)
+            guard let newTime = suggestion.suggestedTime else {
+                print("❌ Missing suggested time for reschedule")
+                return
+            }
+            // Calculate duration and create rescheduled event
+            let duration = targetEvent.endDate.timeIntervalSince(targetEvent.startDate)
+            let newEndTime = newTime.addingTimeInterval(duration)
+
+            modifiedEvent = UnifiedEvent(
+                id: targetEvent.id,
+                title: targetEvent.title,
+                startDate: newTime,
+                endDate: newEndTime,
+                location: targetEvent.location,
+                description: targetEvent.description,
+                isAllDay: targetEvent.isAllDay,
+                source: targetEvent.source,
+                organizer: targetEvent.organizer,
+                originalEvent: targetEvent.originalEvent
+            )
+
         case .shorten:
-            shortenEvent(suggestion)
+            guard let newEndTime = suggestion.suggestedTime else {
+                print("❌ Missing suggested time for shorten")
+                return
+            }
+            // Create shortened event
+            modifiedEvent = UnifiedEvent(
+                id: targetEvent.id,
+                title: targetEvent.title,
+                startDate: targetEvent.startDate,
+                endDate: newEndTime,
+                location: targetEvent.location,
+                description: targetEvent.description,
+                isAllDay: targetEvent.isAllDay,
+                source: targetEvent.source,
+                organizer: targetEvent.organizer,
+                originalEvent: targetEvent.originalEvent
+            )
+
         case .markOptional:
-            markAsOptional(suggestion)
+            // Add optional indicator to title and description
+            let optionalNote = (targetEvent.description ?? "") + "\n\n[OPTIONAL - Can skip if needed]"
+            modifiedEvent = UnifiedEvent(
+                id: targetEvent.id,
+                title: "⚪️ \(targetEvent.title)",
+                startDate: targetEvent.startDate,
+                endDate: targetEvent.endDate,
+                location: targetEvent.location,
+                description: optionalNote,
+                isAllDay: targetEvent.isAllDay,
+                source: targetEvent.source,
+                organizer: targetEvent.organizer,
+                originalEvent: targetEvent.originalEvent
+            )
+
+        case .decline:
+            // For decline, just open the original event to delete
+            modifiedEvent = targetEvent
+
         case .noAction:
-            keepBoth(suggestion)
-        }
-    }
-
-    // MARK: - Resolution Actions
-
-    private func rescheduleEvent(_ suggestion: ResolutionSuggestion) {
-        guard let targetEvent = suggestion.targetEvent,
-              let newTime = suggestion.suggestedTime else {
-            print("❌ Missing target event or suggested time")
+            // For keep both, just dismiss
+            HapticManager.shared.light()
+            dismiss()
             return
         }
 
-        HapticManager.shared.medium()
-
-        // Calculate duration of original event
-        let duration = targetEvent.endDate.timeIntervalSince(targetEvent.startDate)
-        let newEndTime = newTime.addingTimeInterval(duration)
-
-        // Create updated event
-        let updatedEvent = UnifiedEvent(
-            id: targetEvent.id,
-            title: targetEvent.title,
-            startDate: newTime,
-            endDate: newEndTime,
-            location: targetEvent.location,
-            description: targetEvent.description,
-            isAllDay: targetEvent.isAllDay,
-            source: targetEvent.source,
-            organizer: targetEvent.organizer,
-            originalEvent: targetEvent.originalEvent
-        )
-
-        // Update in calendar manager
-        calendarManager.updateEvent(updatedEvent)
-
-        HapticManager.shared.success()
-        showSuccessMessage("Event rescheduled to \(formatTime(newTime))")
-
-        // Refresh conflicts
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            calendarManager.detectAllConflicts()
-            dismiss()
-        }
+        // Open edit view with the modified event
+        eventToEdit = modifiedEvent
+        showingEditEvent = true
     }
 
-    private func declineEvent(_ suggestion: ResolutionSuggestion) {
-        guard let targetEvent = suggestion.targetEvent else {
-            print("❌ Missing target event")
-            return
-        }
-
-        HapticManager.shared.medium()
-
-        // Delete the event
-        calendarManager.deleteEvent(targetEvent)
-
-        HapticManager.shared.success()
-        showSuccessMessage("Event '\(targetEvent.title)' declined")
-
-        // Refresh conflicts
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            calendarManager.detectAllConflicts()
-            dismiss()
-        }
-    }
-
-    private func shortenEvent(_ suggestion: ResolutionSuggestion) {
-        guard let targetEvent = suggestion.targetEvent,
-              let newEndTime = suggestion.suggestedTime else {
-            print("❌ Missing target event or suggested time")
-            return
-        }
-
-        HapticManager.shared.medium()
-
-        // Create updated event with shortened duration
-        let updatedEvent = UnifiedEvent(
-            id: targetEvent.id,
-            title: targetEvent.title,
-            startDate: targetEvent.startDate,
-            endDate: newEndTime,
-            location: targetEvent.location,
-            description: targetEvent.description,
-            isAllDay: targetEvent.isAllDay,
-            source: targetEvent.source,
-            organizer: targetEvent.organizer,
-            originalEvent: targetEvent.originalEvent
-        )
-
-        // Update in calendar manager
-        calendarManager.updateEvent(updatedEvent)
-
-        HapticManager.shared.success()
-        showSuccessMessage("Event shortened to end at \(formatTime(newEndTime))")
-
-        // Refresh conflicts
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            calendarManager.detectAllConflicts()
-            dismiss()
-        }
-    }
-
-    private func markAsOptional(_ suggestion: ResolutionSuggestion) {
-        guard let targetEvent = suggestion.targetEvent else {
-            print("❌ Missing target event")
-            return
-        }
-
-        HapticManager.shared.light()
-
-        // Update event notes to indicate it's optional
-        let optionalNote = (targetEvent.description ?? "") + "\n\n[OPTIONAL - Can skip if needed]"
-
-        let updatedEvent = UnifiedEvent(
-            id: targetEvent.id,
-            title: "⚪️ \(targetEvent.title)", // Add indicator to title
-            startDate: targetEvent.startDate,
-            endDate: targetEvent.endDate,
-            location: targetEvent.location,
-            description: optionalNote,
-            isAllDay: targetEvent.isAllDay,
-            source: targetEvent.source,
-            organizer: targetEvent.organizer,
-            originalEvent: targetEvent.originalEvent
-        )
-
-        // Update in calendar manager
-        calendarManager.updateEvent(updatedEvent)
-
-        HapticManager.shared.success()
-        showSuccessMessage("Event marked as optional")
-
-        // Refresh conflicts
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            calendarManager.detectAllConflicts()
-            dismiss()
-        }
-    }
-
-    private func keepBoth(_ suggestion: ResolutionSuggestion) {
-        HapticManager.shared.light()
-
-        showSuccessMessage("Keeping both events as scheduled")
-
-        // Just dismiss - user accepts the conflict
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            dismiss()
-        }
-    }
-
-    // MARK: - Helper Methods
-
-    private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
-
-    private func showSuccessMessage(_ message: String) {
-        print("✅ \(message)")
-        // TODO: Show toast notification to user
-    }
 }
 
 // MARK: - Resolution Suggestion Card
