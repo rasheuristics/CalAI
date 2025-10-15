@@ -972,7 +972,7 @@ class CalendarManager: ObservableObject {
     }
 
     /// Delete a unified event
-    func deleteEvent(_ event: UnifiedEvent) {
+    func deleteEvent(_ event: UnifiedEvent, refreshUnifiedEvents: Bool = true) {
         print("🗑️ Deleting event: \(event.title)")
 
         switch event.source {
@@ -987,9 +987,11 @@ class CalendarManager: ObservableObject {
         // Delete from Core Data
         coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: event.source)
 
-        // Refresh unified events
-        DispatchQueue.main.async {
-            self.loadAllUnifiedEvents()
+        // Optionally refresh unified events
+        if refreshUnifiedEvents {
+            DispatchQueue.main.async {
+                self.loadAllUnifiedEvents()
+            }
         }
     }
 

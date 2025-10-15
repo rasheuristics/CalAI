@@ -411,15 +411,22 @@ struct ConflictResolutionView: View {
 
         HapticManager.shared.medium()
 
-        // Delete the event
-        calendarManager.deleteEvent(targetEvent)
+        // Delete the event (don't refresh unified events - we'll handle it manually)
+        calendarManager.deleteEvent(targetEvent, refreshUnifiedEvents: false)
+
+        // Immediately remove from unified events to update conflicts
+        calendarManager.unifiedEvents.removeAll { $0.id == targetEvent.id }
+        print("📊 Removed event from unified events. Count: \(calendarManager.unifiedEvents.count)")
+
+        // Re-detect conflicts with updated list
+        calendarManager.detectAllConflicts()
+        print("📊 Conflicts after deletion: \(calendarManager.detectedConflicts.count)")
 
         HapticManager.shared.success()
         showSuccessMessage("Event '\(targetEvent.title)' declined")
 
-        // Refresh conflicts
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            calendarManager.detectAllConflicts()
+        // Dismiss after showing message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             dismiss()
         }
     }

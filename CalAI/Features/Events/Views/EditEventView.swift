@@ -285,11 +285,12 @@ struct EditEventView: View {
                     // Dismiss after showing message
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         dismiss()
-                    }
 
-                    // Also refresh calendar data in background
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        calendarManager.refreshAllCalendars()
+                        // Refresh calendar data after dismissing, without reloading unified events
+                        // (we've already removed the deleted event from the array)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self.calendarManager.refreshAllCalendars()
+                        }
                     }
                 } else {
                     errorMessage = error ?? "Failed to delete event"
@@ -344,14 +345,26 @@ struct EditEventView: View {
     }
 
     private func deleteGoogleEvent(_ eventToDelete: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
-        // Use CalendarManager's delete method
-        calendarManager.deleteEvent(eventToDelete)
+        print("🗑️ Deleting Google event: \(eventToDelete.id)")
+
+        // Use CalendarManager's delete method, but don't refresh unified events
+        // (we'll handle that manually in the success block)
+        calendarManager.deleteEvent(eventToDelete, refreshUnifiedEvents: false)
+
+        // Google Calendar deletion is async but doesn't provide callback
+        // Assume success for now (TODO: add proper async handling)
         completion(true, nil)
     }
 
     private func deleteOutlookEvent(_ eventToDelete: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
-        // Use CalendarManager's delete method
-        calendarManager.deleteEvent(eventToDelete)
+        print("🗑️ Deleting Outlook event: \(eventToDelete.id)")
+
+        // Use CalendarManager's delete method, but don't refresh unified events
+        // (we'll handle that manually in the success block)
+        calendarManager.deleteEvent(eventToDelete, refreshUnifiedEvents: false)
+
+        // Outlook deletion is async but doesn't provide callback
+        // Assume success for now (TODO: add proper async handling)
         completion(true, nil)
     }
 
