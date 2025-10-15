@@ -753,12 +753,11 @@ class CalendarManager: ObservableObject {
         print("📅 loadAllUnifiedEvents called")
         var allEvents: [UnifiedEvent] = []
 
-        // First load cached events from Core Data
+        // Load cached events from Core Data as fallback
         let cachedEvents = coreDataManager.fetchEvents()
-        allEvents.append(contentsOf: cachedEvents)
         print("💾 Loaded \(cachedEvents.count) cached events from Core Data")
 
-        // Add iOS events
+        // Add iOS events (these are FRESH and should take priority)
         print("📅 Converting \(events.count) iOS events to unified events")
         let iosEvents = events.map { event in
             UnifiedEvent(
@@ -778,20 +777,11 @@ class CalendarManager: ObservableObject {
         // Cache iOS events to Core Data
         coreDataManager.saveEvents(iosEvents, syncStatus: .synced)
 
-        // Merge with existing events, avoiding duplicates
-        // For recurring events, check both id AND startDate to allow multiple occurrences
-        for iosEvent in iosEvents {
-            if !allEvents.contains(where: {
-                $0.id == iosEvent.id &&
-                $0.source == iosEvent.source &&
-                $0.startDate == iosEvent.startDate
-            }) {
-                allEvents.append(iosEvent)
-            }
-        }
+        // Add fresh iOS events directly
+        allEvents.append(contentsOf: iosEvents)
         print("📱 Added \(iosEvents.count) iOS events to unified list")
 
-        // Add Google events
+        // Add Google events (FRESH, take priority over cached)
         if let googleManager = googleCalendarManager {
             let googleEvents = googleManager.googleEvents.map { event in
                 UnifiedEvent(
@@ -811,21 +801,12 @@ class CalendarManager: ObservableObject {
             // Cache Google events to Core Data
             coreDataManager.saveEvents(googleEvents, syncStatus: .synced)
 
-            // Merge with existing events, avoiding duplicates
-            // For recurring events, check both id AND startDate to allow multiple occurrences
-            for googleEvent in googleEvents {
-                if !allEvents.contains(where: {
-                    $0.id == googleEvent.id &&
-                    $0.source == googleEvent.source &&
-                    $0.startDate == googleEvent.startDate
-                }) {
-                    allEvents.append(googleEvent)
-                }
-            }
+            // Add fresh Google events directly
+            allEvents.append(contentsOf: googleEvents)
             print("🟢 Added \(googleEvents.count) Google events to unified list")
         }
 
-        // Add Outlook events
+        // Add Outlook events (FRESH, take priority over cached)
         if let outlookManager = outlookCalendarManager {
             let outlookEvents = outlookManager.outlookEvents.map { event in
                 UnifiedEvent(
@@ -845,19 +826,23 @@ class CalendarManager: ObservableObject {
             // Cache Outlook events to Core Data
             coreDataManager.saveEvents(outlookEvents, syncStatus: .synced)
 
-            // Merge with existing events, avoiding duplicates
-            // For recurring events, check both id AND startDate to allow multiple occurrences
-            for outlookEvent in outlookEvents {
-                if !allEvents.contains(where: {
-                    $0.id == outlookEvent.id &&
-                    $0.source == outlookEvent.source &&
-                    $0.startDate == outlookEvent.startDate
-                }) {
-                    allEvents.append(outlookEvent)
-                }
-            }
+            // Add fresh Outlook events directly
+            allEvents.append(contentsOf: outlookEvents)
             print("🔵 Added \(outlookEvents.count) Outlook events to unified list")
         }
+
+        // Add cached events ONLY if they don't already exist in fresh events
+        // This handles offline scenarios where fresh events aren't available
+        for cachedEvent in cachedEvents {
+            if !allEvents.contains(where: {
+                $0.id == cachedEvent.id &&
+                $0.source == cachedEvent.source &&
+                $0.startDate == cachedEvent.startDate
+            }) {
+                allEvents.append(cachedEvent)
+            }
+        }
+        print("💾 Added \(cachedEvents.count - (allEvents.count - iosEvents.count - (googleCalendarManager?.googleEvents.count ?? 0) - (outlookCalendarManager?.outlookEvents.count ?? 0))) cached events as fallback")
 
         // Sort all events by start date
         unifiedEvents = allEvents.sorted { $0.startDate < $1.startDate }
