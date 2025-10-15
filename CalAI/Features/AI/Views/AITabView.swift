@@ -384,31 +384,37 @@ struct AITabView: View {
                         .padding(10)
                 }
 
-                // Text input field
-                TextField("Ask Anything", text: $inputText)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .onSubmit {
-                        if !inputText.isEmpty {
-                            handleTextInput()
+                // Text input field with embedded speak button
+                ZStack(alignment: .trailing) {
+                    TextField("Ask Anything", text: $inputText)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .onSubmit {
+                            if !inputText.isEmpty {
+                                handleTextInput()
+                            }
                         }
-                    }
+                        .padding(.trailing, 70) // Make room for speak button
 
-                // Speak button
-                Button(action: handleSpeakButtonTap) {
-                    HStack(spacing: 6) {
-                        Image(systemName: buttonIcon)
-                            .font(.system(size: 16))
-                        Text(buttonText)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
+                    // Speak button (embedded in text field)
+                    Button(action: handleSpeakButtonTap) {
+                        HStack(spacing: 4) {
+                            if let icon = buttonIcon {
+                                Image(systemName: icon)
+                                    .font(.caption2)
+                            }
+                            Text(buttonText)
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(buttonColor)
+                        )
                     }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(
-                        Capsule()
-                            .fill(buttonColor)
-                    )
+                    .padding(.trailing, 4)
                 }
             }
             .padding(.horizontal, 20)
@@ -442,7 +448,7 @@ struct AITabView: View {
         return voiceManager.isListening ? "Send" : "Speak"
     }
 
-    private var buttonIcon: String {
+    private var buttonIcon: String? {
         if speechManager.isSpeaking {
             return speechManager.isPaused ? "play.fill" : "pause.fill"
         }
