@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		786DAF93584B4A7F8C255A31 /* SmartEventParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55FA556EC1894B9B98A3F14E /* SmartEventParser.swift */; };
+		B97AD44CAEAF4CD496063E29 /* SmartEventParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F8F3DFCD60D445B946398BB /* SmartEventParserTests.swift */; };
 		0B4318950F3D26CF74B88743 /* Services/SmartNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83CFAD08A20B4CCE575C9CE /* Services/SmartNotificationManager.swift */; };
 		1E7EB73033867405B7E0B1E7 /* Services/MeetingAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0F1CE4910EF893F2C790B2 /* Services/MeetingAnalyzer.swift */; };
 		3BED07C18D3A4F60BDEA4CE8 /* EventICSExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51D383FDCAED4DE48824B5E1 /* EventICSExporter.swift */; };
@@ -61,6 +63,7 @@
 		506832272E9AF7F4007A48F5 /* YearCalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5068319F2E9AF7F4007A48F5 /* YearCalendarView.swift */; };
 		506832282E9AF7F4007A48F5 /* TutorialCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506831E32E9AF7F4007A48F5 /* TutorialCoordinator.swift */; };
 		506832292E9AF7F4007A48F5 /* AdvancedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506831BF2E9AF7F4007A48F5 /* AdvancedSettingsView.swift */; };
+		F31451D773724911825C05A0 /* AISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262DF1FE48464FC2A213E7D8 /* AISettingsView.swift */; };
 		5068322A2E9AF7F4007A48F5 /* MeetingFollowUpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506831B42E9AF7F4007A48F5 /* MeetingFollowUpView.swift */; };
 		5068322B2E9AF7F4007A48F5 /* MorningBriefingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506831AD2E9AF7F4007A48F5 /* MorningBriefingView.swift */; };
 		5068322C2E9AF7F4007A48F5 /* SmartReschedulingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506831B72E9AF7F4007A48F5 /* SmartReschedulingView.swift */; };
@@ -114,6 +117,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		55FA556EC1894B9B98A3F14E /* SmartEventParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartEventParser.swift; sourceTree = "<group>"; };
+		6F8F3DFCD60D445B946398BB /* SmartEventParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartEventParserTests.swift; sourceTree = "<group>"; };
 		020CC79B628E4F26B759D524 /* CalendarSyncStatus+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CalendarSyncStatus+CoreDataProperties.swift"; sourceTree = "<group>"; };
 		03B56C0D32C845768A4C4ED9 /* PostMeetingSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostMeetingSummaryView.swift; sourceTree = "<group>"; };
 		15B6F6C536014C07B84B54BD /* CoreDataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreDataManager.swift; sourceTree = "<group>"; };
@@ -147,6 +152,7 @@
 		506831BB2E9AF7F4007A48F5 /* PostMeetingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostMeetingService.swift; sourceTree = "<group>"; };
 		506831BC2E9AF7F4007A48F5 /* SmartRescheduling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartRescheduling.swift; sourceTree = "<group>"; };
 		506831BF2E9AF7F4007A48F5 /* AdvancedSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSettingsView.swift; sourceTree = "<group>"; };
+		262DF1FE48464FC2A213E7D8 /* AISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsView.swift; sourceTree = "<group>"; };
 		506831C02E9AF7F4007A48F5 /* AnalyticsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsSettingsView.swift; sourceTree = "<group>"; };
 		506831C12E9AF7F4007A48F5 /* ConflictWarningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConflictWarningView.swift; sourceTree = "<group>"; };
 		506831C22E9AF7F4007A48F5 /* CrashReportingSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReportingSettingsView.swift; sourceTree = "<group>"; };
@@ -426,6 +432,7 @@
 			isa = PBXGroup;
 			children = (
 				506831BF2E9AF7F4007A48F5 /* AdvancedSettingsView.swift */,
+				262DF1FE48464FC2A213E7D8 /* AISettingsView.swift */,
 				506831C02E9AF7F4007A48F5 /* AnalyticsSettingsView.swift */,
 				506831C12E9AF7F4007A48F5 /* ConflictWarningView.swift */,
 				506831C22E9AF7F4007A48F5 /* CrashReportingSettingsView.swift */,
@@ -513,6 +520,8 @@
 				506831E12E9AF7F4007A48F5 /* SyncQueueManager.swift */,
 				506831E22E9AF7F4007A48F5 /* TravelTimeManager.swift */,
 				506831E32E9AF7F4007A48F5 /* TutorialCoordinator.swift */,
+				55FA556EC1894B9B98A3F14E /* SmartEventParser.swift */,
+				6F8F3DFCD60D445B946398BB /* SmartEventParserTests.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -789,6 +798,7 @@
 				506832272E9AF7F4007A48F5 /* YearCalendarView.swift in Sources */,
 				506832282E9AF7F4007A48F5 /* TutorialCoordinator.swift in Sources */,
 				506832292E9AF7F4007A48F5 /* AdvancedSettingsView.swift in Sources */,
+				F31451D773724911825C05A0 /* AISettingsView.swift in Sources */,
 				5068322A2E9AF7F4007A48F5 /* MeetingFollowUpView.swift in Sources */,
 				5068322B2E9AF7F4007A48F5 /* MorningBriefingView.swift in Sources */,
 				5068322C2E9AF7F4007A48F5 /* SmartReschedulingView.swift in Sources */,
@@ -835,6 +845,8 @@
 				0B4318950F3D26CF74B88743 /* Services/SmartNotificationManager.swift in Sources */,
 				F87B6A14A4AE408FB9DE870E /* QRCodeGenerator.swift in Sources */,
 				3BED07C18D3A4F60BDEA4CE8 /* EventICSExporter.swift in Sources */,
+				786DAF93584B4A7F8C255A31 /* SmartEventParser.swift in Sources */,
+				B97AD44CAEAF4CD496063E29 /* SmartEventParserTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -893,7 +905,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -950,7 +962,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;

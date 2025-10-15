@@ -16,6 +16,8 @@ struct EditEventView: View {
     @State private var isAllDay: Bool = false
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
+    @State private var successMessage: String?
+    @State private var showingDeleteConfirmation = false
 
     var body: some View {
         NavigationView {
@@ -79,7 +81,7 @@ struct EditEventView: View {
                 }
 
                 Section {
-                    Button(action: deleteEvent) {
+                    Button(action: { showingDeleteConfirmation = true }) {
                         HStack {
                             Spacer()
                             Text("Delete Event")
@@ -142,6 +144,35 @@ struct EditEventView: View {
                 endDate = Calendar.current.date(byAdding: .hour, value: 1, to: newValue) ?? newValue
             }
         }
+        .alert("Delete Event", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                deleteEvent()
+            }
+        } message: {
+            Text("Are you sure you want to delete '\(title)'? This action cannot be undone.")
+        }
+        .overlay(
+            Group {
+                if let successMessage = successMessage {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.white)
+                            Text(successMessage)
+                                .dynamicFont(size: 15, fontManager: fontManager)
+                                .foregroundColor(.white)
+                        }
+                        .padding()
+                        .background(Color.green)
+                        .cornerRadius(10)
+                        .padding(.bottom, 50)
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+        )
     }
 
     private func loadEventData() {
@@ -180,8 +211,18 @@ struct EditEventView: View {
                     print("✅ Event updated successfully, refreshing calendar and conflicts...")
                     print("📊 Current conflict count BEFORE refresh: \(calendarManager.detectedConflicts.count)")
 
-                    // Dismiss first to return to conflict list
-                    dismiss()
+                    // Show success message
+                    withAnimation {
+                        successMessage = "Event updated successfully"
+                    }
+
+                    // Haptic feedback
+                    HapticManager.shared.success()
+
+                    // Dismiss after showing message
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        dismiss()
+                    }
 
                     // Then refresh calendar data
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -224,6 +265,14 @@ struct EditEventView: View {
                     print("📊 Current conflict count BEFORE: \(calendarManager.detectedConflicts.count)")
                     print("📊 Unified events count BEFORE: \(calendarManager.unifiedEvents.count)")
 
+                    // Show success message
+                    withAnimation {
+                        successMessage = "Event '\(event.title)' deleted successfully"
+                    }
+
+                    // Haptic feedback
+                    HapticManager.shared.success()
+
                     // Immediately remove the event from unified events
                     calendarManager.unifiedEvents.removeAll { $0.id == event.id }
                     print("📊 Unified events count AFTER removal: \(calendarManager.unifiedEvents.count)")
@@ -233,8 +282,10 @@ struct EditEventView: View {
                     print("📊 Current conflict count AFTER: \(calendarManager.detectedConflicts.count)")
                     print("🗑️ ========== CONFLICT UPDATE COMPLETE ==========")
 
-                    // Dismiss to return to conflict list
-                    dismiss()
+                    // Dismiss after showing message
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        dismiss()
+                    }
 
                     // Also refresh calendar data in background
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
