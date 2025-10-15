@@ -218,16 +218,36 @@ struct EditEventView: View {
     }
 
     private func deleteIOSEvent(_ eventToDelete: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
-        guard let ekEvent = eventToDelete.originalEvent as? EKEvent else {
-            completion(false, "Could not find original iOS event")
+        print("🗑️ Attempting to delete iOS event: \(eventToDelete.id)")
+        print("🗑️ Original event type: \(type(of: eventToDelete.originalEvent))")
+
+        // Try to get the EKEvent from originalEvent
+        if let ekEvent = eventToDelete.originalEvent as? EKEvent {
+            do {
+                try calendarManager.eventStore.remove(ekEvent, span: .thisEvent)
+                print("✅ Successfully deleted iOS event")
+                completion(true, nil)
+            } catch {
+                print("❌ Failed to delete iOS event: \(error.localizedDescription)")
+                completion(false, "Failed to delete event: \(error.localizedDescription)")
+            }
             return
         }
 
-        do {
-            try calendarManager.eventStore.remove(ekEvent, span: .thisEvent)
-            completion(true, nil)
-        } catch {
-            completion(false, "Failed to delete event: \(error.localizedDescription)")
+        // Fallback: Try to find the event by ID in the event store
+        print("⚠️ Original EKEvent not found, searching by ID...")
+        if let ekEvent = calendarManager.eventStore.event(withIdentifier: eventToDelete.id) {
+            do {
+                try calendarManager.eventStore.remove(ekEvent, span: .thisEvent)
+                print("✅ Successfully deleted iOS event via ID lookup")
+                completion(true, nil)
+            } catch {
+                print("❌ Failed to delete iOS event via ID: \(error.localizedDescription)")
+                completion(false, "Failed to delete event: \(error.localizedDescription)")
+            }
+        } else {
+            print("❌ Could not find iOS event with ID: \(eventToDelete.id)")
+            completion(false, "Could not find original iOS event. It may have already been deleted.")
         }
     }
 

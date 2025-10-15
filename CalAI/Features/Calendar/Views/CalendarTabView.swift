@@ -3621,6 +3621,11 @@ struct ConflictResolutionView: View {
         }
 
         // Open edit view with the modified event
+        print("📝 Opening EditEventView for: \(modifiedEvent.title)")
+        print("📝 Event ID: \(modifiedEvent.id)")
+        print("📝 Event source: \(modifiedEvent.source)")
+        print("📝 Original event: \(type(of: modifiedEvent.originalEvent))")
+
         eventToEdit = modifiedEvent
         showingEditEvent = true
     }
