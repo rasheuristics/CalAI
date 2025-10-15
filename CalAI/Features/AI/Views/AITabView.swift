@@ -307,32 +307,199 @@ struct AITabView: View {
 
     @State private var conversationHistory: [ConversationItem] = []
     @State private var showConversationWindow = false
+    @State private var inputText: String = ""
+    @State private var selectedActionCategory: CommandCategory?
 
     var body: some View {
-        ZStack {
-            Color.clear.ignoresSafeArea()
-            VStack(spacing: 0) {
-                ZStack(alignment: .bottom) {
-                    if !showConversationWindow {
-                        CommandCardListView(onCommandSelected: handleTranscript)
-                            .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                    }
-                    if showConversationWindow {
-                        ConversationWindow(conversationHistory: $conversationHistory, onDismiss: dismissConversation)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
+        VStack(spacing: 0) {
+            // Header
+            Text("AI Assistant")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+                .padding(.top, 20)
+                .padding(.bottom, 10)
+
+            // Conversation Area
+            if showConversationWindow {
+                ConversationScrollView(conversationHistory: $conversationHistory)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                // Large empty space for conversation
+                VStack {
+                    Spacer()
+                    Text("Start a conversation")
+                        .font(.title3)
+                        .foregroundColor(.secondary)
+                    Spacer()
                 }
-                if aiManager.isProcessing {
-                    HStack {
-                        ProgressView().scaleEffect(0.8)
-                        Text("Processing...").font(.caption).foregroundColor(.secondary)
-                    }.padding(.bottom, 8)
+            }
+
+            // Processing Indicator
+            if aiManager.isProcessing {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Processing...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                PersistentVoiceFooter(
-                    aiManager: aiManager,
-                    onTranscript: handleTranscript,
-                    onStartListening: { withAnimation { showConversationWindow = true } }
+                .padding(.vertical, 8)
+            }
+
+            Spacer()
+
+            // Three Action Buttons
+            HStack(spacing: 16) {
+                ActionButton(
+                    category: .eventManagement,
+                    isSelected: selectedActionCategory == .eventManagement,
+                    onTap: { handleActionButtonTap(.eventManagement) }
                 )
+
+                ActionButton(
+                    category: .eventQueries,
+                    isSelected: selectedActionCategory == .eventQueries,
+                    onTap: { handleActionButtonTap(.eventQueries) }
+                )
+
+                ActionButton(
+                    category: .scheduleManagement,
+                    isSelected: selectedActionCategory == .scheduleManagement,
+                    onTap: { handleActionButtonTap(.scheduleManagement) }
+                )
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
+
+            // Input Area
+            HStack(spacing: 12) {
+                // Attachment button
+                Button(action: {
+                    // Attachment functionality placeholder
+                    print("📎 Attachment tapped")
+                }) {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 20))
+                        .foregroundColor(.gray)
+                        .padding(10)
+                }
+
+                // Text input field
+                TextField("Ask Anything", text: $inputText)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .onSubmit {
+                        if !inputText.isEmpty {
+                            handleTextInput()
+                        }
+                    }
+
+                // Speak button
+                Button(action: handleSpeakButtonTap) {
+                    HStack(spacing: 6) {
+                        Image(systemName: buttonIcon)
+                            .font(.system(size: 16))
+                        Text(buttonText)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule()
+                            .fill(buttonColor)
+                    )
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+
+            // Show listening transcript
+            if voiceManager.isListening {
+                HStack {
+                    Text(voiceManager.currentTranscript)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 10)
+                    Spacer()
+                }
+            }
+        }
+        .background(Color(.systemBackground))
+    }
+
+    // MARK: - Button State
+
+    private var buttonText: String {
+        if speechManager.isSpeaking {
+            return speechManager.isPaused ? "Play" : "Pause"
+        }
+        if aiManager.conversationState == .awaitingConfirmation {
+            return "Answer"
+        }
+        return voiceManager.isListening ? "Send" : "Speak"
+    }
+
+    private var buttonIcon: String {
+        if speechManager.isSpeaking {
+            return speechManager.isPaused ? "play.fill" : "pause.fill"
+        }
+        if voiceManager.isListening {
+            return "paperplane.fill"
+        }
+        return "mic.fill"
+    }
+
+    private var buttonColor: Color {
+        if voiceManager.isListening {
+            return Color.red
+        }
+        return Color.blue
+    }
+
+    // MARK: - Actions
+
+    private func handleActionButtonTap(_ category: CommandCategory) {
+        withAnimation {
+            selectedActionCategory = selectedActionCategory == category ? nil : category
+        }
+    }
+
+    private func handleTextInput() {
+        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        inputText = ""
+        withAnimation {
+            showConversationWindow = true
+        }
+        handleTranscript(text)
+    }
+
+    private func handleSpeakButtonTap() {
+        // Handle speech control (pause/play)
+        if speechManager.isSpeaking {
+            if speechManager.isPaused {
+                speechManager.resumeSpeaking()
+            } else {
+                speechManager.pauseSpeaking()
+            }
+            return
+        }
+
+        // Handle voice input (speak/send)
+        if voiceManager.isListening {
+            voiceManager.stopListening()
+        } else {
+            withAnimation {
+                showConversationWindow = true
+            }
+            voiceManager.startListening { finalTranscript in
+                if !finalTranscript.isEmpty {
+                    handleTranscript(finalTranscript)
+                }
             }
         }
     }
@@ -359,7 +526,7 @@ struct AITabView: View {
             calendarManager.handleAICalendarResponse(AICalendarResponse(message: "", command: command))
         }
     }
-    
+
     private func dismissConversation() {
         withAnimation { showConversationWindow = false }
         aiManager.resetConversationState()
@@ -367,6 +534,62 @@ struct AITabView: View {
 }
 
 // MARK: - UI Components
+
+private struct ActionButton: View {
+    let category: CommandCategory
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 8) {
+                Image(systemName: category.icon)
+                    .font(.system(size: 28))
+                    .foregroundColor(isSelected ? .white : .blue)
+
+                Text(category.rawValue)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(isSelected ? .white : .primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? Color.blue : Color(.systemGray6))
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+private struct ConversationScrollView: View {
+    @Binding var conversationHistory: [ConversationItem]
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(conversationHistory) { item in
+                        ConversationBubble(item: item)
+                    }
+                }
+                .padding()
+                .onChange(of: conversationHistory.count) { _ in
+                    if let lastItem = conversationHistory.last {
+                        withAnimation {
+                            proxy.scrollTo(lastItem.id, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxHeight: .infinity)
+    }
+}
 
 private struct CommandCardListView: View {
     var onCommandSelected: (String) -> Void
@@ -386,10 +609,18 @@ private struct CommandCardListView: View {
 }
 
 private enum CommandCategory: String, CaseIterable {
-    case eventManagement = "Event Management", eventQueries = "Event Queries", scheduleManagement = "Schedule Management"
+    case eventManagement = "Event Management"
+    case eventQueries = "Event Queries"
+    case scheduleManagement = "Schedule Management"
+
     var icon: String {
-        switch self { case .eventManagement: return "calendar.badge.plus"; case .eventQueries: return "magnifyingglass"; case .scheduleManagement: return "clock" }
+        switch self {
+        case .eventManagement: return "calendar.badge.plus"
+        case .eventQueries: return "magnifyingglass.circle.fill"
+        case .scheduleManagement: return "calendar"
+        }
     }
+
     var commands: [String] {
         switch self {
         case .eventManagement: return ["Schedule lunch with John tomorrow at 1pm", "Delete my 3pm meeting"]
