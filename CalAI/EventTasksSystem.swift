@@ -2794,18 +2794,16 @@ struct TaskEditView: View {
                     Spacer()
                         .frame(height: 20)
 
-                    // Mark Completed Button
-                    Button(action: markCompleted) {
-                        HStack {
-                            Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                    // Mark Completed Link
+                    HStack {
+                        Spacer()
+
+                        Button(action: markCompleted) {
                             Text(task.isCompleted ? "Mark as Incomplete" : "Mark as Completed")
-                                .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                .dynamicFont(size: 16, fontManager: fontManager)
+                                .foregroundColor(.blue)
+                                .underline()
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(task.isCompleted ? Color.gray : Color.green)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
                     }
                     .padding(.horizontal)
                     .padding(.bottom, 20)
