@@ -7,6 +7,19 @@ import MapKit
 
 // MARK: - Event Task Models
 
+/// Subtask model
+struct EventSubtask: Identifiable, Codable, Hashable {
+    let id: UUID
+    var title: String
+    var isCompleted: Bool
+
+    init(id: UUID = UUID(), title: String, isCompleted: Bool = false) {
+        self.id = id
+        self.title = title
+        self.isCompleted = isCompleted
+    }
+}
+
 /// Universal event task system (extends Meeting Preparation to all event types)
 struct EventTask: Identifiable, Codable, Hashable {
     let id: UUID
@@ -19,6 +32,8 @@ struct EventTask: Identifiable, Codable, Hashable {
     var estimatedMinutes: Int?
     var createdAt: Date
     var completedAt: Date?
+    var dueDate: Date?
+    var subtasks: [EventSubtask]
 
     init(
         id: UUID = UUID(),
@@ -30,7 +45,9 @@ struct EventTask: Identifiable, Codable, Hashable {
         timing: TaskTiming = .before(hours: 24),
         estimatedMinutes: Int? = nil,
         createdAt: Date = Date(),
-        completedAt: Date? = nil
+        completedAt: Date? = nil,
+        dueDate: Date? = nil,
+        subtasks: [EventSubtask] = []
     ) {
         self.id = id
         self.title = title
@@ -42,6 +59,8 @@ struct EventTask: Identifiable, Codable, Hashable {
         self.estimatedMinutes = estimatedMinutes
         self.createdAt = createdAt
         self.completedAt = completedAt
+        self.dueDate = dueDate
+        self.subtasks = subtasks
     }
 }
 
@@ -566,6 +585,17 @@ class EventTaskManager: ObservableObject {
         saveToStorage()
     }
 
+    /// Update an existing task
+    func updateTask(_ updatedTask: EventTask, for eventId: String) {
+        guard var tasks = eventTasks[eventId] else { return }
+
+        if let index = tasks.tasks.firstIndex(where: { $0.id == updatedTask.id }) {
+            tasks.tasks[index] = updatedTask
+            eventTasks[eventId] = tasks
+            saveToStorage()
+        }
+    }
+
     /// Delete all tasks for an event
     func deleteTasks(for eventId: String) {
         eventTasks.removeValue(forKey: eventId)
@@ -706,6 +736,10 @@ struct EventTasksTabView: View {
     @State private var showDatePicker: Bool = false
     @FocusState private var isTaskFieldFocused: Bool
 
+    // Task edit sheet
+    @State private var showingTaskEdit = false
+    @State private var selectedTask: EventTask?
+
     private var eventTasks: EventTasks? {
         taskManager.getTasks(for: event.id)
     }
@@ -757,6 +791,15 @@ struct EventTasksTabView: View {
                 for task in selectedTasks {
                     taskManager.addTask(task, to: event.id)
                 }
+            }
+        }
+        .sheet(isPresented: $showingTaskEdit) {
+            if let selectedTask = selectedTask {
+                TaskEditSheet(
+                    task: selectedTask,
+                    fontManager: fontManager,
+                    eventId: event.id
+                )
             }
         }
     }
@@ -837,6 +880,11 @@ struct EventTasksTabView: View {
                     taskManager.toggleTaskCompletion(task.id, in: event.id)
                 } onDelete: {
                     taskManager.deleteTask(task.id, from: event.id)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectedTask = task
+                    showingTaskEdit = true
                 }
             }
         }
@@ -1204,6 +1252,41 @@ struct TaskRow: View {
         case .medium: return .orange
         case .low: return .blue
         }
+    }
+}
+
+// MARK: - Task Edit Sheet
+
+/// Wrapper view for TaskEditView that manages state for sheet presentation
+struct TaskEditSheet: View {
+    let task: EventTask
+    @ObservedObject var fontManager: FontManager
+    let eventId: String
+
+    @StateObject private var taskManager = EventTaskManager.shared
+    @State private var editableTask: EventTask
+    @Environment(\.dismiss) private var dismiss
+
+    init(task: EventTask, fontManager: FontManager, eventId: String) {
+        self.task = task
+        self.fontManager = fontManager
+        self.eventId = eventId
+        _editableTask = State(initialValue: task)
+    }
+
+    var body: some View {
+        TaskEditView(
+            task: $editableTask,
+            fontManager: fontManager,
+            onSave: { updatedTask in
+                taskManager.updateTask(updatedTask, for: eventId)
+                dismiss()
+            },
+            onDelete: {
+                taskManager.deleteTask(task.id, from: eventId)
+                dismiss()
+            }
+        )
     }
 }
 
