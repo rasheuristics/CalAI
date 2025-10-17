@@ -309,6 +309,25 @@ struct AITabView: View {
     @State private var showConversationWindow = false
     @State private var inputText: String = ""
     @State private var selectedActionCategory: CommandCategory?
+    @State private var textEditorHeight: CGFloat = 40
+    @State private var isTextInputActive: Bool = false
+
+    // Computed property to show either user input or live dictation
+    private var displayText: Binding<String> {
+        Binding(
+            get: {
+                if voiceManager.isListening {
+                    return voiceManager.currentTranscript
+                }
+                return inputText
+            },
+            set: { newValue in
+                if !voiceManager.isListening {
+                    inputText = newValue
+                }
+            }
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -323,6 +342,9 @@ struct AITabView: View {
             if showConversationWindow {
                 ConversationScrollView(conversationHistory: $conversationHistory)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .onTapGesture {
+                        dismissKeyboard()
+                    }
             } else {
                 // Large empty space for conversation
                 VStack {
@@ -331,6 +353,9 @@ struct AITabView: View {
                         .font(.title3)
                         .foregroundColor(.secondary)
                     Spacer()
+                }
+                .onTapGesture {
+                    dismissKeyboard()
                 }
             }
 
@@ -348,90 +373,127 @@ struct AITabView: View {
 
             Spacer()
 
-            // Three Action Buttons
-            HStack(spacing: 16) {
-                ActionButton(
-                    category: .eventManagement,
-                    isSelected: selectedActionCategory == .eventManagement,
-                    onTap: { handleActionButtonTap(.eventManagement) }
-                )
+            // Three Action Buttons (scrollable)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ActionButton(
+                        category: .eventManagement,
+                        isSelected: selectedActionCategory == .eventManagement,
+                        onTap: { handleActionButtonTap(.eventManagement) }
+                    )
 
-                ActionButton(
-                    category: .eventQueries,
-                    isSelected: selectedActionCategory == .eventQueries,
-                    onTap: { handleActionButtonTap(.eventQueries) }
-                )
+                    ActionButton(
+                        category: .eventQueries,
+                        isSelected: selectedActionCategory == .eventQueries,
+                        onTap: { handleActionButtonTap(.eventQueries) }
+                    )
 
-                ActionButton(
-                    category: .scheduleManagement,
-                    isSelected: selectedActionCategory == .scheduleManagement,
-                    onTap: { handleActionButtonTap(.scheduleManagement) }
-                )
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
-
-            // Input Area
-            HStack(spacing: 12) {
-                // Attachment button
-                Button(action: {
-                    // Attachment functionality placeholder
-                    print("📎 Attachment tapped")
-                }) {
-                    Image(systemName: "paperclip")
-                        .font(.system(size: 20))
-                        .foregroundColor(.gray)
-                        .padding(10)
+                    ActionButton(
+                        category: .scheduleManagement,
+                        isSelected: selectedActionCategory == .scheduleManagement,
+                        onTap: { handleActionButtonTap(.scheduleManagement) }
+                    )
                 }
+                .padding(.horizontal, 20)
+            }
+            .padding(.bottom, 16) // Gap between action buttons and text box
 
-                // Text input field with embedded speak button
-                ZStack(alignment: .trailing) {
-                    TextField("Ask Anything", text: $inputText)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .onSubmit {
-                            if !inputText.isEmpty {
-                                handleTextInput()
-                            }
-                        }
-                        .padding(.trailing, 70) // Make room for speak button
+            // Input Area - Unified Pill Shape
+            ZStack {
+                // Pill-shaped background
+                Capsule()
+                    .strokeBorder(Color(.systemGray4), lineWidth: 1)
+                    .background(
+                        Capsule()
+                            .fill(Color(.systemBackground))
+                    )
+                    .frame(height: max(44, min(textEditorHeight + 8, 120)))
 
-                    // Speak button (embedded in text field)
-                    Button(action: handleSpeakButtonTap) {
-                        HStack(spacing: 4) {
-                            if let icon = buttonIcon {
-                                Image(systemName: icon)
-                                    .font(.caption2)
-                            }
-                            Text(buttonText)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .fill(buttonColor)
-                        )
+                HStack(spacing: 8) {
+                    // Paperclip button (left side)
+                    Button(action: {
+                        print("📎 Attachment tapped")
+                    }) {
+                        Image(systemName: "paperclip")
+                            .font(.system(size: 18))
+                            .foregroundColor(.gray)
                     }
-                    .padding(.trailing, 4)
+                    .padding(.leading, 16)
+
+                    // Auto-expanding text editor
+                    ZStack(alignment: .leading) {
+                        // Placeholder text
+                        if inputText.isEmpty && !voiceManager.isListening {
+                            Text("Ask Anything")
+                                .font(.system(size: 17))
+                                .foregroundColor(Color(.placeholderText))
+                        }
+
+                        TextEditor(text: displayText)
+                            .font(.system(size: 17))
+                            .frame(height: max(36, min(textEditorHeight, 112)))
+                            .scrollContentBackground(.hidden)
+                            .background(Color.clear)
+                            .onTapGesture {
+                                isTextInputActive = true
+                            }
+                            .onChange(of: displayText.wrappedValue) { newValue in
+                                // Calculate text height dynamically
+                                let width = UIScreen.main.bounds.width - 160 // Account for icons and padding
+                                let font = UIFont.systemFont(ofSize: 17)
+                                let attributes = [NSAttributedString.Key.font: font]
+                                let size = (newValue as NSString).boundingRect(
+                                    with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                                    options: .usesLineFragmentOrigin,
+                                    attributes: attributes,
+                                    context: nil
+                                ).size
+                                textEditorHeight = size.height + 8
+
+                                // Set text input active if user is typing
+                                if !newValue.isEmpty {
+                                    isTextInputActive = true
+                                }
+                            }
+                    }
+
+                    // Speak/Send button (right side)
+                    Button(action: handleSpeakButtonTap) {
+                        if isTextInputActive && !inputText.isEmpty {
+                            // Show arrow icon in circle when typing
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 32, height: 32)
+                                .background(
+                                    Circle()
+                                        .fill(Color.black)
+                                )
+                        } else {
+                            // Show regular speak button
+                            HStack(spacing: 4) {
+                                if let icon = buttonIcon {
+                                    Image(systemName: icon)
+                                        .font(.system(size: 14))
+                                }
+                                Text(buttonText)
+                                    .font(.system(size: 13))
+                                    .fontWeight(.medium)
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule()
+                                    .fill(buttonColor)
+                            )
+                        }
+                    }
+                    .padding(.trailing, 8)
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-
-            // Show listening transcript
-            if voiceManager.isListening {
-                HStack {
-                    Text(voiceManager.currentTranscript)
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 10)
-                    Spacer()
-                }
-            }
+            .padding(.bottom, 20) // Gap from tab bar
         }
         .background(Color(.systemBackground))
     }
@@ -455,14 +517,14 @@ struct AITabView: View {
         if voiceManager.isListening {
             return "paperplane.fill"
         }
-        return "mic.fill"
+        return "waveform"
     }
 
     private var buttonColor: Color {
         if voiceManager.isListening {
             return Color.red
         }
-        return Color.blue
+        return Color.black
     }
 
     // MARK: - Actions
@@ -485,6 +547,13 @@ struct AITabView: View {
     }
 
     private func handleSpeakButtonTap() {
+        // Handle text input send
+        if isTextInputActive && !inputText.isEmpty {
+            handleTextInput()
+            isTextInputActive = false
+            return
+        }
+
         // Handle speech control (pause/play)
         if speechManager.isSpeaking {
             if speechManager.isPaused {
@@ -537,6 +606,11 @@ struct AITabView: View {
         withAnimation { showConversationWindow = false }
         aiManager.resetConversationState()
     }
+
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        isTextInputActive = false
+    }
 }
 
 // MARK: - UI Components
@@ -548,25 +622,25 @@ private struct ActionButton: View {
 
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: category.icon)
-                    .font(.system(size: 28))
+                    .font(.system(size: 16))
                     .foregroundColor(isSelected ? .white : .blue)
 
                 Text(category.rawValue)
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(isSelected ? .white : .primary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                Capsule()
                     .fill(isSelected ? Color.blue : Color(.systemGray6))
             )
+            .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -615,9 +689,9 @@ private struct CommandCardListView: View {
 }
 
 private enum CommandCategory: String, CaseIterable {
-    case eventManagement = "Event Management"
-    case eventQueries = "Event Queries"
-    case scheduleManagement = "Schedule Management"
+    case eventManagement = "Manage"
+    case eventQueries = "Queries"
+    case scheduleManagement = "Schedule"
 
     var icon: String {
         switch self {
