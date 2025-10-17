@@ -15,91 +15,86 @@ struct EventsTabView: View {
     @State private var eventsToReschedule: [UnifiedEvent] = []
     @State private var collapsedDays: Set<Date> = []
 
-    var body: some View {
-        ZStack {
-            // Transparent background to show main gradient
-            Color.clear
-                .ignoresSafeArea(.all)
+    private var headerView: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Picker("Time Range", selection: $selectedTimeRange) {
+                    Text("Today").tag(TimeRange.all)
+                    Text("This Week").tag(TimeRange.week)
+                    Text("This Month").tag(TimeRange.month)
+                }
+                .pickerStyle(SegmentedPickerStyle())
 
-            VStack(spacing: 0) {
-                VStack(spacing: 8) {
-                    HStack {
-                        Picker("Time Range", selection: $selectedTimeRange) {
-                            Text("Today").tag(TimeRange.all)
-                            Text("This Week").tag(TimeRange.week)
-                            Text("This Month").tag(TimeRange.month)
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
-
-                        Button(action: {
-                            showingAddEvent = true
-                        }) {
-                            Image(systemName: "plus")
-                                .font(.title2)
-                                .foregroundColor(.blue)
-                        }
-                        .padding(.leading, 8)
-                    }
-
-                    HStack {
-                        Toggle("Show All Calendars", isOn: $showUnifiedEvents)
-                            .dynamicFont(size: 14, fontManager: fontManager)
-
-                        Spacer()
-
-                        Button("Refresh All") {
-                            calendarManager.refreshAllCalendars()
-                        }
-                        .font(.caption)
+                Button(action: {
+                    showingAddEvent = true
+                }) {
+                    Image(systemName: "plus")
+                        .font(.title2)
                         .foregroundColor(.blue)
-
-                        Button("Add Sample") {
-                            calendarManager.createSampleEvents()
-                        }
-                        .font(.caption)
-                        .foregroundColor(.green)
-                    }
                 }
-                .padding(.top, 8)
-                .padding(.horizontal)
+                .padding(.leading, 8)
+            }
 
-            if showUnifiedEvents ? filteredUnifiedEvents.isEmpty : filteredEvents.isEmpty {
-                VStack {
-                    Image(systemName: "calendar.badge.exclamationmark")
-                        .font(.system(size: 50))
-                        .foregroundColor(.gray)
-                    Text("No events found")
-                        .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
-                        .foregroundColor(.gray)
-                    Text("Events will appear here when you create them")
-                        .dynamicFont(size: 12, fontManager: fontManager)
-                        .foregroundColor(.secondary)
+            HStack {
+                Toggle("Show All Calendars", isOn: $showUnifiedEvents)
+                    .dynamicFont(size: 14, fontManager: fontManager)
 
-                    // Debug info
-                    VStack {
-                        Text("Debug Info:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("iOS Events: \(calendarManager.events.count)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Text("Unified Events: \(calendarManager.unifiedEvents.count)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Text("Filtered Events: \(showUnifiedEvents ? filteredUnifiedEvents.count : filteredEvents.count)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Text("Has Calendar Access: \(calendarManager.hasCalendarAccess ? "Yes" : "No")")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.top, 8)
-                }
-                .padding()
                 Spacer()
-            } else {
-                if showUnifiedEvents {
-                    List {
+
+                Button("Refresh All") {
+                    calendarManager.refreshAllCalendars()
+                }
+                .font(.caption)
+                .foregroundColor(.blue)
+
+                Button("Add Sample") {
+                    calendarManager.createSampleEvents()
+                }
+                .font(.caption)
+                .foregroundColor(.green)
+            }
+        }
+        .padding(.top, 8)
+        .padding(.horizontal)
+    }
+
+    private var emptyStateView: some View {
+        VStack {
+            Image(systemName: "calendar.badge.exclamationmark")
+                .font(.system(size: 50))
+                .foregroundColor(.gray)
+            Text("No events found")
+                .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+                .foregroundColor(.gray)
+            Text("Events will appear here when you create them")
+                .dynamicFont(size: 12, fontManager: fontManager)
+                .foregroundColor(.secondary)
+
+            // Debug info
+            VStack {
+                Text("Debug Info:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text("iOS Events: \(calendarManager.events.count)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text("Unified Events: \(calendarManager.unifiedEvents.count)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text("Filtered Events: \(showUnifiedEvents ? filteredUnifiedEvents.count : filteredEvents.count)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text("Has Calendar Access: \(calendarManager.hasCalendarAccess ? "Yes" : "No")")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.top, 8)
+        }
+        .padding()
+    }
+
+    private var unifiedEventsList: some View {
+        List {
                         ForEach(groupedUnifiedEvents.keys.sorted(), id: \.self) { date in
                             Section(header:
                                 Button(action: {
@@ -153,13 +148,15 @@ struct EventsTabView: View {
                                 }
                             }
                         }
-                    }
-                    .listStyle(PlainListStyle())
-                    .refreshable {
-                        calendarManager.refreshAllCalendars()
-                    }
-                } else {
-                    List {
+                }
+                .listStyle(PlainListStyle())
+                .refreshable {
+                    calendarManager.refreshAllCalendars()
+                }
+    }
+
+    private var iosEventsList: some View {
+        List {
                         ForEach(groupedEvents.keys.sorted(), id: \.self) { date in
                             Section(header:
                                 Button(action: {
@@ -197,7 +194,10 @@ struct EventsTabView: View {
                                                     isAllDay: event.isAllDay,
                                                     source: .ios,
                                                     organizer: event.organizer?.name,
-                                                    originalEvent: event
+                                                    originalEvent: event,
+                                                    calendarId: event.calendar?.calendarIdentifier,
+                                                    calendarName: event.calendar?.title,
+                                                    calendarColor: event.calendar?.cgColor != nil ? Color(event.calendar!.cgColor) : nil
                                                 )
                                                 selectedEventForEdit = unifiedEvent
                                                 showingEditAlert = true
@@ -216,16 +216,44 @@ struct EventsTabView: View {
                                 }
                             }
                         }
-                    }
-                    .listStyle(PlainListStyle())
-                    .refreshable {
-                        calendarManager.refreshAllCalendars()
+                }
+                .listStyle(PlainListStyle())
+                .refreshable {
+                    calendarManager.refreshAllCalendars()
+                }
+    }
+
+    var body: some View {
+        ZStack {
+            Color.clear
+                .ignoresSafeArea(.all)
+
+            VStack(spacing: 0) {
+                headerView
+
+                if showUnifiedEvents ? filteredUnifiedEvents.isEmpty : filteredEvents.isEmpty {
+                    emptyStateView
+                    Spacer()
+                } else {
+                    if showUnifiedEvents {
+                        unifiedEventsList
+                    } else {
+                        iosEventsList
                     }
                 }
             }
-            }
             .onAppear {
                 calendarManager.refreshAllCalendars()
+                // Collapse all days by default
+                collapseAllDays()
+            }
+            .onChange(of: showUnifiedEvents) { _ in
+                // Re-collapse all days when switching between views
+                collapseAllDays()
+            }
+            .onChange(of: selectedTimeRange) { _ in
+                // Re-collapse all days when changing time range
+                collapseAllDays()
             }
             .sheet(isPresented: $showingAddEvent) {
                 AddEventView(calendarManager: calendarManager, fontManager: fontManager)
@@ -377,6 +405,15 @@ struct EventsTabView: View {
                     }
                 }
             }
+        }
+    }
+
+    private func collapseAllDays() {
+        // Collapse all days based on current view mode
+        if showUnifiedEvents {
+            collapsedDays = Set(groupedUnifiedEvents.keys)
+        } else {
+            collapsedDays = Set(groupedEvents.keys)
         }
     }
 }

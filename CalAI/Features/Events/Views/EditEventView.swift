@@ -200,7 +200,10 @@ struct EditEventView: View {
             isAllDay: isAllDay,
             source: event.source,
             organizer: event.organizer,
-            originalEvent: event.originalEvent
+            originalEvent: event.originalEvent,
+            calendarId: event.calendarId,
+            calendarName: event.calendarName,
+            calendarColor: event.calendarColor
         )
 
         updateEventInCalendar(updatedEvent) { success, error in
@@ -345,25 +348,57 @@ struct EditEventView: View {
     private func deleteGoogleEvent(_ eventToDelete: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
         print("🗑️ Deleting Google event: \(eventToDelete.id)")
 
-        // Use CalendarManager's delete method, but don't refresh unified events
-        // (we'll handle that manually in the success block)
-        calendarManager.deleteEvent(eventToDelete, refreshUnifiedEvents: false)
+        guard let googleManager = calendarManager.googleCalendarManager else {
+            print("❌ Google Calendar not connected")
+            completion(false, "Google Calendar not connected")
+            return
+        }
 
-        // Google Calendar deletion is async but doesn't provide callback
-        // Assume success for now (TODO: add proper async handling)
-        completion(true, nil)
+        Task {
+            let success = await googleManager.deleteEvent(eventId: eventToDelete.id)
+
+            await MainActor.run {
+                if success {
+                    print("✅ Google event deleted successfully from server")
+                    // Delete from Core Data cache
+                    CoreDataManager.shared.permanentlyDeleteEvent(eventId: eventToDelete.id, source: .google)
+                    // Refresh Google events from server
+                    googleManager.fetchEvents()
+                    completion(true, nil)
+                } else {
+                    print("❌ Failed to delete Google event from server")
+                    completion(false, "Failed to delete from Google Calendar")
+                }
+            }
+        }
     }
 
     private func deleteOutlookEvent(_ eventToDelete: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
         print("🗑️ Deleting Outlook event: \(eventToDelete.id)")
 
-        // Use CalendarManager's delete method, but don't refresh unified events
-        // (we'll handle that manually in the success block)
-        calendarManager.deleteEvent(eventToDelete, refreshUnifiedEvents: false)
+        guard let outlookManager = calendarManager.outlookCalendarManager else {
+            print("❌ Outlook Calendar not connected")
+            completion(false, "Outlook Calendar not connected")
+            return
+        }
 
-        // Outlook deletion is async but doesn't provide callback
-        // Assume success for now (TODO: add proper async handling)
-        completion(true, nil)
+        Task {
+            let success = await outlookManager.deleteEvent(eventId: eventToDelete.id)
+
+            await MainActor.run {
+                if success {
+                    print("✅ Outlook event deleted successfully from server")
+                    // Delete from Core Data cache
+                    CoreDataManager.shared.permanentlyDeleteEvent(eventId: eventToDelete.id, source: .outlook)
+                    // Refresh Outlook events from server
+                    outlookManager.fetchEvents()
+                    completion(true, nil)
+                } else {
+                    print("❌ Failed to delete Outlook event from server")
+                    completion(false, "Failed to delete from Outlook Calendar")
+                }
+            }
+        }
     }
 
     private func updateEventInCalendar(_ updatedEvent: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
@@ -452,7 +487,10 @@ struct EditEventView: View {
             isAllDay: false,
             source: .ios,
             organizer: nil,
-            originalEvent: Optional<Any>.none as Any
+            originalEvent: Optional<Any>.none as Any,
+            calendarId: "preview-calendar",
+            calendarName: "Personal",
+            calendarColor: .blue
         )
     )
 }

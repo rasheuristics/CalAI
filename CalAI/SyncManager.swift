@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import BackgroundTasks
 import EventKit
+import SwiftUI
 
 class SyncManager: ObservableObject {
     static let shared = SyncManager()
@@ -132,7 +133,10 @@ class SyncManager: ObservableObject {
                     isAllDay: event.isAllDay,
                     source: .ios,
                     organizer: event.organizer?.name,
-                    originalEvent: event
+                    originalEvent: event,
+                    calendarId: event.calendar?.calendarIdentifier,
+                    calendarName: event.calendar?.title,
+                    calendarColor: event.calendar?.cgColor != nil ? Color(event.calendar!.cgColor) : nil
                 )
             }
 
@@ -170,7 +174,10 @@ class SyncManager: ObservableObject {
                 isAllDay: false,
                 source: .google,
                 organizer: nil,
-                originalEvent: event
+                originalEvent: event,
+                calendarId: nil,
+                calendarName: nil,
+                calendarColor: nil
             )
         }
 
@@ -209,7 +216,10 @@ class SyncManager: ObservableObject {
                 isAllDay: false,
                 source: .outlook,
                 organizer: nil,
-                originalEvent: event
+                originalEvent: event,
+                calendarId: nil,
+                calendarName: nil,
+                calendarColor: nil
             )
         }
 

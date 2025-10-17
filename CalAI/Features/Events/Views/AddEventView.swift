@@ -24,6 +24,42 @@ enum CalendarOption: CaseIterable, Identifiable {
     }
 }
 
+// New model for specific calendar selection
+struct CalendarSelection: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let source: CalendarSource
+    let color: Color?
+    let originalCalendar: Any?
+
+    init(id: String, name: String, source: CalendarSource, color: Color? = nil, originalCalendar: Any? = nil) {
+        self.id = id
+        self.name = name
+        self.source = source
+        self.color = color
+        self.originalCalendar = originalCalendar
+    }
+
+    var displayName: String {
+        let prefix: String
+        switch source {
+        case .ios: prefix = "📱"
+        case .google: prefix = "🟢"
+        case .outlook: prefix = "🔵"
+        }
+        return "\(prefix) \(name)"
+    }
+
+    static func == (lhs: CalendarSelection, rhs: CalendarSelection) -> Bool {
+        lhs.id == rhs.id && lhs.source == rhs.source
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(source)
+    }
+}
+
 struct AttachmentItem: Identifiable {
     let id = UUID()
     let name: String
@@ -89,6 +125,8 @@ struct AddEventView: View {
     @State private var endDate = Date().addingTimeInterval(3600)
     @State private var isAllDay = false
     @State private var selectedCalendar: CalendarOption = .ios
+    @State private var selectedSpecificCalendar: CalendarSelection?
+    @State private var availableCalendars: [CalendarSelection] = []
     @State private var attachments: [AttachmentItem] = []
     @State private var showingDocumentPicker = false
     @State private var selectedRepeat: RepeatOption = .none
@@ -165,11 +203,18 @@ struct AddEventView: View {
                 }
 
                 Section("Calendar") {
-                    Picker("Add to Calendar", selection: $selectedCalendar) {
-                        ForEach(CalendarOption.allCases.filter(\.isAvailable)) { option in
-                            Text(option.name)
-                                .dynamicFont(size: 17, fontManager: fontManager)
-                                .tag(option)
+                    Picker("Add to Calendar", selection: $selectedSpecificCalendar) {
+                        ForEach(availableCalendars) { calendar in
+                            HStack {
+                                if let color = calendar.color {
+                                    Circle()
+                                        .fill(color)
+                                        .frame(width: 12, height: 12)
+                                }
+                                Text(calendar.displayName)
+                                    .dynamicFont(size: 17, fontManager: fontManager)
+                            }
+                            .tag(calendar as CalendarSelection?)
                         }
                     }
                     .dynamicFont(size: 17, fontManager: fontManager)
@@ -347,6 +392,7 @@ struct AddEventView: View {
         .onAppear {
             loadEventDataIfNeeded()
             loadRecentLocations()
+            loadAvailableCalendars()
         }
         .onChange(of: startDate) { newValue in
             if endDate <= newValue {
@@ -391,22 +437,32 @@ struct AddEventView: View {
 
     private func createEvent() {
         guard !title.isEmpty else { return }
+        guard let selectedCal = selectedSpecificCalendar else {
+            print("❌ No calendar selected")
+            return
+        }
 
-        // For now, only create events in iOS calendar
-        // TODO: Implement creation for Google and Outlook calendars based on selectedCalendar
-        switch selectedCalendar {
+        // Create event in the selected calendar
+        switch selectedCal.source {
         case .ios:
-            calendarManager.createEvent(
-                title: title,
-                startDate: startDate,
-                endDate: endDate
-            )
+            // For iOS, we need to pass the specific EKCalendar
+            if let ekCalendar = selectedCal.originalCalendar as? EKCalendar {
+                calendarManager.createEventInCalendar(
+                    calendar: ekCalendar,
+                    title: title,
+                    startDate: startDate,
+                    endDate: endDate,
+                    location: location.isEmpty ? nil : location,
+                    notes: notes.isEmpty ? nil : notes,
+                    isAllDay: isAllDay
+                )
+            }
         case .google:
-            // TODO: Implement Google Calendar event creation
-            print("📅 Google Calendar event creation not yet implemented")
+            // TODO: Implement Google Calendar event creation with specific calendar ID
+            print("📅 Google Calendar event creation: \(selectedCal.id)")
         case .outlook:
-            // TODO: Implement Outlook Calendar event creation
-            print("📅 Outlook Calendar event creation not yet implemented")
+            // TODO: Implement Outlook Calendar event creation with specific calendar ID
+            print("📅 Outlook Calendar event creation: \(selectedCal.id)")
         }
 
         dismiss()
@@ -450,7 +506,10 @@ struct AddEventView: View {
             isAllDay: isAllDay,
             source: eventToEdit.source,
             organizer: eventToEdit.organizer,
-            originalEvent: eventToEdit.originalEvent
+            originalEvent: eventToEdit.originalEvent,
+            calendarId: eventToEdit.calendarId,
+            calendarName: eventToEdit.calendarName,
+            calendarColor: eventToEdit.calendarColor
         )
 
         updateEventInCalendar(updatedEvent) { success, error in
@@ -536,6 +595,55 @@ struct AddEventView: View {
         calendarManager.outlookCalendarManager?.updateEvent(outlookEvent) { success, error in
             completion(success, error)
         }
+    }
+
+    private func loadAvailableCalendars() {
+        var calendars: [CalendarSelection] = []
+
+        // Load iOS calendars
+        for ekCalendar in calendarManager.iosCalendars {
+            let calendar = CalendarSelection(
+                id: ekCalendar.calendarIdentifier,
+                name: ekCalendar.title,
+                source: .ios,
+                color: Color(ekCalendar.cgColor),
+                originalCalendar: ekCalendar
+            )
+            calendars.append(calendar)
+        }
+
+        // Load Google calendars
+        for googleCal in calendarManager.googleCalendars {
+            let calendar = CalendarSelection(
+                id: googleCal.id,
+                name: googleCal.name,
+                source: .google,
+                color: googleCal.color,
+                originalCalendar: nil
+            )
+            calendars.append(calendar)
+        }
+
+        // Load Outlook calendars
+        for outlookCal in calendarManager.outlookCalendars {
+            let calendar = CalendarSelection(
+                id: outlookCal.id,
+                name: outlookCal.name,
+                source: .outlook,
+                color: outlookCal.displayColor,
+                originalCalendar: nil
+            )
+            calendars.append(calendar)
+        }
+
+        availableCalendars = calendars
+
+        // Set default selection to first iOS calendar if available
+        if selectedSpecificCalendar == nil {
+            selectedSpecificCalendar = calendars.first(where: { $0.source == .ios }) ?? calendars.first
+        }
+
+        print("📅 Loaded \(calendars.count) calendars for selection")
     }
 
     private func loadRecentLocations() {

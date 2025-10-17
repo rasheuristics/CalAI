@@ -20,6 +20,9 @@ struct UnifiedEvent: Identifiable {
     let source: CalendarSource
     let organizer: String?
     let originalEvent: Any
+    let calendarId: String?
+    let calendarName: String?
+    let calendarColor: Color?
 
     var sourceLabel: String {
         switch source {
@@ -37,6 +40,13 @@ struct UnifiedEvent: Identifiable {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         return "\(formatter.string(from: startDate)) - \(formatter.string(from: endDate))"
+    }
+
+    var fullCalendarLabel: String {
+        if let calendarName = calendarName {
+            return "\(sourceLabel) - \(calendarName)"
+        }
+        return sourceLabel
     }
 }
 
@@ -57,6 +67,37 @@ struct ConflictResult {
 
     static var noConflict: ConflictResult {
         return ConflictResult(hasConflict: false, conflictingEvents: [], alternativeTimes: [])
+    }
+}
+
+// MARK: - Schedule Conflict Models
+
+// MARK: - Calendar Item Models
+
+struct GoogleCalendarItem: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let backgroundColor: String?
+    let isPrimary: Bool
+
+    var color: Color {
+        if let bgColor = backgroundColor {
+            return Color(hex: bgColor) ?? .blue
+        }
+        return .blue
+    }
+}
+
+struct OutlookCalendarItem: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let color: String?
+
+    var displayColor: Color {
+        if let colorHex = color {
+            return Color(hex: colorHex) ?? .blue
+        }
+        return .blue
     }
 }
 
@@ -174,6 +215,11 @@ class CalendarManager: ObservableObject {
     @Published var unifiedEvents: [UnifiedEvent] = []
     @Published var hasCalendarAccess = false
 
+    // Calendar lists for each source
+    @Published var iosCalendars: [EKCalendar] = []
+    @Published var googleCalendars: [GoogleCalendarItem] = []
+    @Published var outlookCalendars: [OutlookCalendarItem] = []
+
     // Error and loading states
     @Published var errorState: AppError?
     @Published var isLoading: Bool = false
@@ -184,6 +230,16 @@ class CalendarManager: ObservableObject {
     @Published var pendingEventDetails: (title: String, startDate: Date, endDate: Date, location: String?, notes: String?, participants: [String]?, calendarSource: String?)?
     @Published var detectedConflicts: [ScheduleConflict] = []
     @Published var showConflictAlert: Bool = false
+
+    // Add event sheet state
+    @Published var showingAddEventFromCalendar: Bool = false
+
+    // Approved conflicts (conflicts user chose to keep both)
+    private var approvedConflicts: Set<String> = [] {
+        didSet {
+            UserDefaults.standard.set(Array(approvedConflicts), forKey: "approvedConflicts")
+        }
+    }
 
     // Lazy loading configuration
     @Published var monthsBackToLoad: Int = 3  // Initial load: 3 months back
@@ -214,6 +270,10 @@ class CalendarManager: ObservableObject {
     }
 
     init() {
+        // Load approved conflicts from UserDefaults
+        if let saved = UserDefaults.standard.array(forKey: "approvedConflicts") as? [String] {
+            approvedConflicts = Set(saved)
+        }
         // Inject self into sync manager
         syncManager.calendarManager = self
         // Setup advanced sync asynchronously to avoid blocking main thread
@@ -335,7 +395,10 @@ class CalendarManager: ObservableObject {
                                 isAllDay: event.isAllDay,
                                 source: .ios,
                                 organizer: event.organizer?.name,
-                                originalEvent: event
+                                originalEvent: event,
+                                calendarId: event.calendar?.calendarIdentifier,
+                                calendarName: event.calendar?.title,
+                                calendarColor: event.calendar?.cgColor != nil ? Color(event.calendar!.cgColor) : nil
                             )
                             updatedUnified[unifiedIndex] = updatedEvent
                             self.unifiedEvents = updatedUnified.sorted { $0.startDate < $1.startDate }
@@ -380,7 +443,10 @@ class CalendarManager: ObservableObject {
                             isAllDay: oldEvent.isAllDay,
                             source: .google,
                             organizer: oldEvent.organizer,
-                            originalEvent: oldEvent.originalEvent
+                            originalEvent: oldEvent.originalEvent,
+                            calendarId: oldEvent.calendarId,
+                            calendarName: oldEvent.calendarName,
+                            calendarColor: oldEvent.calendarColor
                         )
                         updatedUnified[unifiedIndex] = updatedEvent
                         self.unifiedEvents = updatedUnified.sorted { $0.startDate < $1.startDate }
@@ -419,7 +485,10 @@ class CalendarManager: ObservableObject {
                             isAllDay: oldEvent.isAllDay,
                             source: .outlook,
                             organizer: oldEvent.organizer,
-                            originalEvent: oldEvent.originalEvent
+                            originalEvent: oldEvent.originalEvent,
+                            calendarId: oldEvent.calendarId,
+                            calendarName: oldEvent.calendarName,
+                            calendarColor: oldEvent.calendarColor
                         )
                         updatedUnified[unifiedIndex] = updatedEvent
                         self.unifiedEvents = updatedUnified.sorted { $0.startDate < $1.startDate }
@@ -553,6 +622,19 @@ class CalendarManager: ObservableObject {
         }
     }
 
+    func loadIOSCalendars() {
+        guard hasCalendarAccess else {
+            print("❌ No calendar access, cannot load iOS calendars")
+            return
+        }
+
+        let calendars = eventStore.calendars(for: .event)
+        DispatchQueue.main.async {
+            self.iosCalendars = calendars
+            print("📅 Loaded \(calendars.count) iOS calendars")
+        }
+    }
+
     func loadEvents() {
         print("📅 loadEvents called, hasCalendarAccess: \(hasCalendarAccess)")
 
@@ -565,6 +647,9 @@ class CalendarManager: ObservableObject {
             }
             return
         }
+
+        // Load available calendars
+        loadIOSCalendars()
 
         // Refresh EventKit sources to get latest data (including recurring events)
         eventStore.refreshSourcesIfNecessary()
@@ -770,7 +855,10 @@ class CalendarManager: ObservableObject {
                 isAllDay: event.isAllDay,
                 source: .ios,
                 organizer: event.organizer?.name,
-                originalEvent: event
+                originalEvent: event,
+                calendarId: event.calendar?.calendarIdentifier,
+                calendarName: event.calendar?.title,
+                calendarColor: event.calendar?.cgColor != nil ? Color(event.calendar!.cgColor) : nil
             )
         }
 
@@ -794,7 +882,10 @@ class CalendarManager: ObservableObject {
                     isAllDay: false, // Google events default to not all-day
                     source: .google,
                     organizer: nil, // Google events organizer can be added later
-                    originalEvent: event
+                    originalEvent: event,
+                    calendarId: nil, // TODO: Add calendar ID from Google event
+                    calendarName: nil, // TODO: Add calendar name from Google event
+                    calendarColor: nil
                 )
             }
 
@@ -819,7 +910,10 @@ class CalendarManager: ObservableObject {
                     isAllDay: false, // Outlook events default to not all-day
                     source: .outlook,
                     organizer: nil, // Outlook events organizer can be added later
-                    originalEvent: event
+                    originalEvent: event,
+                    calendarId: nil, // TODO: Add calendar ID from Outlook event
+                    calendarName: nil, // TODO: Add calendar name from Outlook event
+                    calendarColor: nil
                 )
             }
 
@@ -1041,17 +1135,59 @@ class CalendarManager: ObservableObject {
     }
 
     private func deleteGoogleEvent(_ event: UnifiedEvent) {
-        // Google Calendar delete would go through Google Calendar API
-        // For now, just delete from Core Data
-        print("⚠️ Google Calendar API delete not yet implemented")
-        coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: .google)
+        guard let googleManager = googleCalendarManager else {
+            print("❌ Google Calendar not connected")
+            return
+        }
+
+        Task {
+            print("🗑️ Deleting Google event via API: \(event.title)")
+            let success = await googleManager.deleteEvent(eventId: event.id)
+
+            await MainActor.run {
+                if success {
+                    print("✅ Google event deleted successfully from server")
+                    // Delete from Core Data cache
+                    coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: .google)
+                    // Refresh Google events from server to ensure deleted event is gone
+                    googleManager.fetchEvents()
+                    // Wait a moment for fetch to complete, then reload unified events
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        self.loadAllUnifiedEvents()
+                    }
+                } else {
+                    print("❌ Failed to delete Google event from server")
+                }
+            }
+        }
     }
 
     private func deleteOutlookEvent(_ event: UnifiedEvent) {
-        // Outlook delete would go through Outlook API
-        // For now, just delete from Core Data
-        print("⚠️ Outlook API delete not yet implemented")
-        coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: .outlook)
+        guard let outlookManager = outlookCalendarManager else {
+            print("❌ Outlook Calendar not connected")
+            return
+        }
+
+        Task {
+            print("🗑️ Deleting Outlook event via API: \(event.title)")
+            let success = await outlookManager.deleteEvent(eventId: event.id)
+
+            await MainActor.run {
+                if success {
+                    print("✅ Outlook event deleted successfully from server")
+                    // Delete from Core Data cache
+                    coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: .outlook)
+                    // Refresh Outlook events from server to ensure deleted event is gone
+                    outlookManager.fetchEvents()
+                    // Wait a moment for fetch to complete, then reload unified events
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        self.loadAllUnifiedEvents()
+                    }
+                } else {
+                    print("❌ Failed to delete Outlook event from server")
+                }
+            }
+        }
     }
 
     // MARK: - Advanced Sync Features (Phase 6)
@@ -1190,6 +1326,43 @@ class CalendarManager: ObservableObject {
             loadEvents()
         } catch {
             print("❌ Error creating event: \(error)")
+        }
+    }
+
+    // Create event in a specific calendar
+    func createEventInCalendar(calendar: EKCalendar, title: String, startDate: Date, endDate: Date, location: String? = nil, notes: String? = nil, isAllDay: Bool = false) {
+        print("📝 Creating event in specific calendar: \(calendar.title)")
+
+        guard hasCalendarAccess else {
+            print("❌ No calendar access for event creation")
+            return
+        }
+
+        let event = EKEvent(eventStore: eventStore)
+        event.title = title
+        event.startDate = startDate
+        event.endDate = endDate
+        event.calendar = calendar
+        event.isAllDay = isAllDay
+
+        if let location = location {
+            event.location = location
+        }
+
+        if let notes = notes {
+            event.notes = notes
+        }
+
+        print("📅 Event details: \(title) from \(startDate) to \(endDate) in \(calendar.title)")
+
+        do {
+            try eventStore.save(event, span: .thisEvent)
+            print("✅ Event saved successfully to \(calendar.title)")
+            HapticManager.shared.success()
+            loadEvents()
+        } catch {
+            print("❌ Error creating event: \(error)")
+            HapticManager.shared.error()
         }
     }
 
@@ -2576,6 +2749,29 @@ class CalendarManager: ObservableObject {
         return "\(event.sourceLabel) Calendar"
     }
 
+    // MARK: - Approved Conflicts Management
+
+    /// Mark a conflict as approved (user chose to keep both events)
+    func approveConflict(_ conflict: ScheduleConflict) {
+        let conflictKey = createConflictKey(conflict)
+        approvedConflicts.insert(conflictKey)
+        // Remove from detected conflicts
+        detectedConflicts.removeAll { $0.id == conflict.id }
+        print("✅ Conflict approved and removed: \(conflictKey)")
+    }
+
+    /// Check if a conflict has been approved
+    private func isConflictApproved(_ conflict: ScheduleConflict) -> Bool {
+        let conflictKey = createConflictKey(conflict)
+        return approvedConflicts.contains(conflictKey)
+    }
+
+    /// Create a unique key for a conflict based on event IDs
+    private func createConflictKey(_ conflict: ScheduleConflict) -> String {
+        let eventIds = conflict.conflictingEvents.map { $0.id }.sorted()
+        return eventIds.joined(separator: "|")
+    }
+
     // MARK: - Enhanced Conflict Detection
 
     /// Detect all conflicts across all events in the current view
@@ -2630,8 +2826,13 @@ class CalendarManager: ObservableObject {
                             overlapEnd: overlapEnd
                         )
 
-                        conflicts.append(conflict)
-                        print("⚠️ Conflict detected: \(event1.title) ↔ \(event2.title) (\(conflict.severity.rawValue))")
+                        // Skip if conflict has been approved
+                        if !isConflictApproved(conflict) {
+                            conflicts.append(conflict)
+                            print("⚠️ Conflict detected: \(event1.title) ↔ \(event2.title) (\(conflict.severity.rawValue))")
+                        } else {
+                            print("✓ Skipping approved conflict: \(event1.title) ↔ \(event2.title)")
+                        }
                     }
                 }
             }

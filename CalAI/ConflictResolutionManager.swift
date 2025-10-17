@@ -154,7 +154,10 @@ class ConflictResolutionManager: ObservableObject {
                 isAllDay: conflictingEvent.isAllDay,
                 source: conflictingEvent.source,
                 organizer: conflictingEvent.organizer,
-                originalEvent: conflictingEvent.originalEvent
+                originalEvent: conflictingEvent.originalEvent,
+                calendarId: conflictingEvent.calendarId,
+                calendarName: conflictingEvent.calendarName,
+                calendarColor: conflictingEvent.calendarColor
             )
             coreDataManager.saveEvent(renamedEvent, syncStatus: .synced)
         }
@@ -191,7 +194,10 @@ class ConflictResolutionManager: ObservableObject {
             isAllDay: local.isAllDay,
             source: local.source,
             organizer: local.organizer?.isEmpty == false ? local.organizer : remote.organizer,
-            originalEvent: local.originalEvent
+            originalEvent: local.originalEvent,
+            calendarId: local.calendarId,
+            calendarName: local.calendarName,
+            calendarColor: local.calendarColor
         )
     }
 

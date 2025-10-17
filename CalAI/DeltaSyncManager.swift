@@ -283,7 +283,10 @@ extension SyncManager {
                     isAllDay: event.isAllDay,
                     source: .ios,
                     organizer: event.organizer?.name,
-                    originalEvent: event
+                    originalEvent: event,
+                    calendarId: nil,
+                    calendarName: nil,
+                    calendarColor: nil
                 )
             }
             sourceEvents[.ios] = iosEvents
@@ -302,7 +305,10 @@ extension SyncManager {
                     isAllDay: false,
                     source: .google,
                     organizer: nil,
-                    originalEvent: event
+                    originalEvent: event,
+                    calendarId: nil,
+                    calendarName: nil,
+                    calendarColor: nil
                 )
             }
             sourceEvents[.google] = googleEvents
@@ -321,7 +327,10 @@ extension SyncManager {
                     isAllDay: false,
                     source: .outlook,
                     organizer: nil,
-                    originalEvent: event
+                    originalEvent: event,
+                    calendarId: nil,
+                    calendarName: nil,
+                    calendarColor: nil
                 )
             }
             sourceEvents[.outlook] = outlookEvents

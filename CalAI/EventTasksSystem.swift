@@ -1588,7 +1588,10 @@ struct EventDetailsTabView: View {
             isAllDay: isAllDay,
             source: event.source,
             organizer: event.organizer,
-            originalEvent: event.originalEvent
+            originalEvent: event.originalEvent,
+            calendarId: event.calendarId,
+            calendarName: event.calendarName,
+            calendarColor: event.calendarColor
         )
 
         updateEventInCalendar(updatedEvent) { success, error in

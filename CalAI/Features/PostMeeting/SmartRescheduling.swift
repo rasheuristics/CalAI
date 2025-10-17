@@ -441,7 +441,10 @@ class SmartReschedulingEngine {
                     isAllDay: event.isAllDay,
                     source: event.source,
                     organizer: event.organizer,
-                    originalEvent: event.originalEvent
+                    originalEvent: event.originalEvent,
+                    calendarId: event.calendarId,
+                    calendarName: event.calendarName,
+                    calendarColor: event.calendarColor
                 )
 
                 // Update the events list for next iteration
@@ -495,7 +498,10 @@ class SmartReschedulingEngine {
                     isAllDay: event.isAllDay,
                     source: event.source,
                     organizer: event.organizer,
-                    originalEvent: event.originalEvent
+                    originalEvent: event.originalEvent,
+                    calendarId: event.calendarId,
+                    calendarName: event.calendarName,
+                    calendarColor: event.calendarColor
                 )
 
                 return RescheduleResult(
@@ -564,7 +570,10 @@ class SmartReschedulingEngine {
                     isAllDay: event.isAllDay,
                     source: event.source,
                     organizer: event.organizer,
-                    originalEvent: event.originalEvent
+                    originalEvent: event.originalEvent,
+                    calendarId: event.calendarId,
+                    calendarName: event.calendarName,
+                    calendarColor: event.calendarColor
                 )
 
                 currentTime = earliestSlot.end
@@ -636,7 +645,10 @@ class SmartReschedulingEngine {
                     isAllDay: event.isAllDay,
                     source: event.source,
                     organizer: event.organizer,
-                    originalEvent: event.originalEvent
+                    originalEvent: event.originalEvent,
+                    calendarId: event.calendarId,
+                    calendarName: event.calendarName,
+                    calendarColor: event.calendarColor
                 )
 
                 results.append(RescheduleResult(

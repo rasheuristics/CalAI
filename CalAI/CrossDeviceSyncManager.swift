@@ -203,7 +203,10 @@ class CrossDeviceSyncManager: ObservableObject {
             isAllDay: record["isAllDay"] as? Bool ?? false,
             source: source,
             organizer: record["organizer"] as? String,
-            originalEvent: record
+            originalEvent: record,
+            calendarId: nil,
+            calendarName: nil,
+            calendarColor: nil
         )
     }
 

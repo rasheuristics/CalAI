@@ -163,6 +163,9 @@ struct CalendarTabView: View {
         .sheet(isPresented: $showingConflictList) {
             ConflictListView(calendarManager: calendarManager, fontManager: fontManager)
         }
+        .sheet(isPresented: $calendarManager.showingAddEventFromCalendar) {
+            AddEventView(calendarManager: calendarManager, fontManager: fontManager)
+        }
         .onAppear {
             // Always reset to day view showing today
             currentViewType = .day
@@ -230,100 +233,113 @@ struct iOSCalendarHeader: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Top bar with month/year and view switcher - exact iOS layout
-            HStack {
-                // Month/Year button (tappable like iOS)
-                Button(action: {
-                    HapticManager.shared.light()
-                    showingDatePicker = true
-                }) {
-                    Text(monthYearText)
-                        .font(.system(.title3, design: .default).bold())
-                        .foregroundColor(.primary)
-                }
-                .accessibilityLabel("Current date: \(monthYearText)")
-                .accessibilityHint("Double tap to open date picker")
-
-                Spacer()
-
-                // Refresh button
-                Button(action: refreshCalendar) {
-                    Image(systemName: isRefreshing ? "arrow.clockwise" : "arrow.clockwise")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.blue)
-                        .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                        .animation(isRefreshing ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
-                }
-                .disabled(isRefreshing)
-                .accessibilityLabel("Refresh calendar")
-                .padding(.trailing, 8)
-
-                Spacer().frame(width: 8)
-
-                // View switcher - exact iOS style
-                HStack(spacing: 0) {
-                    ForEach(CalendarViewType.allCases, id: \.self) { viewType in
-                        Button(action: {
-                            HapticManager.shared.selection()
-                            currentViewType = viewType
-                        }) {
-                            Text(viewType.rawValue.first?.uppercased() ?? "")
-                                .scaledFont(.footnote, fontManager: fontManager)
-                                .frame(width: 32, height: 32)
-                                .background(
-                                    Circle()
-                                        .fill(currentViewType == viewType ? Color.blue : Color.clear)
-                                )
-                                .foregroundColor(currentViewType == viewType ? .white : .blue)
-                        }
-                        .accessibilityLabel("\(viewType.rawValue) view")
-                        .accessibilityHint("Switch to \(viewType.rawValue) calendar view")
-                        .accessibilityAddTraits(currentViewType == viewType ? .isSelected : [])
+            VStack(alignment: .leading, spacing: 12) {
+                // Top bar with month/year and view switcher
+                HStack(alignment: .top) {
+                    // Month/Year button
+                    Button(action: {
+                        HapticManager.shared.light()
+                        showingDatePicker = true
+                    }) {
+                        Text(monthYearText)
+                            .font(.system(.title3, design: .default).bold())
+                            .foregroundColor(.primary)
                     }
+                    .accessibilityLabel("Current date: \(monthYearText)")
+                    .accessibilityHint("Double tap to open date picker")
+
+                    Spacer()
+
+                    // Refresh button
+                    Button(action: refreshCalendar) {
+                        Image(systemName: isRefreshing ? "arrow.clockwise" : "arrow.clockwise")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.blue)
+                            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                            .animation(isRefreshing ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                    }
+                    .disabled(isRefreshing)
+                    .accessibilityLabel("Refresh calendar")
+                    .padding(.trailing, 8)
+
+                    Spacer().frame(width: 8)
+
+                    // View switcher - exact iOS style
+                    HStack(spacing: 0) {
+                        ForEach(CalendarViewType.allCases, id: \.self) { viewType in
+                            Button(action: {
+                                HapticManager.shared.selection()
+                                currentViewType = viewType
+                            }) {
+                                Text(viewType.rawValue.first?.uppercased() ?? "")
+                                    .scaledFont(.footnote, fontManager: fontManager)
+                                    .frame(width: 32, height: 32)
+                                    .background(
+                                        Circle()
+                                            .fill(currentViewType == viewType ? Color.blue : Color.clear)
+                                    )
+                                    .foregroundColor(currentViewType == viewType ? .white : .blue)
+                            }
+                            .accessibilityLabel("\(viewType.rawValue) view")
+                            .accessibilityHint("Switch to \(viewType.rawValue) calendar view")
+                            .accessibilityAddTraits(currentViewType == viewType ? .isSelected : [])
+                        }
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color(.systemGray6))
+                            .frame(height: 32)
+                    )
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color(.systemGray6))
-                        .frame(height: 32)
-                )
+
+                // Navigation bar with Today button, arrows, and + button
+                HStack {
+                    Button("Today") {
+                        HapticManager.shared.medium()
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            selectedDate = Date()
+                        }
+                    }
+                    .scaledFont(.callout, fontManager: fontManager)
+                    .foregroundColor(.red)
+                    .accessibilityLabel("Today")
+                    .accessibilityHint("Jump to today's date")
+
+                    Spacer()
+
+                    // Only show arrows for Day, Month, and Year views (not Week)
+                    if currentViewType != .week {
+                        HStack(spacing: 24) {
+                            Button(action: previousPeriod) {
+                                Image(systemName: "chevron.left")
+                                    .scaledFont(.title2, fontManager: fontManager)
+                                    .foregroundColor(.blue)
+                            }
+
+                            Button(action: nextPeriod) {
+                                Image(systemName: "chevron.right")
+                                    .scaledFont(.title2, fontManager: fontManager)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
+
+                    // Add Event button (right side, aligned with 2025 above)
+                    Button(action: {
+                        HapticManager.shared.light()
+                        calendarManager.showingAddEventFromCalendar = true
+                    }) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.blue)
+                    }
+                    .accessibilityLabel("Add Event")
+                    .accessibilityHint("Create a new calendar event")
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-
-            // Navigation bar with Today button and arrows (hide arrows in week view)
-            HStack {
-                Button("Today") {
-                    HapticManager.shared.medium()
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        selectedDate = Date()
-                    }
-                }
-                .scaledFont(.callout, fontManager: fontManager)
-                .foregroundColor(.red)
-                .accessibilityLabel("Today")
-                .accessibilityHint("Jump to today's date")
-
-                Spacer()
-
-                // Only show arrows for Day, Month, and Year views (not Week)
-                if currentViewType != .week {
-                    HStack(spacing: 24) {
-                        Button(action: previousPeriod) {
-                            Image(systemName: "chevron.left")
-                                .scaledFont(.title2, fontManager: fontManager)
-                                .foregroundColor(.blue)
-                        }
-
-                        Button(action: nextPeriod) {
-                            Image(systemName: "chevron.right")
-                                .scaledFont(.title2, fontManager: fontManager)
-                                .foregroundColor(.blue)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.bottom, 12)
         }
         .background(Color.white.opacity(0.15))
         .sheet(isPresented: $showingDatePicker) {
@@ -3589,6 +3605,13 @@ struct ConflictResolutionView: View {
         print("🎯 User selected suggestion: \(suggestion.type.rawValue)")
         HapticManager.shared.light()
 
+        // Handle "Keep Both" special case - doesn't need target event
+        if suggestion.type == .noAction {
+            calendarManager.approveConflict(conflict)
+            dismiss()
+            return
+        }
+
         guard let targetEvent = suggestion.targetEvent else {
             print("❌ Missing target event")
             return
@@ -3617,7 +3640,10 @@ struct ConflictResolutionView: View {
                 isAllDay: targetEvent.isAllDay,
                 source: targetEvent.source,
                 organizer: targetEvent.organizer,
-                originalEvent: targetEvent.originalEvent
+                originalEvent: targetEvent.originalEvent,
+                calendarId: targetEvent.calendarId,
+                calendarName: targetEvent.calendarName,
+                calendarColor: targetEvent.calendarColor
             )
 
         case .shorten:
@@ -3636,7 +3662,10 @@ struct ConflictResolutionView: View {
                 isAllDay: targetEvent.isAllDay,
                 source: targetEvent.source,
                 organizer: targetEvent.organizer,
-                originalEvent: targetEvent.originalEvent
+                originalEvent: targetEvent.originalEvent,
+                calendarId: targetEvent.calendarId,
+                calendarName: targetEvent.calendarName,
+                calendarColor: targetEvent.calendarColor
             )
 
         case .markOptional:
@@ -3652,7 +3681,10 @@ struct ConflictResolutionView: View {
                 isAllDay: targetEvent.isAllDay,
                 source: targetEvent.source,
                 organizer: targetEvent.organizer,
-                originalEvent: targetEvent.originalEvent
+                originalEvent: targetEvent.originalEvent,
+                calendarId: targetEvent.calendarId,
+                calendarName: targetEvent.calendarName,
+                calendarColor: targetEvent.calendarColor
             )
 
         case .decline:
@@ -3660,8 +3692,9 @@ struct ConflictResolutionView: View {
             modifiedEvent = targetEvent
 
         case .noAction:
-            // For keep both, just dismiss
+            // For keep both, mark conflict as approved and dismiss
             HapticManager.shared.light()
+            calendarManager.approveConflict(conflict)
             dismiss()
             return
         }

@@ -234,7 +234,10 @@ class WebhookManager: ObservableObject {
                 isAllDay: false,
                 source: .google,
                 organizer: nil,
-                originalEvent: event
+                originalEvent: event,
+                calendarId: nil,
+                calendarName: nil,
+                calendarColor: nil
             )
         }
 
@@ -268,7 +271,10 @@ class WebhookManager: ObservableObject {
                 isAllDay: false,
                 source: .outlook,
                 organizer: nil,
-                originalEvent: event
+                originalEvent: event,
+                calendarId: nil,
+                calendarName: nil,
+                calendarColor: nil
             )
         }
 

@@ -374,7 +374,7 @@ class CoreDataManager: ObservableObject {
         guard let eventId = cachedEvent.eventId, let title = cachedEvent.title, let startDate = cachedEvent.startDate, let endDate = cachedEvent.endDate, let sourceString = cachedEvent.source, let source = CalendarSource(rawValue: sourceString) else {
             return nil
         }
-        return UnifiedEvent(id: eventId, title: title, startDate: startDate, endDate: endDate, location: cachedEvent.location, description: cachedEvent.eventDescription, isAllDay: cachedEvent.isAllDay, source: source, organizer: cachedEvent.organizer, originalEvent: cachedEvent)
+        return UnifiedEvent(id: eventId, title: title, startDate: startDate, endDate: endDate, location: cachedEvent.location, description: cachedEvent.eventDescription, isAllDay: cachedEvent.isAllDay, source: source, organizer: cachedEvent.organizer, originalEvent: cachedEvent, calendarId: nil, calendarName: nil, calendarColor: nil)
     }
 
     private func extractCalendarId(from unifiedEvent: UnifiedEvent) -> String? {
