@@ -468,7 +468,10 @@ extension CalendarSource {
                 isAllDay: false,
                 source: .ios,
                 organizer: nil,
-                originalEvent: Optional<Any>.none as Any
+                originalEvent: Optional<Any>.none as Any,
+                calendarId: "preview-calendar",
+                calendarName: "Personal",
+                calendarColor: .blue
             ),
             conflictingEvents: [
                 UnifiedEvent(
@@ -481,7 +484,10 @@ extension CalendarSource {
                     isAllDay: false,
                     source: .google,
                     organizer: nil,
-                    originalEvent: Optional<Any>.none as Any
+                    originalEvent: Optional<Any>.none as Any,
+                    calendarId: "google-calendar",
+                    calendarName: "Work",
+                    calendarColor: .green
                 )
             ],
             detectedAt: Date()
