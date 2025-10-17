@@ -1918,6 +1918,32 @@ struct EventDetailsTabView: View {
             return "Every \(interval) \(frequency.lowercased())"
         }
     }
+
+    // Helper function to determine calendar source icon
+    private func calendarSourceIcon(for calendar: EKCalendar) -> String {
+        let sourceTitle = calendar.source.title.lowercased()
+
+        if sourceTitle.contains("google") || sourceTitle.contains("gmail") {
+            return "g.circle.fill"
+        } else if sourceTitle.contains("outlook") || sourceTitle.contains("microsoft") || sourceTitle.contains("exchange") {
+            return "envelope.circle.fill"
+        } else {
+            return "calendar.circle.fill"
+        }
+    }
+
+    // Helper function to determine calendar source color
+    private func calendarSourceColor(for calendar: EKCalendar) -> Color {
+        let sourceTitle = calendar.source.title.lowercased()
+
+        if sourceTitle.contains("google") || sourceTitle.contains("gmail") {
+            return Color(red: 66/255, green: 133/255, blue: 244/255) // Google Blue
+        } else if sourceTitle.contains("outlook") || sourceTitle.contains("microsoft") || sourceTitle.contains("exchange") {
+            return Color(red: 0/255, green: 120/255, blue: 212/255) // Outlook Blue
+        } else {
+            return Color(red: 255/255, green: 45/255, blue: 85/255) // iOS Calendar Red
+        }
+    }
 }
 
 // MARK: - Map Location Helper
