@@ -114,33 +114,114 @@ class EventICSExporter {
             .replacingOccurrences(of: "\n", with: "\\n")
     }
 
-    /// Create a data URL for the .ics content (suitable for QR codes)
+    /// Create a calendar URL for QR codes
     /// - Parameters:
     ///   - event: The event to export
     ///   - organizerEmail: Email of the organizer
     ///   - attendeeEmails: List of attendee emails
-    /// - Returns: Data URL string that can be embedded in QR code
+    /// - Returns: Google Calendar web URL (most reliable for QR codes)
     static func createDataURL(
         event: UnifiedEvent,
         organizerEmail: String? = nil,
         attendeeEmails: [String] = []
     ) -> String {
-        let method: ICSMethod = (organizerEmail != nil && !attendeeEmails.isEmpty) ? .request : .publish
-        let icsContent = exportToICS(
-            event: event,
-            organizerEmail: organizerEmail,
-            attendeeEmails: attendeeEmails,
-            method: method
-        )
+        // For QR codes, use simple Google Calendar URL
+        // This is the most reliable approach:
+        // - Works on all devices and QR scanners
+        // - Opens in browser and lets user choose calendar
+        // - No size limitations
+        // - No iOS Camera confusion with data URLs
 
-        // Create data URI with base64 encoding for QR codes
-        // This format is recognized by iOS Camera app and other QR scanners
-        if let data = icsContent.data(using: .utf8) {
-            let base64 = data.base64EncodedString()
-            return "data:text/calendar;base64,\(base64)"
+        // Based on event source, choose appropriate calendar service
+        switch event.source {
+        case .google:
+            return createGoogleCalendarURL(event: event)
+        case .outlook:
+            return createOutlookCalendarURL(event: event)
+        case .ios:
+            // For iOS events, use Google Calendar (most universal)
+            return createGoogleCalendarURL(event: event)
+        }
+    }
+
+    /// Create ultra-minimal ICS (no description/location) for very large events
+    private static func createUltraMinimalICS(event: UnifiedEvent) -> String {
+        var ics = [String]()
+
+        ics.append("BEGIN:VCALENDAR")
+        ics.append("VERSION:2.0")
+        ics.append("BEGIN:VEVENT")
+        ics.append("UID:\(event.id)")
+        ics.append("DTSTAMP:\(formatICSDate(Date()))")
+        ics.append("DTSTART:\(formatICSDate(event.startDate, allDay: event.isAllDay))")
+        ics.append("DTEND:\(formatICSDate(event.endDate, allDay: event.isAllDay))")
+        ics.append("SUMMARY:\(escapeICSText(event.title))")
+        ics.append("END:VEVENT")
+        ics.append("END:VCALENDAR")
+
+        return ics.joined(separator: "\r\n")
+    }
+
+    /// Create minimal ICS format for QR codes (optimized for size)
+    private static func createMinimalICS(event: UnifiedEvent) -> String {
+        var ics = [String]()
+
+        ics.append("BEGIN:VCALENDAR")
+        ics.append("VERSION:2.0")
+        ics.append("BEGIN:VEVENT")
+
+        // Use short UID for QR codes
+        let shortUID = String(event.id.prefix(20))
+        ics.append("UID:\(shortUID)")
+        ics.append("DTSTART:\(formatICSDate(event.startDate, allDay: event.isAllDay))")
+        ics.append("DTEND:\(formatICSDate(event.endDate, allDay: event.isAllDay))")
+        ics.append("SUMMARY:\(escapeICSText(event.title))")
+
+        // Only add location if it's very short (under 50 chars)
+        if let location = event.location, !location.isEmpty, location.count < 50 {
+            ics.append("LOCATION:\(escapeICSText(location))")
         }
 
-        return ""
+        // Skip description for QR codes (can be added after importing)
+
+        ics.append("END:VEVENT")
+        ics.append("END:VCALENDAR")
+
+        return ics.joined(separator: "\r\n")
+    }
+
+    /// Create a Google Calendar app deep link (opens app if installed)
+    /// - Parameter event: The event to create a link for
+    /// - Returns: Google Calendar app URL
+    static func createGoogleCalendarAppURL(event: UnifiedEvent) -> String {
+        // Google Calendar app URL scheme
+        // Format: googlecalendar:// or falls back to web URL
+
+        // Use the web URL - iOS will automatically open the Google Calendar app if installed
+        // This is more reliable than custom URL schemes
+        return createGoogleCalendarURL(event: event)
+    }
+
+    /// Create an Outlook Calendar app deep link (opens app if installed)
+    /// - Parameter event: The event to create a link for
+    /// - Returns: Outlook Calendar app URL
+    static func createOutlookCalendarAppURL(event: UnifiedEvent) -> String {
+        // Outlook app URL scheme
+        // Format: ms-outlook:// for app, falls back to web
+
+        // Use the web URL - iOS will automatically open the Outlook app if installed
+        // This is more reliable than custom URL schemes
+        return createOutlookCalendarURL(event: event)
+    }
+
+    /// Escape HTML special characters
+    private static func escapeHTML(_ text: String) -> String {
+        return text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
     }
 
     /// Create a universal calendar URL that works based on event source

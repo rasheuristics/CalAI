@@ -18,8 +18,16 @@ class QRCodeGenerator {
             return nil
         }
 
+        print("📊 QR Code data size: \(data.count) bytes")
+
         filter.setValue(data, forKey: "inputMessage")
-        filter.setValue("H", forKey: "inputCorrectionLevel") // High error correction
+
+        // Use lower error correction for larger data
+        // L = 7% recovery, M = 15%, Q = 25%, H = 30%
+        // Lower correction allows more data capacity
+        let correctionLevel = data.count > 2000 ? "L" : "M"
+        filter.setValue(correctionLevel, forKey: "inputCorrectionLevel")
+        print("📊 Using error correction level: \(correctionLevel)")
 
         guard let outputImage = filter.outputImage else {
             print("❌ Failed to generate QR code output image")

@@ -60,6 +60,15 @@ struct EventShareView: View {
             .navigationTitle(event.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: {
+                        showCalendarShareSheet()
+                    }) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 17, weight: .medium))
+                    }
+                }
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
                         dismiss()
@@ -67,16 +76,15 @@ struct EventShareView: View {
                 }
             }
             .onAppear {
-                generateQRCode()
+                // No longer generate QR code on appear
             }
             .sheet(isPresented: $showShareSheet) {
-                if let qrImage = qrCodeImage,
-                   let icsURL = EventICSExporter.saveToTemporaryFile(
+                if let icsURL = EventICSExporter.saveToTemporaryFile(
                     event: event,
                     organizerEmail: organizerEmail.isEmpty ? nil : organizerEmail,
                     attendeeEmails: parseAttendeeEmails()
-                   ) {
-                    EventShareSheet(items: [qrImage, icsURL, createShareText()])
+                ) {
+                    EventShareSheet(items: [createShareText(), icsURL])
                 }
             }
         }
@@ -90,14 +98,11 @@ struct EventShareView: View {
                 // Event Info
                 eventInfoSection
 
-                // QR Code
+                // Share to Calendar Section
                 qrCodeSection
 
                 // Meeting Invitation Section
                 meetingInvitationSection
-
-                // Share Button
-                shareButton
             }
             .padding()
         }
@@ -151,11 +156,11 @@ struct EventShareView: View {
         .cornerRadius(12)
     }
 
-    // MARK: - QR Code Section
+    // MARK: - Share to Calendar Section
 
     private var qrCodeSection: some View {
-        VStack(spacing: 12) {
-            Text("QR Code")
+        VStack(spacing: 16) {
+            Text("Share Event")
                 .dynamicFont(size: 18, weight: .semibold, fontManager: fontManager)
                 .foregroundColor(.primary)
 
@@ -174,62 +179,60 @@ struct EventShareView: View {
             .background(event.source.color.opacity(0.1))
             .cornerRadius(12)
 
-            if let qrImage = qrCodeImage {
-                Image(uiImage: qrImage)
-                    .resizable()
-                    .interpolation(.none)
-                    .scaledToFit()
-                    .frame(width: 180, height: 180)
-                    .background(Color.white)
-                    .cornerRadius(12)
-                    .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
-            } else {
-                ProgressView()
-                    .frame(width: 180, height: 180)
+            // Share to Calendar Button
+            Button(action: {
+                showCalendarShareSheet()
+            }) {
+                VStack(spacing: 12) {
+                    Image(systemName: "calendar.badge.plus")
+                        .font(.system(size: 48))
+                        .foregroundColor(.blue)
+
+                    Text("Add to Calendar")
+                        .dynamicFont(size: 18, weight: .semibold, fontManager: fontManager)
+                        .foregroundColor(.primary)
+
+                    Text("Choose any calendar app")
+                        .dynamicFont(size: 13, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 30)
+                .background(Color(.systemGray6))
+                .cornerRadius(16)
             }
+            .padding(.horizontal)
 
-            Text("Scan to add this event to your calendar")
-                .dynamicFont(size: 12, fontManager: fontManager)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-
-            // QR Code Format Toggle
+            // Benefits info
             VStack(spacing: 8) {
-                Text("QR Code Format:")
-                    .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
-                    .foregroundColor(.secondary)
-
-                Picker("QR Format", selection: $useGoogleCalendarLink) {
-                    Text("Calendar File").tag(false)
-                    Text("Web Link").tag(true)
-                }
-                .pickerStyle(SegmentedPickerStyle())
-                .onChange(of: useGoogleCalendarLink) { _ in
-                    generateQRCode()
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.green)
+                    Text("Works with all calendar apps")
+                        .dynamicFont(size: 13, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+                    Spacer()
                 }
 
-                if useGoogleCalendarLink {
-                    VStack(spacing: 4) {
-                        Text("🌐 Opens \(calendarNameForWebLink) in browser")
-                            .dynamicFont(size: 11, fontManager: fontManager)
-                            .foregroundColor(.orange)
-                            .multilineTextAlignment(.center)
-                        Text("Requires internet • User must have account")
-                            .dynamicFont(size: 10, fontManager: fontManager)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                } else {
-                    VStack(spacing: 4) {
-                        Text("✅ Add directly to device calendar (Recommended)")
-                            .dynamicFont(size: 11, fontManager: fontManager)
-                            .foregroundColor(.green)
-                            .multilineTextAlignment(.center)
-                        Text("Works offline • No account needed • Universal")
-                            .dynamicFont(size: 10, fontManager: fontManager)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.green)
+                    Text("Share via text, email, or AirDrop")
+                        .dynamicFont(size: 13, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.green)
+                    Text("Add directly to any calendar")
+                        .dynamicFont(size: 13, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+                    Spacer()
                 }
             }
             .padding(.horizontal)
@@ -289,27 +292,31 @@ struct EventShareView: View {
         )
     }
 
-    // MARK: - Share Button
-
-    private var shareButton: some View {
-        Button(action: {
-            showShareSheet = true
-        }) {
-            HStack {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("Share Event")
-                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-            }
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.blue)
-            .cornerRadius(12)
-        }
-    }
-
     // MARK: - Helper Methods
+
+    private func showCalendarShareSheet() {
+        // Create ICS file for the event
+        guard let icsURL = EventICSExporter.saveToTemporaryFile(
+            event: event,
+            organizerEmail: organizerEmail.isEmpty ? nil : organizerEmail,
+            attendeeEmails: parseAttendeeEmails()
+        ) else {
+            print("❌ Failed to create ICS file")
+            return
+        }
+
+        print("✅ Created ICS file at: \(icsURL)")
+        print("📅 Event: \(event.title)")
+        print("🗓 Start: \(event.startDate)")
+        print("🗓 End: \(event.endDate)")
+
+        // Create share items
+        let shareText = createShareText()
+        let shareItems: [Any] = [shareText, icsURL]
+
+        // Present native share sheet
+        showShareSheet = true
+    }
 
     private func generateQRCode() {
         let qrContent: String
@@ -380,7 +387,7 @@ struct EventShareView: View {
             text += "\n\(description)\n"
         }
 
-        text += "\n📲 Scan the QR code or open the attached .ics file to add this event to your calendar."
+        text += "\n📲 Open the attached calendar file to add this event to any calendar app."
 
         if !organizerEmail.isEmpty && !parseAttendeeEmails().isEmpty {
             text += "\n\n✉️ This is a meeting invitation. Accept to send RSVP to the organizer."
