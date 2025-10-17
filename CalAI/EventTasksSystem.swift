@@ -2639,29 +2639,40 @@ struct TaskEditView: View {
                     }
                     .padding(.horizontal)
 
+                    Divider()
+                        .padding(.horizontal)
+
                     // Add Detail Section
                     VStack(alignment: .leading, spacing: 12) {
-                        Button(action: {
-                            withAnimation {
-                                showDetailSection.toggle()
+                        HStack {
+                            Button(action: {
+                                withAnimation {
+                                    showDetailSection.toggle()
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: "text.alignleft")
+                                        .foregroundColor(.blue)
+                                        .frame(width: 24)
+                                    Text("Add Detail")
+                                        .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                        .foregroundColor(.primary)
+                                }
                             }
-                        }) {
-                            HStack {
-                                Image(systemName: "text.alignleft")
+                            .buttonStyle(.plain)
+
+                            Spacer()
+
+                            Button(action: {
+                                withAnimation {
+                                    showDetailSection.toggle()
+                                }
+                            }) {
+                                Image(systemName: showDetailSection ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
                                     .foregroundColor(.blue)
-                                    .frame(width: 24)
-                                Text("Add Detail")
-                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                                    .foregroundColor(.primary)
-
-                                Spacer()
-
-                                Image(systemName: showDetailSection ? "chevron.up" : "chevron.down")
-                                    .foregroundColor(.secondary)
-                                    .font(.system(size: 14))
+                                    .font(.system(size: 20))
                             }
                         }
-                        .buttonStyle(.plain)
 
                         if showDetailSection {
                             TextEditor(text: $description)
@@ -2679,30 +2690,41 @@ struct TaskEditView: View {
 
                     // Add Date/Time Section
                     VStack(alignment: .leading, spacing: 12) {
-                        Button(action: {
-                            withAnimation {
-                                showDateSection.toggle()
-                                if showDateSection {
-                                    hasDueDate = true
+                        HStack {
+                            Button(action: {
+                                withAnimation {
+                                    showDateSection.toggle()
+                                    if showDateSection {
+                                        hasDueDate = true
+                                    }
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: "calendar")
+                                        .foregroundColor(.blue)
+                                        .frame(width: 24)
+                                    Text("Add Date/Time")
+                                        .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                        .foregroundColor(.primary)
                                 }
                             }
-                        }) {
-                            HStack {
-                                Image(systemName: "calendar")
+                            .buttonStyle(.plain)
+
+                            Spacer()
+
+                            Button(action: {
+                                withAnimation {
+                                    showDateSection.toggle()
+                                    if showDateSection {
+                                        hasDueDate = true
+                                    }
+                                }
+                            }) {
+                                Image(systemName: showDateSection ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
                                     .foregroundColor(.blue)
-                                    .frame(width: 24)
-                                Text("Add Date/Time")
-                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                                    .foregroundColor(.primary)
-
-                                Spacer()
-
-                                Image(systemName: showDateSection ? "chevron.up" : "chevron.down")
-                                    .foregroundColor(.secondary)
-                                    .font(.system(size: 14))
+                                    .font(.system(size: 20))
                             }
                         }
-                        .buttonStyle(.plain)
 
                         if showDateSection {
                             DatePicker("Due Date", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
@@ -2717,27 +2739,35 @@ struct TaskEditView: View {
 
                     // Add Subtasks Section
                     VStack(alignment: .leading, spacing: 12) {
-                        Button(action: {
-                            withAnimation {
-                                showSubtasksSection.toggle()
+                        HStack {
+                            Button(action: {
+                                withAnimation {
+                                    showSubtasksSection.toggle()
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: "list.bullet.indent")
+                                        .foregroundColor(.blue)
+                                        .frame(width: 24)
+                                    Text("Add Subtasks")
+                                        .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                        .foregroundColor(.primary)
+                                }
                             }
-                        }) {
-                            HStack {
-                                Image(systemName: "list.bullet.indent")
+                            .buttonStyle(.plain)
+
+                            Spacer()
+
+                            Button(action: {
+                                withAnimation {
+                                    showSubtasksSection.toggle()
+                                }
+                            }) {
+                                Image(systemName: showSubtasksSection ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
                                     .foregroundColor(.blue)
-                                    .frame(width: 24)
-                                Text("Add Subtasks")
-                                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                                    .foregroundColor(.primary)
-
-                                Spacer()
-
-                                Image(systemName: showSubtasksSection ? "chevron.up" : "chevron.down")
-                                    .foregroundColor(.secondary)
-                                    .font(.system(size: 14))
+                                    .font(.system(size: 20))
                             }
                         }
-                        .buttonStyle(.plain)
 
                         if showSubtasksSection {
                             // Existing subtasks
@@ -2792,23 +2822,23 @@ struct TaskEditView: View {
                     .padding(.horizontal)
 
                     Spacer()
-                        .frame(height: 20)
-
-                    // Mark Completed Link
-                    HStack {
-                        Spacer()
-
-                        Button(action: markCompleted) {
-                            Text(task.isCompleted ? "Mark as Incomplete" : "Mark as Completed")
-                                .dynamicFont(size: 16, fontManager: fontManager)
-                                .foregroundColor(.blue)
-                                .underline()
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom, 20)
                 }
                 .padding(.top)
+            }
+            .safeAreaInset(edge: .bottom) {
+                // Mark Completed Link at bottom right
+                HStack {
+                    Spacer()
+
+                    Button(action: markCompleted) {
+                        Text(task.isCompleted ? "Mark as Incomplete" : "Mark as Completed")
+                            .dynamicFont(size: 17, weight: .regular, fontManager: fontManager)
+                            .foregroundColor(.blue)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 16)
+                .background(Color(.systemBackground))
             }
             .navigationTitle("Edit Task")
             .navigationBarTitleDisplayMode(.inline)
