@@ -26,10 +26,28 @@ class GoogleCalendarManager: ObservableObject {
     @Published var isSignedIn = false
     @Published var isLoading = false
     @Published var googleEvents: [GoogleEvent] = []
+    @Published var availableCalendars: [GoogleCalendarItem] = []
 
     // Track events with pending API updates to prevent overwriting during fetch
     private var pendingUpdates: [String: GoogleEvent] = [:] // eventId -> updated event
     private let pendingUpdatesQueue = DispatchQueue(label: "com.calai.google.pendingUpdates")
+
+    // Track deleted events to filter them out when fetching from server
+    // Now persisted to UserDefaults for reliability across app restarts
+    // Note: UserDefaults is already thread-safe, no dispatch queue needed
+    private let deletedEventsKey = "com.calai.google.deletedEventIds"
+    private var deletedEventIds: Set<String> {
+        get {
+            guard let array = UserDefaults.standard.array(forKey: deletedEventsKey) as? [String] else {
+                return []
+            }
+            return Set(array)
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: deletedEventsKey)
+            print("💾 Saved \(newValue.count) deleted Google event IDs to UserDefaults")
+        }
+    }
 
     // private let calendarService = GTLRCalendarService()
 
@@ -278,6 +296,43 @@ class GoogleCalendarManager: ObservableObject {
     //     completion([])
     // }
 
+    func fetchCalendars() {
+        guard GIDSignIn.sharedInstance.currentUser != nil else {
+            print("❌ No Google user signed in for calendar fetching")
+            return
+        }
+
+        print("🔵 Fetching Google Calendars...")
+
+        // Simulate fetching Google calendars
+        // In real implementation: GET https://www.googleapis.com/calendar/v3/users/me/calendarList
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            let calendars = [
+                GoogleCalendarItem(
+                    id: "primary",
+                    name: "Primary",
+                    backgroundColor: "#4285F4",
+                    isPrimary: true
+                ),
+                GoogleCalendarItem(
+                    id: "work_calendar",
+                    name: "Work",
+                    backgroundColor: "#FF9800",
+                    isPrimary: false
+                ),
+                GoogleCalendarItem(
+                    id: "personal_calendar",
+                    name: "Personal",
+                    backgroundColor: "#4CAF50",
+                    isPrimary: false
+                )
+            ]
+
+            self.availableCalendars = calendars
+            print("✅ Loaded \(calendars.count) Google calendars")
+        }
+    }
+
     func fetchEvents(from startDate: Date = Date(), to endDate: Date = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()) {
         guard GIDSignIn.sharedInstance.currentUser != nil else {
             print("❌ No Google user signed in for event fetching")
@@ -374,9 +429,13 @@ class GoogleCalendarManager: ObservableObject {
                 return merged
             } ?? fetchedEvents
 
-            self?.googleEvents = mergedEvents
+            // Filter out deleted events before assigning
+            let deletedIds = self?.deletedEventIds ?? []
+            let filteredEvents = mergedEvents.filter { !deletedIds.contains($0.id) }
+
+            self?.googleEvents = filteredEvents
             self?.isLoading = false
-            print("✅ Fetched \(fetchedEvents.count) Google Calendar events, merged to \(mergedEvents.count) total events")
+            print("✅ Fetched \(fetchedEvents.count) Google Calendar events, merged to \(mergedEvents.count), filtered to \(filteredEvents.count) (removed \(mergedEvents.count - filteredEvents.count) deleted)")
         }
     }
 
@@ -406,15 +465,33 @@ class GoogleCalendarManager: ObservableObject {
     public func deleteEvent(eventId: String) async -> Bool {
         print("🗑️ Deleting Google Calendar event: \(eventId)")
 
-        // Find the calendar ID before deleting
+        // Track deletion to prevent reappearance when fetching from server
+        var currentIds = deletedEventIds
+        currentIds.insert(eventId)
+        deletedEventIds = currentIds
+
+        print("📍 Google deletedEventIds now contains: \(deletedEventIds.count) events")
+
+        // Find the calendar ID before deleting and remove from local array immediately
         var calendarId: String?
         var eventTitle: String?
         await MainActor.run { [weak self] in
+            let countBefore = self?.googleEvents.count ?? 0
+
             if let index = self?.googleEvents.firstIndex(where: { $0.id == eventId }) {
                 let deletedEvent = self?.googleEvents[index]
                 calendarId = deletedEvent?.calendarId
                 eventTitle = deletedEvent?.title
                 print("📍 Found event to delete: \(eventTitle ?? "Unknown")")
+
+                // Remove from local array IMMEDIATELY before attempting server deletion
+                // This ensures the event stays deleted even if server deletion fails
+                self?.googleEvents.remove(at: index)
+
+                let countAfter = self?.googleEvents.count ?? 0
+                print("🗑️ Removed Google event from local array: \(countBefore) -> \(countAfter) (removed \(countBefore - countAfter) events)")
+            } else {
+                print("⚠️ Google event not found in local array: \(eventId)")
             }
 
             // Also remove from pending updates if it exists
@@ -425,7 +502,7 @@ class GoogleCalendarManager: ObservableObject {
 
         // Get access token from current user
         guard let user = GIDSignIn.sharedInstance.currentUser else {
-            print("⚠️ No Google user signed in - cannot delete from server")
+            print("⚠️ No Google user signed in - cannot delete from server, but removed locally")
             return false
         }
 
@@ -458,19 +535,11 @@ class GoogleCalendarManager: ObservableObject {
 
                 if httpResponse.statusCode == 204 || httpResponse.statusCode == 200 {
                     print("✅ Google event '\(eventTitle ?? eventId)' successfully deleted from server (status: \(httpResponse.statusCode))")
-
-                    // Remove from local array AFTER successful server deletion
-                    await MainActor.run { [weak self] in
-                        if let index = self?.googleEvents.firstIndex(where: { $0.id == eventId }) {
-                            self?.googleEvents.remove(at: index)
-                            print("✅ Removed event from local array at index \(index)")
-                        } else {
-                            print("⚠️ Event not found in local array: \(eventId)")
-                        }
-                    }
+                    // Event was already removed from local array earlier
                     return true
                 } else {
                     print("⚠️ Google event deletion returned status code: \(httpResponse.statusCode)")
+                    // Event was already removed from local array, but server deletion failed
                     return false
                 }
             }

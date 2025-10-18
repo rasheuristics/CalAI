@@ -352,6 +352,9 @@ struct EventsTabView: View {
         // This gives instant UI feedback and prevents the count mismatch error
         calendarManager.unifiedEvents.removeAll { $0.id == event.id && $0.source == event.source }
 
+        // Track deletion to prevent reappearance
+        calendarManager.trackDeletedEvent(event.id, source: event.source)
+
         switch event.source {
         case .ios:
             if let ekEvent = event.originalEvent as? EKEvent {
@@ -368,19 +371,26 @@ struct EventsTabView: View {
                 print("🗑️ Attempting to delete Google event: \(event.title)")
                 let success = await calendarManager.googleCalendarManager?.deleteEvent(eventId: event.id) ?? false
 
-                if success {
-                    print("✅ Google event deleted successfully, cleaning up cache and refreshing")
-                    await MainActor.run {
-                        // Delete from Core Data cache
-                        CoreDataManager.shared.permanentlyDeleteEvent(eventId: event.id, source: .google)
-                        // Refresh unified events to get final state from server
-                        calendarManager.loadAllUnifiedEvents()
+                await MainActor.run {
+                    // Delete from Core Data cache regardless of server success
+                    // This ensures the event is removed locally even if server delete fails
+                    CoreDataManager.shared.permanentlyDeleteEvent(eventId: event.id, source: .google)
+
+                    // Verify event was already removed from unified events (line 353)
+                    let stillExists = calendarManager.unifiedEvents.contains {
+                        $0.id == event.id && $0.source == .google
                     }
-                } else {
-                    print("❌ Failed to delete Google event, restoring to list")
-                    // Restore the event if deletion failed
-                    await MainActor.run {
-                        calendarManager.loadAllUnifiedEvents()
+
+                    if stillExists {
+                        print("⚠️ WARNING: Event still exists in unified events after deletion!")
+                    } else {
+                        print("✅ VERIFIED: Google event completely removed")
+                    }
+
+                    if success {
+                        print("✅ Google event deleted successfully from server and cache")
+                    } else {
+                        print("⚠️ Failed to delete from Google server, but removed from local cache")
                     }
                 }
             }
@@ -389,19 +399,26 @@ struct EventsTabView: View {
                 print("🗑️ Attempting to delete Outlook event: \(event.title)")
                 let success = await calendarManager.outlookCalendarManager?.deleteEvent(eventId: event.id) ?? false
 
-                if success {
-                    print("✅ Outlook event deleted successfully, cleaning up cache and refreshing")
-                    await MainActor.run {
-                        // Delete from Core Data cache
-                        CoreDataManager.shared.permanentlyDeleteEvent(eventId: event.id, source: .outlook)
-                        // Refresh unified events to get final state from server
-                        calendarManager.loadAllUnifiedEvents()
+                await MainActor.run {
+                    // Delete from Core Data cache regardless of server success
+                    // This ensures the event is removed locally even if server delete fails
+                    CoreDataManager.shared.permanentlyDeleteEvent(eventId: event.id, source: .outlook)
+
+                    // Verify event was already removed from unified events (line 353)
+                    let stillExists = calendarManager.unifiedEvents.contains {
+                        $0.id == event.id && $0.source == .outlook
                     }
-                } else {
-                    print("❌ Failed to delete Outlook event, restoring to list")
-                    // Restore the event if deletion failed
-                    await MainActor.run {
-                        calendarManager.loadAllUnifiedEvents()
+
+                    if stillExists {
+                        print("⚠️ WARNING: Event still exists in unified events after deletion!")
+                    } else {
+                        print("✅ VERIFIED: Outlook event completely removed")
+                    }
+
+                    if success {
+                        print("✅ Outlook event deleted successfully from server and cache")
+                    } else {
+                        print("⚠️ Failed to delete from Outlook server, but removed from local cache")
                     }
                 }
             }

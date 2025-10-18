@@ -93,12 +93,13 @@ struct CalendarTabView: View {
                                     onEventTap: { calendarEvent in
                                         // Find the corresponding UnifiedEvent
                                         if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == calendarEvent.id }) {
-                                            selectedEventForShare = unifiedEvent
-                                            showingShareView = true
+                                            print("📱 Opening EditEventView for: \(unifiedEvent.title)")
+                                            selectedEventForEdit = unifiedEvent
+                                            showingEditView = true
                                         }
                                     }
                                 )
-                                .id("\(selectedDate.timeIntervalSince1970)") // Force recreation on date change
+                                .id("\(selectedDate.timeIntervalSince1970)-\(calendarManager.unifiedEvents.count)") // Force recreation on date change OR event count change
                             }
                         case .week:
                             WeekViewWithCompressedTimeline(
@@ -109,8 +110,9 @@ struct CalendarTabView: View {
                                 onEventTap: { calendarEvent in
                                     // Find the corresponding UnifiedEvent
                                     if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == calendarEvent.id }) {
-                                        selectedEventForShare = unifiedEvent
-                                        showingShareView = true
+                                        print("📱 Opening EditEventView for: \(unifiedEvent.title)")
+                                        selectedEventForEdit = unifiedEvent
+                                        showingEditView = true
                                     }
                                 }
                             )
@@ -144,10 +146,10 @@ struct CalendarTabView: View {
         }
         .sheet(isPresented: $showingEditView) {
             if let event = selectedEventForEdit {
-                AddEventView(
+                EventManagementView(
                     calendarManager: calendarManager,
                     fontManager: fontManager,
-                    eventToEdit: event
+                    event: event
                 )
             }
         }
@@ -1520,7 +1522,7 @@ struct WeekViewWithCompressedTimeline: View {
                 refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined(),
                 onEventTap: onEventTap
             )
-            .id("\(previousDay.timeIntervalSince1970)")
+            .id("\(previousDay.timeIntervalSince1970)-\(calendarManager.unifiedEvents.count)")
             .offset(x: -UIScreen.main.bounds.width + swipeDragOffset)
             .opacity(swipeDragOffset > 0 ? 0.3 + (swipeProgress * 0.7) : 1.0)
 
@@ -1533,7 +1535,7 @@ struct WeekViewWithCompressedTimeline: View {
                 refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined(),
                 onEventTap: onEventTap
             )
-            .id("\(selectedDate.timeIntervalSince1970)")
+            .id("\(selectedDate.timeIntervalSince1970)-\(calendarManager.unifiedEvents.count)")
             .offset(x: swipeDragOffset)
             .scaleEffect(1.0 - (swipeProgress * 0.05)) // Subtle scale effect
 
@@ -1546,7 +1548,7 @@ struct WeekViewWithCompressedTimeline: View {
                 refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)" }.joined(),
                 onEventTap: onEventTap
             )
-            .id("\(nextDay.timeIntervalSince1970)")
+            .id("\(nextDay.timeIntervalSince1970)-\(calendarManager.unifiedEvents.count)")
             .offset(x: UIScreen.main.bounds.width + swipeDragOffset)
             .opacity(swipeDragOffset < 0 ? 0.3 + (swipeProgress * 0.7) : 1.0)
         }
@@ -2826,6 +2828,7 @@ struct EventCardView: View {
     let lane: Int
     let hourHeight: CGFloat
     @ObservedObject var fontManager: FontManager
+    @ObservedObject private var colorManager = EventColorManager.shared
 
     @State private var dragOffset: CGFloat = 0
     @State private var isDragging = false
@@ -2976,7 +2979,16 @@ struct EventCardView: View {
     }
 
     private var eventColor: Color {
-        Color(event.calendar?.cgColor ?? CGColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0))
+        let colorManager = EventColorManager.shared
+
+        // Check if event should use custom color
+        if colorManager.shouldUseCustomColor(for: event.eventIdentifier),
+           let customColor = colorManager.getCustomColor(for: event.eventIdentifier) {
+            return customColor
+        }
+
+        // Fall back to calendar color
+        return Color(event.calendar?.cgColor ?? CGColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0))
     }
 
     private var eventHeight: CGFloat {

@@ -11,17 +11,21 @@ struct EditEventView: View {
     @State private var title: String = ""
     @State private var location: String = ""
     @State private var notes: String = ""
+    @State private var eventURL: String = ""
     @State private var startDate: Date = Date()
     @State private var endDate: Date = Date().addingTimeInterval(3600)
     @State private var isAllDay: Bool = false
+    @State private var selectedRepeat: RepeatOption = .none
+    @State private var selectedColor: Color = .blue
+    @State private var attachments: [AttachmentItem] = []
+    @State private var showingDocumentPicker = false
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
     @State private var successMessage: String?
     @State private var showingDeleteConfirmation = false
 
     var body: some View {
-        NavigationView {
-            Form {
+        Form {
                 Section("Event Details") {
                     TextField("Title", text: $title)
                         .dynamicFont(size: 17, fontManager: fontManager)
@@ -55,7 +59,7 @@ struct EditEventView: View {
                         .frame(minHeight: 100)
                 }
 
-                Section("Calendar Source") {
+                Section("Calendar") {
                     HStack {
                         Text("Source:")
                             .dynamicFont(size: 17, fontManager: fontManager)
@@ -70,6 +74,115 @@ struct EditEventView: View {
                             .background(Color(.systemGray5))
                             .cornerRadius(6)
                     }
+
+                    if let calendarName = event.calendarName {
+                        HStack {
+                            Text("Calendar:")
+                                .dynamicFont(size: 17, fontManager: fontManager)
+
+                            Spacer()
+
+                            HStack(spacing: 8) {
+                                if let color = event.calendarColor {
+                                    Circle()
+                                        .fill(color)
+                                        .frame(width: 12, height: 12)
+                                }
+                                Text(calendarName)
+                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                Section("Repeat") {
+                    Picker("Repeat", selection: $selectedRepeat) {
+                        ForEach(RepeatOption.allCases) { option in
+                            Text(option.displayName)
+                                .dynamicFont(size: 17, fontManager: fontManager)
+                                .tag(option)
+                        }
+                    }
+                    .dynamicFont(size: 17, fontManager: fontManager)
+                }
+
+                Section {
+                    ColorPicker("Card Color", selection: $selectedColor, supportsOpacity: false)
+                        .dynamicFont(size: 17, fontManager: fontManager)
+
+                    HStack {
+                        Text("Preview:")
+                            .dynamicFont(size: 15, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(selectedColor)
+                            .frame(width: 60, height: 30)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                            )
+                    }
+                } header: {
+                    Text("Event Card Color")
+                } footer: {
+                    Text("This color affects how the event appears in CalAI. For iOS Calendar events, the actual calendar color is managed in the iOS Calendar settings.")
+                        .dynamicFont(size: 13, fontManager: fontManager)
+                }
+
+                Section("URL") {
+                    TextField("Event URL", text: $eventURL)
+                        .dynamicFont(size: 17, fontManager: fontManager)
+                        .keyboardType(.URL)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                }
+
+                Section("Attachments") {
+                    if attachments.isEmpty {
+                        Button(action: {
+                            showingDocumentPicker = true
+                        }) {
+                            HStack {
+                                Image(systemName: "paperclip")
+                                    .foregroundColor(.blue)
+                                Text("Add Attachment")
+                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    } else {
+                        ForEach(attachments) { attachment in
+                            HStack {
+                                Image(systemName: "doc")
+                                    .foregroundColor(.secondary)
+                                Text(attachment.name)
+                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                Spacer()
+                                Button(action: {
+                                    removeAttachment(attachment)
+                                }) {
+                                    Image(systemName: "trash")
+                                        .foregroundColor(.red)
+                                }
+                            }
+                        }
+
+                        Button(action: {
+                            showingDocumentPicker = true
+                        }) {
+                            HStack {
+                                Image(systemName: "paperclip")
+                                    .foregroundColor(.blue)
+                                Text("Add Another Attachment")
+                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
                 }
 
                 if let errorMessage = errorMessage {
@@ -78,6 +191,19 @@ struct EditEventView: View {
                             .foregroundColor(.red)
                             .dynamicFont(size: 14, fontManager: fontManager)
                     }
+                }
+
+                Section {
+                    Button(action: { saveEvent() }) {
+                        HStack {
+                            Spacer()
+                            Text("Save Changes")
+                                .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+                                .foregroundColor(.blue)
+                            Spacer()
+                        }
+                    }
+                    .disabled(title.isEmpty || isLoading)
                 }
 
                 Section {
@@ -92,56 +218,44 @@ struct EditEventView: View {
                     }
                     .disabled(isLoading)
                 }
-            }
-            .navigationTitle("Edit Event")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .dynamicFont(size: 17, fontManager: fontManager)
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        saveEvent()
-                    }
-                    .disabled(title.isEmpty || isLoading)
-                    .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
-                }
-            }
-            .overlay(
-                Group {
-                    if isLoading {
-                        ZStack {
-                            Color.black.opacity(0.3)
-                                .ignoresSafeArea()
-
-                            VStack {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .scaleEffect(1.2)
-
-                                Text("Updating Event...")
-                                    .dynamicFont(size: 14, fontManager: fontManager)
-                                    .foregroundColor(.white)
-                                    .padding(.top, 8)
-                            }
-                            .padding()
-                            .background(Color.black.opacity(0.7))
-                            .cornerRadius(10)
-                        }
-                    }
-                }
-            )
         }
+        .overlay(
+            Group {
+                if isLoading {
+                    ZStack {
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+
+                        VStack {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(1.2)
+
+                            Text("Updating Event...")
+                                .dynamicFont(size: 14, fontManager: fontManager)
+                                .foregroundColor(.white)
+                                .padding(.top, 8)
+                        }
+                        .padding()
+                        .background(Color.black.opacity(0.7))
+                        .cornerRadius(10)
+                    }
+                }
+            }
+        )
         .onAppear {
             loadEventData()
         }
         .onChange(of: startDate) { newValue in
             if endDate <= newValue {
                 endDate = Calendar.current.date(byAdding: .hour, value: 1, to: newValue) ?? newValue
+            }
+        }
+        .sheet(isPresented: $showingDocumentPicker) {
+            DocumentPicker { urls in
+                for url in urls {
+                    addAttachment(from: url)
+                }
             }
         }
         .alert("Delete Event", isPresented: $showingDeleteConfirmation) {
@@ -182,6 +296,70 @@ struct EditEventView: View {
         startDate = event.startDate
         endDate = event.endDate
         isAllDay = event.isAllDay
+
+        // Load color from event (calendar color or default)
+        if let calendarColor = event.calendarColor {
+            selectedColor = calendarColor
+        } else {
+            selectedColor = .blue
+        }
+
+        // Load URL and recurrence from EKEvent if available
+        if let ekEvent = event.originalEvent as? EKEvent {
+            eventURL = ekEvent.url?.absoluteString ?? ""
+
+            // Load calendar color from EKCalendar
+            if let calendarColor = ekEvent.calendar.cgColor {
+                selectedColor = Color(calendarColor)
+            }
+
+            // Load recurrence rule
+            if let recurrenceRules = ekEvent.recurrenceRules, let rule = recurrenceRules.first {
+                selectedRepeat = mapEKRecurrenceRuleToRepeatOption(rule)
+            }
+
+            // Note: EKEvent doesn't expose attachments through the EventKit API
+            // Attachments are managed by the system and cannot be accessed programmatically
+        }
+    }
+
+    private func mapEKRecurrenceRuleToRepeatOption(_ rule: EKRecurrenceRule) -> RepeatOption {
+        switch rule.frequency {
+        case .daily:
+            return .daily
+        case .weekly:
+            return rule.interval == 2 ? .biweekly : .weekly
+        case .monthly:
+            return .monthly
+        case .yearly:
+            return .yearly
+        @unknown default:
+            return .none
+        }
+    }
+
+    private func addAttachment(from url: URL) {
+        guard url.startAccessingSecurityScopedResource() else {
+            print("❌ Failed to access security scoped resource")
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let attachment = AttachmentItem(
+                name: url.lastPathComponent,
+                url: url,
+                data: data
+            )
+            attachments.append(attachment)
+        } catch {
+            print("❌ Failed to read attachment: \(error)")
+        }
+    }
+
+    private func removeAttachment(_ attachment: AttachmentItem) {
+        attachments.removeAll { $0.id == attachment.id }
     }
 
     private func saveEvent() {
@@ -315,14 +493,44 @@ struct EditEventView: View {
         print("🗑️ Attempting to delete iOS event: \(eventToDelete.id)")
         print("🗑️ Original event type: \(type(of: eventToDelete.originalEvent))")
 
+        // Set flag to prevent reload triggered by EventKit change notification
+        calendarManager.isPerformingInternalDeletion = true
+        print("🚫 Set isPerformingInternalDeletion = true")
+
         // Try to get the EKEvent from originalEvent
         if let ekEvent = eventToDelete.originalEvent as? EKEvent {
             do {
-                try calendarManager.eventStore.remove(ekEvent, span: .thisEvent)
-                print("✅ Successfully deleted iOS event")
+                try calendarManager.eventStore.remove(ekEvent, span: .thisEvent, commit: true)
+                print("✅ Successfully deleted iOS event from EventKit")
+
+                // Track deletion to prevent reappearance
+                calendarManager.trackDeletedEvent(eventToDelete.id, source: .ios)
+                print("✅ Event tracked as deleted")
+
+                // Delete from Core Data cache
+                CoreDataManager.shared.permanentlyDeleteEvent(eventId: eventToDelete.id, source: .ios)
+                print("✅ Event deleted from Core Data cache")
+
+                // Remove from iOS events array
+                calendarManager.events.removeAll { $0.eventIdentifier == eventToDelete.id }
+
+                // Force UI refresh
+                calendarManager.objectWillChange.send()
+                print("🔄 Triggered UI refresh")
+
+                // Clear flag after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    self.calendarManager.isPerformingInternalDeletion = false
+                    print("✅ Cleared isPerformingInternalDeletion flag")
+                }
+
                 completion(true, nil)
             } catch {
                 print("❌ Failed to delete iOS event: \(error.localizedDescription)")
+                // Clear flag even on error
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    self.calendarManager.isPerformingInternalDeletion = false
+                }
                 completion(false, "Failed to delete event: \(error.localizedDescription)")
             }
             return
@@ -332,15 +540,33 @@ struct EditEventView: View {
         print("⚠️ Original EKEvent not found, searching by ID...")
         if let ekEvent = calendarManager.eventStore.event(withIdentifier: eventToDelete.id) {
             do {
-                try calendarManager.eventStore.remove(ekEvent, span: .thisEvent)
+                try calendarManager.eventStore.remove(ekEvent, span: .thisEvent, commit: true)
                 print("✅ Successfully deleted iOS event via ID lookup")
+
+                // Track deletion and cleanup
+                calendarManager.trackDeletedEvent(eventToDelete.id, source: .ios)
+                CoreDataManager.shared.permanentlyDeleteEvent(eventId: eventToDelete.id, source: .ios)
+                calendarManager.events.removeAll { $0.eventIdentifier == eventToDelete.id }
+                calendarManager.objectWillChange.send()
+
+                // Clear flag after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    self.calendarManager.isPerformingInternalDeletion = false
+                }
+
                 completion(true, nil)
             } catch {
                 print("❌ Failed to delete iOS event via ID: \(error.localizedDescription)")
+                // Clear flag even on error
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    self.calendarManager.isPerformingInternalDeletion = false
+                }
                 completion(false, "Failed to delete event: \(error.localizedDescription)")
             }
         } else {
             print("❌ Could not find iOS event with ID: \(eventToDelete.id)")
+            // Clear flag
+            calendarManager.isPerformingInternalDeletion = false
             completion(false, "Could not find original iOS event. It may have already been deleted.")
         }
     }
@@ -354,20 +580,28 @@ struct EditEventView: View {
             return
         }
 
+        // Track deletion to prevent reappearance
+        calendarManager.trackDeletedEvent(eventToDelete.id, source: .google)
+        print("✅ Event tracked as deleted")
+
         Task {
             let success = await googleManager.deleteEvent(eventId: eventToDelete.id)
 
             await MainActor.run {
+                // Delete from Core Data cache regardless of server success
+                CoreDataManager.shared.permanentlyDeleteEvent(eventId: eventToDelete.id, source: .google)
+                print("✅ Event deleted from Core Data cache")
+
+                // Force UI refresh
+                self.calendarManager.objectWillChange.send()
+                print("🔄 Triggered UI refresh")
+
                 if success {
-                    print("✅ Google event deleted successfully from server")
-                    // Delete from Core Data cache
-                    CoreDataManager.shared.permanentlyDeleteEvent(eventId: eventToDelete.id, source: .google)
-                    // Refresh Google events from server
-                    googleManager.fetchEvents()
+                    print("✅ Google event deleted successfully from server and cache")
                     completion(true, nil)
                 } else {
-                    print("❌ Failed to delete Google event from server")
-                    completion(false, "Failed to delete from Google Calendar")
+                    print("⚠️ Failed to delete from Google server, but removed from local cache")
+                    completion(true, nil) // Return success since we deleted locally
                 }
             }
         }
@@ -382,20 +616,28 @@ struct EditEventView: View {
             return
         }
 
+        // Track deletion to prevent reappearance
+        calendarManager.trackDeletedEvent(eventToDelete.id, source: .outlook)
+        print("✅ Event tracked as deleted")
+
         Task {
             let success = await outlookManager.deleteEvent(eventId: eventToDelete.id)
 
             await MainActor.run {
+                // Delete from Core Data cache regardless of server success
+                CoreDataManager.shared.permanentlyDeleteEvent(eventId: eventToDelete.id, source: .outlook)
+                print("✅ Event deleted from Core Data cache")
+
+                // Force UI refresh
+                self.calendarManager.objectWillChange.send()
+                print("🔄 Triggered UI refresh")
+
                 if success {
-                    print("✅ Outlook event deleted successfully from server")
-                    // Delete from Core Data cache
-                    CoreDataManager.shared.permanentlyDeleteEvent(eventId: eventToDelete.id, source: .outlook)
-                    // Refresh Outlook events from server
-                    outlookManager.fetchEvents()
+                    print("✅ Outlook event deleted successfully from server and cache")
                     completion(true, nil)
                 } else {
-                    print("❌ Failed to delete Outlook event from server")
-                    completion(false, "Failed to delete from Outlook Calendar")
+                    print("⚠️ Failed to delete from Outlook server, but removed from local cache")
+                    completion(true, nil) // Return success since we deleted locally
                 }
             }
         }
@@ -425,6 +667,29 @@ struct EditEventView: View {
         ekEvent.startDate = updatedEvent.startDate
         ekEvent.endDate = updatedEvent.endDate
         ekEvent.isAllDay = updatedEvent.isAllDay
+
+        // Update URL
+        if !eventURL.isEmpty, let url = URL(string: eventURL) {
+            ekEvent.url = url
+        } else {
+            ekEvent.url = nil
+        }
+
+        // Update recurrence rule
+        if selectedRepeat != .none, let frequency = selectedRepeat.ekRecurrenceFrequency {
+            let recurrenceRule = EKRecurrenceRule(
+                recurrenceWith: frequency,
+                interval: selectedRepeat.interval,
+                end: nil
+            )
+            ekEvent.recurrenceRules = [recurrenceRule]
+        } else {
+            ekEvent.recurrenceRules = nil
+        }
+
+        // Note: EKEvent doesn't support directly adding custom attachments
+        // Attachments are typically added via the system calendar UI
+        // We'll store attachment data separately if needed
 
         do {
             try calendarManager.eventStore.save(ekEvent, span: .thisEvent)

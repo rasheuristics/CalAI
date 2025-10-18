@@ -60,25 +60,7 @@ struct CalendarSelection: Identifiable, Hashable {
     }
 }
 
-struct AttachmentItem: Identifiable {
-    let id = UUID()
-    let name: String
-    let url: URL?
-    let data: Data?
-}
-
-enum RepeatOption: String, CaseIterable, Identifiable {
-    case none = "None"
-    case daily = "Daily"
-    case weekly = "Weekly"
-    case monthly = "Monthly"
-    case yearly = "Yearly"
-    case custom = "Custom"
-
-    var id: String { rawValue }
-
-    var displayName: String { rawValue }
-}
+// RepeatOption, AttachmentItem, and DocumentPicker are now defined in EventFormTypes.swift
 
 struct EventAttendee: Identifiable {
     let id = UUID()
@@ -136,6 +118,9 @@ struct AddEventView: View {
     @State private var sendInvitations = true
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var useCustomColor = false
+    @State private var customColor: Color = EventColorManager.predefinedColors[0]
+    @StateObject private var colorManager = EventColorManager.shared
 
     // Location selection states
     @State private var showingLocationPicker = false
@@ -203,21 +188,117 @@ struct AddEventView: View {
                 }
 
                 Section("Calendar") {
-                    Picker("Add to Calendar", selection: $selectedSpecificCalendar) {
-                        ForEach(availableCalendars) { calendar in
-                            HStack {
-                                if let color = calendar.color {
-                                    Circle()
-                                        .fill(color)
-                                        .frame(width: 12, height: 12)
+                    NavigationLink {
+                        List {
+                            ForEach(availableCalendars) { calendar in
+                                Button {
+                                    selectedSpecificCalendar = calendar
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: calendarSourceIcon(for: calendar.source))
+                                            .font(.system(size: 20))
+                                            .foregroundStyle(calendarSourceColor(for: calendar.source))
+
+                                        if let color = calendar.color {
+                                            Circle()
+                                                .fill(color)
+                                                .frame(width: 12, height: 12)
+                                        }
+
+                                        Text(calendar.name)
+                                            .dynamicFont(size: 17, fontManager: fontManager)
+                                            .foregroundColor(.primary)
+
+                                        Spacer()
+
+                                        if selectedSpecificCalendar?.id == calendar.id {
+                                            Image(systemName: "checkmark")
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
                                 }
-                                Text(calendar.displayName)
-                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                .buttonStyle(.plain)
                             }
-                            .tag(calendar as CalendarSelection?)
+                        }
+                        .navigationTitle("Select Calendar")
+                        .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        HStack {
+                            Text("Add to Calendar")
+                                .dynamicFont(size: 17, fontManager: fontManager)
+                            Spacer()
+                            if let selected = selectedSpecificCalendar {
+                                HStack(spacing: 8) {
+                                    Image(systemName: calendarSourceIcon(for: selected.source))
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(calendarSourceColor(for: selected.source))
+
+                                    if let color = selected.color {
+                                        Circle()
+                                            .fill(color)
+                                            .frame(width: 12, height: 12)
+                                    }
+
+                                    Text(selected.name)
+                                        .dynamicFont(size: 17, fontManager: fontManager)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
                         }
                     }
-                    .dynamicFont(size: 17, fontManager: fontManager)
+                }
+
+                Section {
+                    Toggle("Use Custom Color", isOn: $useCustomColor)
+                        .dynamicFont(size: 17, fontManager: fontManager)
+
+                    if useCustomColor {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Event Color")
+                                .dynamicFont(size: 13, weight: .semibold, fontManager: fontManager)
+                                .foregroundColor(.secondary)
+
+                            // Predefined colors grid
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 12) {
+                                ForEach(EventColorManager.predefinedColors.indices, id: \.self) { index in
+                                    let color = EventColorManager.predefinedColors[index]
+                                    Button {
+                                        customColor = color
+                                    } label: {
+                                        ZStack {
+                                            Circle()
+                                                .fill(color)
+                                                .frame(width: 44, height: 44)
+
+                                            if customColor.toHex() == color.toHex() {
+                                                Image(systemName: "checkmark")
+                                                    .foregroundColor(.white)
+                                                    .font(.system(size: 16, weight: .bold))
+                                            }
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    } else {
+                        HStack {
+                            Text("Using calendar color")
+                                .dynamicFont(size: 15, fontManager: fontManager)
+                                .foregroundColor(.secondary)
+
+                            Spacer()
+
+                            if let calendar = selectedSpecificCalendar, let color = calendar.color {
+                                Circle()
+                                    .fill(color)
+                                    .frame(width: 24, height: 24)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Event Card Color")
                 }
 
                 Section("Date & Time") {
@@ -443,11 +524,13 @@ struct AddEventView: View {
         }
 
         // Create event in the selected calendar
+        var eventId: String?
+
         switch selectedCal.source {
         case .ios:
             // For iOS, we need to pass the specific EKCalendar
             if let ekCalendar = selectedCal.originalCalendar as? EKCalendar {
-                calendarManager.createEventInCalendar(
+                let createdEvent = calendarManager.createEventInCalendar(
                     calendar: ekCalendar,
                     title: title,
                     startDate: startDate,
@@ -456,6 +539,7 @@ struct AddEventView: View {
                     notes: notes.isEmpty ? nil : notes,
                     isAllDay: isAllDay
                 )
+                eventId = createdEvent?.eventIdentifier
             }
         case .google:
             // TODO: Implement Google Calendar event creation with specific calendar ID
@@ -463,6 +547,14 @@ struct AddEventView: View {
         case .outlook:
             // TODO: Implement Outlook Calendar event creation with specific calendar ID
             print("📅 Outlook Calendar event creation: \(selectedCal.id)")
+        }
+
+        // Save custom color if enabled
+        if let eventId = eventId {
+            colorManager.setUseCustomColor(useCustomColor, for: eventId)
+            if useCustomColor {
+                colorManager.setCustomColor(customColor, for: eventId)
+            }
         }
 
         dismiss()
@@ -487,6 +579,12 @@ struct AddEventView: View {
             selectedCalendar = .google
         case .outlook:
             selectedCalendar = .outlook
+        }
+
+        // Load custom color settings
+        useCustomColor = colorManager.shouldUseCustomColor(for: event.id)
+        if let savedColor = colorManager.getCustomColor(for: event.id) {
+            customColor = savedColor
         }
     }
 
@@ -516,6 +614,14 @@ struct AddEventView: View {
             DispatchQueue.main.async {
                 isLoading = false
                 if success {
+                    // Save custom color settings
+                    colorManager.setUseCustomColor(useCustomColor, for: eventToEdit.id)
+                    if useCustomColor {
+                        colorManager.setCustomColor(customColor, for: eventToEdit.id)
+                    } else {
+                        colorManager.removeCustomColor(for: eventToEdit.id)
+                    }
+
                     // Refresh calendar data
                     calendarManager.refreshAllCalendars()
                     dismiss()
@@ -728,46 +834,22 @@ struct AddEventView: View {
             return localPart.capitalized
         }
     }
-}
 
-struct DocumentPicker: UIViewControllerRepresentable {
-    let onDocumentsPicked: ([URL]) -> Void
-
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: [
-            .item,
-            .content,
-            .data,
-            .image,
-            .pdf,
-            .text,
-            .audio,
-            .movie
-        ], asCopy: true)
-        documentPicker.allowsMultipleSelection = true
-        documentPicker.delegate = context.coordinator
-        return documentPicker
+    // Helper function to determine calendar source icon
+    private func calendarSourceIcon(for source: CalendarSource) -> String {
+        switch source {
+        case .ios: return "calendar"
+        case .google: return "globe"
+        case .outlook: return "envelope"
+        }
     }
 
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let parent: DocumentPicker
-
-        init(_ parent: DocumentPicker) {
-            self.parent = parent
-        }
-
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            parent.onDocumentsPicked(urls)
-        }
-
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            // Handle cancellation if needed
+    // Helper function to determine calendar source color
+    private func calendarSourceColor(for source: CalendarSource) -> Color {
+        switch source {
+        case .ios: return Color(red: 255/255, green: 45/255, blue: 85/255)
+        case .google: return Color(red: 66/255, green: 133/255, blue: 244/255)
+        case .outlook: return Color(red: 0/255, green: 120/255, blue: 212/255)
         }
     }
 }

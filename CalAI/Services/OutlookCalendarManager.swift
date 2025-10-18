@@ -136,6 +136,23 @@ class OutlookCalendarManager: ObservableObject {
     private var pendingUpdates: [String: OutlookEvent] = [:] // eventId -> updated event
     private let pendingUpdatesQueue = DispatchQueue(label: "com.calai.outlook.pendingUpdates")
 
+    // Track deleted events to filter them out when fetching from server
+    // Now persisted to UserDefaults for reliability across app restarts
+    // Note: UserDefaults is already thread-safe, no dispatch queue needed
+    private let deletedEventsKey = "com.calai.outlook.deletedEventIds"
+    private var deletedEventIds: Set<String> {
+        get {
+            guard let array = UserDefaults.standard.array(forKey: deletedEventsKey) as? [String] else {
+                return []
+            }
+            return Set(array)
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: deletedEventsKey)
+            print("💾 Saved \(newValue.count) deleted Outlook event IDs to UserDefaults")
+        }
+    }
+
     init() {
         print("🔍 Debug - OutlookCalendarManager init called")
         setupMSAL()
@@ -1481,8 +1498,16 @@ class OutlookCalendarManager: ObservableObject {
                         return merged
                     } ?? fetchedEvents
 
-                    self?.outlookEvents = mergedEvents
-                    print("✅ Fetched \(fetchedEvents.count) Outlook events, merged to \(mergedEvents.count) total events")
+                    // Filter out deleted events before assigning
+                    let deletedIds = self?.deletedEventIds ?? []
+                    let filteredEvents = mergedEvents.filter { !deletedIds.contains($0.id) }
+
+                    if !deletedIds.isEmpty {
+                        print("🗑️ Filtered out \(mergedEvents.count - filteredEvents.count) deleted events")
+                    }
+
+                    self?.outlookEvents = filteredEvents
+                    print("✅ Fetched \(fetchedEvents.count) Outlook events, merged to \(mergedEvents.count), filtered to \(filteredEvents.count) total events")
                 }
             }
         }
@@ -1559,13 +1584,24 @@ class OutlookCalendarManager: ObservableObject {
     public func deleteEvent(eventId: String) async -> Bool {
         print("🗑️ Deleting Outlook Calendar event: \(eventId)")
 
-        // Find the event title before deleting
+        // Track deletion to prevent reappearance when fetching from server
+        var currentIds = deletedEventIds
+        currentIds.insert(eventId)
+        deletedEventIds = currentIds
+        print("🔒 Event marked as deleted: \(eventId)")
+
+        // Find the event title before deleting and remove from local array immediately
         var eventTitle: String?
         await MainActor.run { [weak self] in
             if let index = self?.outlookEvents.firstIndex(where: { $0.id == eventId }) {
                 let deletedEvent = self?.outlookEvents[index]
                 eventTitle = deletedEvent?.title
                 print("📍 Found event to delete: \(eventTitle ?? "Unknown")")
+
+                // Remove from local array IMMEDIATELY before attempting server deletion
+                // This ensures the event stays deleted even if server deletion fails
+                self?.outlookEvents.remove(at: index)
+                print("🗑️ Removed event from local array at index \(index)")
             }
 
             // Also remove from pending updates if it exists
@@ -1576,7 +1612,7 @@ class OutlookCalendarManager: ObservableObject {
 
         // Use stored access token if available
         guard let token = accessToken else {
-            print("⚠️ No access token available for Outlook deletion - cannot delete from server")
+            print("⚠️ No access token available for Outlook deletion - cannot delete from server, but removed locally")
             return false
         }
 
@@ -1612,19 +1648,11 @@ class OutlookCalendarManager: ObservableObject {
 
                 if httpResponse.statusCode == 204 || httpResponse.statusCode == 200 {
                     print("✅ Outlook event '\(eventTitle ?? eventId)' successfully deleted from server (status: \(httpResponse.statusCode))")
-
-                    // Remove from local array AFTER successful server deletion
-                    await MainActor.run { [weak self] in
-                        if let index = self?.outlookEvents.firstIndex(where: { $0.id == eventId }) {
-                            self?.outlookEvents.remove(at: index)
-                            print("✅ Removed event from local array at index \(index)")
-                        } else {
-                            print("⚠️ Event not found in local array: \(eventId)")
-                        }
-                    }
+                    // Event was already removed from local array earlier
                     return true
                 } else {
                     print("⚠️ Outlook event deletion returned status code: \(httpResponse.statusCode)")
+                    // Event was already removed from local array, but server deletion failed
                     return false
                 }
             }

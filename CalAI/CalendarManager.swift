@@ -210,15 +210,63 @@ enum ConflictSeverity: String, CaseIterable {
     }
 }
 
+// MARK: - Deleted Event Tracking (Persisted)
+
+/// Structure to track deleted events with timestamps for expiration
+struct DeletedEventRecord: Codable {
+    let eventId: String
+    let deletedAt: Date
+    let source: String
+}
+
 class CalendarManager: ObservableObject {
     @Published var events: [EKEvent] = []
     @Published var unifiedEvents: [UnifiedEvent] = []
     @Published var hasCalendarAccess = false
 
+    // UserDefaults key for persistence
+    private let deletedEventsKey = "com.calai.deletedEventIds"
+    private let deletionExpirationDays = 30
+
+    // Track deleted events to prevent them from reappearing after sync
+    // Now backed by UserDefaults for persistence across app restarts
+    var deletedEventIds: Set<String> {
+        get {
+            return Set(loadDeletedEventRecords().map { $0.eventId })
+        }
+        set {
+            // When setting, preserve existing timestamps or create new ones
+            var records = loadDeletedEventRecords()
+            let existingIds = Set(records.map { $0.eventId })
+
+            // Add new IDs
+            for newId in newValue where !existingIds.contains(newId) {
+                records.append(DeletedEventRecord(
+                    eventId: newId,
+                    deletedAt: Date(),
+                    source: "unknown"
+                ))
+            }
+
+            // Remove IDs that are no longer in the set
+            records.removeAll { !newValue.contains($0.eventId) }
+
+            saveDeletedEventRecords(records)
+        }
+    }
+
     // Calendar lists for each source
     @Published var iosCalendars: [EKCalendar] = []
-    @Published var googleCalendars: [GoogleCalendarItem] = []
-    @Published var outlookCalendars: [OutlookCalendarItem] = []
+    @Published var googleCalendars: [GoogleCalendarItem] = [] {
+        didSet {
+            objectWillChange.send()
+        }
+    }
+    @Published var outlookCalendars: [OutlookCalendarItem] = [] {
+        didSet {
+            objectWillChange.send()
+        }
+    }
 
     // Error and loading states
     @Published var errorState: AppError?
@@ -233,6 +281,9 @@ class CalendarManager: ObservableObject {
 
     // Add event sheet state
     @Published var showingAddEventFromCalendar: Bool = false
+
+    // Track internal deletions to prevent reload loops
+    var isPerformingInternalDeletion = false
 
     // Approved conflicts (conflicts user chose to keep both)
     private var approvedConflicts: Set<String> = [] {
@@ -274,6 +325,8 @@ class CalendarManager: ObservableObject {
         if let saved = UserDefaults.standard.array(forKey: "approvedConflicts") as? [String] {
             approvedConflicts = Set(saved)
         }
+        // Clean up expired deleted event records on startup
+        cleanupExpiredDeletedEvents()
         // Inject self into sync manager
         syncManager.calendarManager = self
         // Setup advanced sync asynchronously to avoid blocking main thread
@@ -284,6 +337,75 @@ class CalendarManager: ObservableObject {
         setupCalendarChangeNotification()
         // Start periodic sync timer
         startPeriodicSync()
+    }
+
+    // MARK: - Deleted Events Persistence
+
+    /// Load deleted event records from UserDefaults
+    private func loadDeletedEventRecords() -> [DeletedEventRecord] {
+        guard let data = UserDefaults.standard.data(forKey: deletedEventsKey),
+              let records = try? JSONDecoder().decode([DeletedEventRecord].self, from: data) else {
+            return []
+        }
+        return records
+    }
+
+    /// Save deleted event records to UserDefaults
+    private func saveDeletedEventRecords(_ records: [DeletedEventRecord]) {
+        guard let data = try? JSONEncoder().encode(records) else {
+            print("❌ Failed to encode deleted event records")
+            return
+        }
+        UserDefaults.standard.set(data, forKey: deletedEventsKey)
+        print("💾 Saved \(records.count) deleted event records to UserDefaults")
+    }
+
+    /// Track a deleted event with source information
+    func trackDeletedEvent(_ eventId: String, source: CalendarSource) {
+        var records = loadDeletedEventRecords()
+
+        // Don't add duplicates
+        guard !records.contains(where: { $0.eventId == eventId }) else {
+            print("📍 Event \(eventId) already tracked as deleted")
+            return
+        }
+
+        records.append(DeletedEventRecord(
+            eventId: eventId,
+            deletedAt: Date(),
+            source: source.rawValue
+        ))
+
+        saveDeletedEventRecords(records)
+        print("🗑️ Tracked deleted event: \(eventId) from \(source.rawValue)")
+    }
+
+    /// Remove tracking for an event (e.g., if restored)
+    func untrackDeletedEvent(_ eventId: String) {
+        var records = loadDeletedEventRecords()
+        records.removeAll { $0.eventId == eventId }
+        saveDeletedEventRecords(records)
+        print("♻️ Untracked deleted event: \(eventId)")
+    }
+
+    /// Clean up deleted event records older than expiration period
+    private func cleanupExpiredDeletedEvents() {
+        let expirationDate = Calendar.current.date(
+            byAdding: .day,
+            value: -deletionExpirationDays,
+            to: Date()
+        ) ?? Date()
+
+        var records = loadDeletedEventRecords()
+        let countBefore = records.count
+
+        records.removeAll { $0.deletedAt < expirationDate }
+
+        let removed = countBefore - records.count
+        if removed > 0 {
+            saveDeletedEventRecords(records)
+            print("🧹 Cleaned up \(removed) expired deleted event records (older than \(deletionExpirationDays) days)")
+        }
     }
 
     private func setupEventUpdateListener() {
@@ -322,13 +444,25 @@ class CalendarManager: ObservableObject {
 
     @objc private func calendarDatabaseChanged() {
         print("🔄 iOS calendar database changed - syncing...")
+
+        // Skip reload if we're in the middle of deleting an event ourselves
+        // (to prevent re-fetching and rebuilding immediately after deletion)
+        if isPerformingInternalDeletion {
+            print("⏭️ Skipping sync - internal deletion in progress")
+            return
+        }
+
         // Debounce: wait a bit in case multiple changes happen quickly
         syncDebounceWorkItem?.cancel()
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             print("🔄 Performing real-time sync...")
-            self.loadAllUnifiedEvents()
+            // IMPORTANT: First reload iOS events from EventKit to detect external changes
+            // (e.g., deletions via iCloud, changes from other apps)
+            self.loadEvents()
+            // Then rebuild unified events with the fresh data
+            // Note: loadEvents() already calls loadAllUnifiedEvents() at the end
         }
 
         syncDebounceWorkItem = workItem
@@ -517,6 +651,18 @@ class CalendarManager: ObservableObject {
                 self?.loadAllUnifiedEvents()
             }
             .store(in: &cancellables)
+
+        // Observe calendar list changes
+        googleManager.$availableCalendars
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] calendars in
+                print("🔔 Google calendars changed: \(calendars.count) calendars")
+                self?.googleCalendars = calendars
+            }
+            .store(in: &cancellables)
+
+        // Fetch calendars on setup
+        googleManager.fetchCalendars()
     }
 
     private func setupOutlookEventsObserver() {
@@ -527,6 +673,15 @@ class CalendarManager: ObservableObject {
             .sink { [weak self] _ in
                 print("🔔 Outlook events changed, reloading unified events")
                 self?.loadAllUnifiedEvents()
+            }
+            .store(in: &cancellables)
+
+        // Observe calendar list changes
+        outlookManager.$availableCalendars
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] calendars in
+                print("🔔 Outlook calendars changed: \(calendars.count) calendars")
+                self?.outlookCalendars = calendars.map { OutlookCalendarItem(id: $0.id, name: $0.name, color: $0.color) }
             }
             .store(in: &cancellables)
     }
@@ -719,7 +874,12 @@ class CalendarManager: ObservableObject {
                 // Merge new events with existing ones (avoid duplicates)
                 // For recurring events, check both eventIdentifier AND startDate
                 let newEvents = fetchedEvents.filter { newEvent in
-                    !self.events.contains { existingEvent in
+                    // Filter out deleted events
+                    if let eventId = newEvent.eventIdentifier, self.deletedEventIds.contains(eventId) {
+                        return false
+                    }
+                    // Filter out duplicates
+                    return !self.events.contains { existingEvent in
                         existingEvent.eventIdentifier == newEvent.eventIdentifier &&
                         existingEvent.startDate == newEvent.startDate
                     }
@@ -728,7 +888,7 @@ class CalendarManager: ObservableObject {
                 self.events.append(contentsOf: newEvents)
                 self.events.sort { $0.startDate < $1.startDate }
 
-                print("📅 Added \(newEvents.count) new events, total: \(self.events.count)")
+                print("📅 Added \(newEvents.count) new events (filtered deleted), total: \(self.events.count)")
 
                 // Perform cache eviction if needed
                 self.evictOldEventsIfNeeded()
@@ -844,50 +1004,73 @@ class CalendarManager: ObservableObject {
 
         // Add iOS events (these are FRESH and should take priority)
         print("📅 Converting \(events.count) iOS events to unified events")
-        let iosEvents = events.map { event in
-            UnifiedEvent(
-                id: event.eventIdentifier ?? UUID().uuidString,
-                title: event.title ?? "Untitled",
-                startDate: event.startDate,
-                endDate: event.endDate,
-                location: event.location,
-                description: event.notes,
-                isAllDay: event.isAllDay,
-                source: .ios,
-                organizer: event.organizer?.name,
-                originalEvent: event,
-                calendarId: event.calendar?.calendarIdentifier,
-                calendarName: event.calendar?.title,
-                calendarColor: event.calendar?.cgColor != nil ? Color(event.calendar!.cgColor) : nil
-            )
-        }
+        print("📍 deletedEventIds contains: \(deletedEventIds.count) events: \(Array(deletedEventIds).prefix(5))")
 
-        // Cache iOS events to Core Data
+        let iosEvents = events
+            .filter { event in
+                // Filter out deleted iOS events
+                if let eventId = event.eventIdentifier, deletedEventIds.contains(eventId) {
+                    print("🗑️ Filtering out deleted event: \(event.title ?? "Untitled") (ID: \(eventId))")
+                    return false
+                }
+                return true
+            }
+            .map { event in
+                UnifiedEvent(
+                    id: event.eventIdentifier ?? UUID().uuidString,
+                    title: event.title ?? "Untitled",
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    location: event.location,
+                    description: event.notes,
+                    isAllDay: event.isAllDay,
+                    source: .ios,
+                    organizer: event.organizer?.name,
+                    originalEvent: event,
+                    calendarId: event.calendar?.calendarIdentifier,
+                    calendarName: event.calendar?.title,
+                    calendarColor: event.calendar?.cgColor != nil ? Color(event.calendar!.cgColor) : nil
+                )
+            }
+
+        // Cache iOS events to Core Data (only non-deleted events)
         coreDataManager.saveEvents(iosEvents, syncStatus: .synced)
 
         // Add fresh iOS events directly
         allEvents.append(contentsOf: iosEvents)
-        print("📱 Added \(iosEvents.count) iOS events to unified list")
+        print("📱 Added \(iosEvents.count) iOS events to unified list (after filtering deleted)")
 
         // Add Google events (FRESH, take priority over cached)
         if let googleManager = googleCalendarManager {
-            let googleEvents = googleManager.googleEvents.map { event in
-                UnifiedEvent(
-                    id: event.id,
-                    title: event.title,
-                    startDate: event.startDate,
-                    endDate: event.endDate,
-                    location: event.location,
-                    description: event.description,
-                    isAllDay: false, // Google events default to not all-day
-                    source: .google,
-                    organizer: nil, // Google events organizer can be added later
-                    originalEvent: event,
-                    calendarId: nil, // TODO: Add calendar ID from Google event
-                    calendarName: nil, // TODO: Add calendar name from Google event
-                    calendarColor: nil
-                )
-            }
+            print("📅 Processing \(googleManager.googleEvents.count) Google events")
+            print("📍 CalendarManager deletedEventIds contains: \(deletedEventIds.count) events: \(Array(deletedEventIds).prefix(5))")
+
+            let googleEvents = googleManager.googleEvents
+                .filter { event in
+                    // Filter out deleted events
+                    if deletedEventIds.contains(event.id) {
+                        print("🗑️ Filtering out deleted Google event: \(event.title) (ID: \(event.id))")
+                        return false
+                    }
+                    return true
+                }
+                .map { event in
+                    UnifiedEvent(
+                        id: event.id,
+                        title: event.title,
+                        startDate: event.startDate,
+                        endDate: event.endDate,
+                        location: event.location,
+                        description: event.description,
+                        isAllDay: false, // Google events default to not all-day
+                        source: .google,
+                        organizer: nil, // Google events organizer can be added later
+                        originalEvent: event,
+                        calendarId: nil, // TODO: Add calendar ID from Google event
+                        calendarName: nil, // TODO: Add calendar name from Google event
+                        calendarColor: nil
+                    )
+                }
 
             // Cache Google events to Core Data
             coreDataManager.saveEvents(googleEvents, syncStatus: .synced)
@@ -899,23 +1082,25 @@ class CalendarManager: ObservableObject {
 
         // Add Outlook events (FRESH, take priority over cached)
         if let outlookManager = outlookCalendarManager {
-            let outlookEvents = outlookManager.outlookEvents.map { event in
-                UnifiedEvent(
-                    id: event.id,
-                    title: event.title,
-                    startDate: event.startDate,
-                    endDate: event.endDate,
-                    location: event.location,
-                    description: event.description,
-                    isAllDay: false, // Outlook events default to not all-day
-                    source: .outlook,
-                    organizer: nil, // Outlook events organizer can be added later
-                    originalEvent: event,
-                    calendarId: nil, // TODO: Add calendar ID from Outlook event
-                    calendarName: nil, // TODO: Add calendar name from Outlook event
-                    calendarColor: nil
-                )
-            }
+            let outlookEvents = outlookManager.outlookEvents
+                .filter { !deletedEventIds.contains($0.id) } // Filter out deleted events
+                .map { event in
+                    UnifiedEvent(
+                        id: event.id,
+                        title: event.title,
+                        startDate: event.startDate,
+                        endDate: event.endDate,
+                        location: event.location,
+                        description: event.description,
+                        isAllDay: false, // Outlook events default to not all-day
+                        source: .outlook,
+                        organizer: nil, // Outlook events organizer can be added later
+                        originalEvent: event,
+                        calendarId: nil, // TODO: Add calendar ID from Outlook event
+                        calendarName: nil, // TODO: Add calendar name from Outlook event
+                        calendarColor: nil
+                    )
+                }
 
             // Cache Outlook events to Core Data
             coreDataManager.saveEvents(outlookEvents, syncStatus: .synced)
@@ -984,8 +1169,18 @@ class CalendarManager: ObservableObject {
         let cachedEvents = coreDataManager.fetchEvents()
 
         DispatchQueue.main.async {
-            self.unifiedEvents = cachedEvents.sorted { $0.startDate < $1.startDate }
-            print("💾 Loaded \(cachedEvents.count) offline events from Core Data")
+            // Filter out deleted events to prevent them from reappearing in offline mode
+            let filteredEvents = cachedEvents.filter { event in
+                !self.deletedEventIds.contains(event.id)
+            }
+
+            let removedCount = cachedEvents.count - filteredEvents.count
+            if removedCount > 0 {
+                print("🗑️ Filtered out \(removedCount) deleted events from offline cache")
+            }
+
+            self.unifiedEvents = filteredEvents.sorted { $0.startDate < $1.startDate }
+            print("💾 Loaded \(filteredEvents.count) offline events from Core Data")
         }
     }
 
@@ -1140,23 +1335,45 @@ class CalendarManager: ObservableObject {
             return
         }
 
+        // Add to deleted events tracking
+        trackDeletedEvent(event.id, source: .google)
+
         Task {
             print("🗑️ Deleting Google event via API: \(event.title)")
             let success = await googleManager.deleteEvent(eventId: event.id)
 
             await MainActor.run {
-                if success {
-                    print("✅ Google event deleted successfully from server")
-                    // Delete from Core Data cache
-                    coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: .google)
-                    // Refresh Google events from server to ensure deleted event is gone
-                    googleManager.fetchEvents()
-                    // Wait a moment for fetch to complete, then reload unified events
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        self.loadAllUnifiedEvents()
-                    }
+                // Delete from Core Data cache regardless of server success
+                // This ensures the event is removed locally even if server delete fails
+                coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: .google)
+
+                // Remove from unified events array immediately
+                let beforeCount = self.unifiedEvents.count
+                self.unifiedEvents.removeAll {
+                    $0.id == event.id && $0.source == .google
+                }
+                let afterCount = self.unifiedEvents.count
+                print("✅ Removed from unified events: \(beforeCount) -> \(afterCount)")
+
+                // Verify event is completely removed
+                let stillExists = self.unifiedEvents.contains {
+                    $0.id == event.id && $0.source == .google
+                }
+
+                if stillExists {
+                    print("⚠️ WARNING: Event still exists in unified events after deletion!")
                 } else {
-                    print("❌ Failed to delete Google event from server")
+                    print("✅ VERIFIED: Event completely removed from all arrays")
+                }
+
+                // Force UI refresh by triggering objectWillChange
+                self.objectWillChange.send()
+                print("🔄 Triggered UI refresh via objectWillChange")
+
+                if success {
+                    print("✅ Google event deleted successfully from server and cache")
+                } else {
+                    print("⚠️ Failed to delete from Google server, but removed from local cache")
                 }
             }
         }
@@ -1168,23 +1385,45 @@ class CalendarManager: ObservableObject {
             return
         }
 
+        // Add to deleted events tracking
+        trackDeletedEvent(event.id, source: .outlook)
+
         Task {
             print("🗑️ Deleting Outlook event via API: \(event.title)")
             let success = await outlookManager.deleteEvent(eventId: event.id)
 
             await MainActor.run {
-                if success {
-                    print("✅ Outlook event deleted successfully from server")
-                    // Delete from Core Data cache
-                    coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: .outlook)
-                    // Refresh Outlook events from server to ensure deleted event is gone
-                    outlookManager.fetchEvents()
-                    // Wait a moment for fetch to complete, then reload unified events
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        self.loadAllUnifiedEvents()
-                    }
+                // Delete from Core Data cache regardless of server success
+                // This ensures the event is removed locally even if server delete fails
+                coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: .outlook)
+
+                // Remove from unified events array immediately
+                let beforeCount = self.unifiedEvents.count
+                self.unifiedEvents.removeAll {
+                    $0.id == event.id && $0.source == .outlook
+                }
+                let afterCount = self.unifiedEvents.count
+                print("✅ Removed from unified events: \(beforeCount) -> \(afterCount)")
+
+                // Verify event is completely removed
+                let stillExists = self.unifiedEvents.contains {
+                    $0.id == event.id && $0.source == .outlook
+                }
+
+                if stillExists {
+                    print("⚠️ WARNING: Event still exists in unified events after deletion!")
                 } else {
-                    print("❌ Failed to delete Outlook event from server")
+                    print("✅ VERIFIED: Event completely removed from all arrays")
+                }
+
+                // Force UI refresh by triggering objectWillChange
+                self.objectWillChange.send()
+                print("🔄 Triggered UI refresh via objectWillChange")
+
+                if success {
+                    print("✅ Outlook event deleted successfully from server and cache")
+                } else {
+                    print("⚠️ Failed to delete from Outlook server, but removed from local cache")
                 }
             }
         }
@@ -1330,12 +1569,13 @@ class CalendarManager: ObservableObject {
     }
 
     // Create event in a specific calendar
-    func createEventInCalendar(calendar: EKCalendar, title: String, startDate: Date, endDate: Date, location: String? = nil, notes: String? = nil, isAllDay: Bool = false) {
+    @discardableResult
+    func createEventInCalendar(calendar: EKCalendar, title: String, startDate: Date, endDate: Date, location: String? = nil, notes: String? = nil, isAllDay: Bool = false) -> EKEvent? {
         print("📝 Creating event in specific calendar: \(calendar.title)")
 
         guard hasCalendarAccess else {
             print("❌ No calendar access for event creation")
-            return
+            return nil
         }
 
         let event = EKEvent(eventStore: eventStore)
@@ -1360,9 +1600,11 @@ class CalendarManager: ObservableObject {
             print("✅ Event saved successfully to \(calendar.title)")
             HapticManager.shared.success()
             loadEvents()
+            return event
         } catch {
             print("❌ Error creating event: \(error)")
             HapticManager.shared.error()
+            return nil
         }
     }
 
@@ -1382,38 +1624,67 @@ class CalendarManager: ObservableObject {
             return
         }
 
+        // Set flag to prevent reload triggered by EventKit change notification
+        isPerformingInternalDeletion = true
+        print("🚫 Set isPerformingInternalDeletion = true")
+
         let eventId = event.eventIdentifier
 
         do {
             try eventStore.remove(event, span: .thisEvent, commit: true)
             print("✅ iOS event deleted successfully from iOS Calendar")
 
-            // Also delete from Core Data cache
+            // Track deletion to prevent reappearance
             if let eventId = eventId {
+                print("📍 Tracking deletion for event ID: \(eventId)")
+                trackDeletedEvent(eventId, source: .ios)
+                print("📍 deletedEventIds now contains: \(deletedEventIds.count) events")
+
+                // Delete from Core Data cache
                 coreDataManager.permanentlyDeleteEvent(eventId: eventId, source: .ios)
-                print("✅ Deleted from Core Data cache")
+                print("✅ Deleted from Core Data cache and tracked in deletedEventIds")
+
+                // Remove from iOS events array immediately
+                let countBefore = events.count
+                events.removeAll { $0.eventIdentifier == eventId }
+                let countAfter = events.count
+                print("🗑️ Removed from iOS events array: \(countBefore) -> \(countAfter) (removed \(countBefore - countAfter) events)")
+            } else {
+                print("⚠️ Event has no eventIdentifier, cannot track deletion!")
             }
 
-            // CRITICAL: Clear BOTH the loaded ranges cache AND the events array
-            // The cache prevents re-fetching, and the old events array has stale data
-            loadedRanges.removeAll()
-            events.removeAll()
-            print("🗑️ Cleared loaded ranges cache and events array to force fresh fetch")
+            // Remove from unified events immediately
+            let unifiedBefore = unifiedEvents.count
+            unifiedEvents.removeAll { $0.id == eventId && $0.source == .ios }
+            let unifiedAfter = unifiedEvents.count
+            print("🗑️ Removed from unified events: \(unifiedBefore) -> \(unifiedAfter) (removed \(unifiedBefore - unifiedAfter) events)")
 
-            print("🔄 Reloading iOS events...")
-            // Add a small delay before reloading to ensure EventStore has processed the deletion
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                self.loadEvents()
+            // Verify event is completely removed
+            let stillExists = unifiedEvents.contains { $0.id == eventId && $0.source == .ios }
+            if stillExists {
+                print("⚠️ WARNING: Event still exists in unified events after deletion!")
+            } else {
+                print("✅ VERIFIED: Event completely removed from all arrays")
+            }
 
-                // Force refresh unified events after iOS events are reloaded
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    print("🔄 Reloading unified events after iOS deletion...")
-                    self.loadAllUnifiedEvents()
-                }
+            // Force UI refresh by triggering objectWillChange
+            objectWillChange.send()
+            print("🔄 Triggered UI refresh via objectWillChange")
+
+            // Clear the deletion flag after a short delay to allow EventKit notification to fire
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.isPerformingInternalDeletion = false
+                print("✅ Cleared isPerformingInternalDeletion flag")
             }
         } catch {
             print("❌ Error deleting iOS event: \(error)")
             print("❌ Error details: \(error.localizedDescription)")
+
+            // Clear the deletion flag even on error
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.isPerformingInternalDeletion = false
+                print("✅ Cleared isPerformingInternalDeletion flag (after error)")
+            }
         }
     }
 
@@ -2782,8 +3053,20 @@ class CalendarManager: ObservableObject {
         var conflicts: [ScheduleConflict] = []
         var processedPairs = Set<String>()
 
+        // Get start of today to filter out past events
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+
+        // Filter to only include events from today onwards (exclude past events)
+        let currentAndFutureEvents = unifiedEvents.filter { event in
+            // Include event if it ends today or in the future
+            event.endDate >= startOfToday
+        }
+
+        print("🔍 Filtered to \(currentAndFutureEvents.count) current/future events (excluded \(unifiedEvents.count - currentAndFutureEvents.count) past events)")
+
         // Sort events by start date for efficient checking
-        let sortedEvents = unifiedEvents.sorted { $0.startDate < $1.startDate }
+        let sortedEvents = currentAndFutureEvents.sorted { $0.startDate < $1.startDate }
 
         for i in 0..<sortedEvents.count {
             let event1 = sortedEvents[i]
