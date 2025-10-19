@@ -2209,7 +2209,6 @@ struct DraggableEventView: View {
     @State private var horizontalDragOffset: CGFloat = 0
     @State private var isDragging = false
     @State private var pressStartTime: Date?
-    @State private var longPressTimer: Timer?
     @State private var isPressingDown = false
     @State private var dragDirection: DragDirection = .undetermined
     @State private var hasBeenMoved = false // Track if event was moved
@@ -2380,27 +2379,25 @@ struct DraggableEventView: View {
                         pressStartTime = Date()
                         isPressingDown = true
                         print("👆 Touch started on: \(event.title ?? "Untitled")")
+                    }
 
-                        // Start timer for 1-second activation
-                        longPressTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
-                            if !isDragging {
-                                withAnimation {
-                                    isDragging = true
-                                }
-
-                                // If starting a new drag on a previously moved event, reset offsets
-                                if hasBeenMoved {
-                                    dragOffset = 0
-                                    horizontalDragOffset = 0
-                                    hasBeenMoved = false
-                                    print("🔄 Resetting parked event for new drag")
-                                }
-
-                                let generator = UIImpactFeedbackGenerator(style: .medium)
-                                generator.impactOccurred()
-                                print("✅ Long press activated after 1s: \(event.title ?? "Untitled")")
-                            }
+                    // Activate drag immediately when user starts moving (no timer delay)
+                    if !isDragging && (abs(value.translation.width) > 3 || abs(value.translation.height) > 3) {
+                        withAnimation {
+                            isDragging = true
                         }
+
+                        // If starting a new drag on a previously moved event, reset offsets
+                        if hasBeenMoved {
+                            dragOffset = 0
+                            horizontalDragOffset = 0
+                            hasBeenMoved = false
+                            print("🔄 Resetting parked event for new drag")
+                        }
+
+                        let generator = UIImpactFeedbackGenerator(style: .medium)
+                        generator.impactOccurred()
+                        print("✅ Drag activated on movement: \(event.title ?? "Untitled")")
                     }
 
                     // If activated, determine drag direction and allow dragging
@@ -2454,10 +2451,6 @@ struct DraggableEventView: View {
                 .onEnded { value in
                     print("🔴 Touch ended")
 
-                    // Cancel timer if not yet activated
-                    longPressTimer?.invalidate()
-                    longPressTimer = nil
-
                     if isDragging {
                         if dragDirection == .horizontal && isWeekView {
                             // Calculate day change based on horizontal movement
@@ -2498,9 +2491,9 @@ struct DraggableEventView: View {
                             }
                         }
                     } else if pressStartTime != nil {
-                        // User lifted finger before 1s - treat as tap
+                        // User lifted finger without dragging - treat as tap
                         onEventTap?(event)
-                        print("👆 Event tapped: \(event.title ?? "Untitled")")
+                        print("👆 Event tapped (no drag): \(event.title ?? "Untitled")")
                     }
 
                     // Clear drag indicator from week view headers
@@ -2844,7 +2837,6 @@ struct EventCardView: View {
     @State private var dragOffset: CGFloat = 0
     @State private var isDragging = false
     @State private var pressStartTime: Date?
-    @State private var longPressTimer: Timer?
     @State private var isPressingDown = false
     @State private var draggedStartTime: Date?
     @State private var draggedEndTime: Date?
@@ -2927,19 +2919,17 @@ struct EventCardView: View {
                     if pressStartTime == nil {
                         pressStartTime = Date()
                         isPressingDown = true
-                        print("👆 Touch started")
+                        print("👆 Touch started on: \(event.title)")
+                    }
 
-                        // Start timer for 2-second activation
-                        longPressTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
-                            if !isDragging {
-                                withAnimation {
-                                    isDragging = true
-                                }
-                                let generator = UIImpactFeedbackGenerator(style: .medium)
-                                generator.impactOccurred()
-                                print("✅ Long press activated after 2s: \(event.title)")
-                            }
+                    // Activate drag immediately when user starts moving (no timer delay)
+                    if !isDragging && (abs(value.translation.width) > 3 || abs(value.translation.height) > 3) {
+                        withAnimation {
+                            isDragging = true
                         }
+                        let generator = UIImpactFeedbackGenerator(style: .medium)
+                        generator.impactOccurred()
+                        print("✅ Drag activated on movement: \(event.title)")
                     }
 
                     // If activated, allow dragging
@@ -2966,10 +2956,6 @@ struct EventCardView: View {
                 }
                 .onEnded { value in
                     print("🔴 Touch ended")
-
-                    // Cancel timer if not yet activated
-                    longPressTimer?.invalidate()
-                    longPressTimer = nil
 
                     if isDragging {
                         // Complete the drag
