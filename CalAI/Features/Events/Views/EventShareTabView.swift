@@ -14,18 +14,32 @@ struct EventShareTabView: View {
     @State private var useGoogleCalendarLink = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Event Info
-                eventInfoSection
+        VStack(spacing: 0) {
+            // Header with Share Icon
+            HStack {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 24))
+                    .foregroundColor(.blue)
 
-                // Share to Calendar Section
-                qrCodeSection
-
-                // Meeting Invitation Section
-                meetingInvitationSection
+                Spacer()
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 10)
+
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Event Info
+                    eventInfoSection
+
+                    // Share to Calendar Section
+                    qrCodeSection
+
+                    // Meeting Invitation Section
+                    meetingInvitationSection
+                }
+                .padding()
+            }
         }
         .sheet(isPresented: $showShareSheet) {
             if let icsURL = EventICSExporter.saveToTemporaryFile(
