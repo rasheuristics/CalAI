@@ -626,7 +626,7 @@ struct AITabView: View {
             let userMessage = ConversationItem(message: transcript, isUser: true)
             conversationHistory.append(userMessage)
         }
-        aiManager.processVoiceCommand(transcript, conversationHistory: conversationHistory, calendarEvents: calendarManager.unifiedEvents) { response in
+        aiManager.processVoiceCommand(transcript, conversationHistory: conversationHistory, calendarEvents: calendarManager.unifiedEvents, calendarManager: calendarManager) { response in
             handleAIResponse(response)
         }
     }

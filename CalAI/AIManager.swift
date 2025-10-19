@@ -132,7 +132,7 @@ class AIManager: ObservableObject {
 
     // MARK: - Main Command Processing
 
-    func processVoiceCommand(_ transcript: String, conversationHistory: [ConversationItem] = [], calendarEvents: [UnifiedEvent] = [], completion: @escaping (AICalendarResponse) -> Void) {
+    func processVoiceCommand(_ transcript: String, conversationHistory: [ConversationItem] = [], calendarEvents: [UnifiedEvent] = [], calendarManager: CalendarManager? = nil, completion: @escaping (AICalendarResponse) -> Void) {
         print("🧠 AI Manager processing transcript: \"\(transcript)\"")
         print("🔄 Current conversation state: \(conversationState)")
         isProcessing = true
@@ -232,7 +232,7 @@ class AIManager: ObservableObject {
 
                 case .contextAware:
                     // Handle context-aware queries (do I have time for lunch?)
-                    await handleContextAware(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+                    await handleContextAware(transcript: cleanTranscript, calendarEvents: calendarEvents, calendarManager: calendarManager, completion: completion)
 
                 case .focusTime:
                     // Handle focus time / smart blocking
@@ -1879,7 +1879,7 @@ class AIManager: ObservableObject {
 
     // MARK: - Context-Aware Handling
 
-    private func handleContextAware(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+    private func handleContextAware(transcript: String, calendarEvents: [UnifiedEvent], calendarManager: CalendarManager?, completion: @escaping (AICalendarResponse) -> Void) async {
         print("🧠 Handling context-aware query: \(transcript)")
 
         let lowercased = transcript.lowercased()
@@ -1963,7 +1963,11 @@ class AIManager: ObservableObject {
         }
         // "What needs my attention"
         else if lowercased.contains("needs my attention") || lowercased.contains("need my attention") {
-            message = calendarManager.analyzeAttentionItems()
+            if let manager = calendarManager {
+                message = manager.analyzeAttentionItems()
+            } else {
+                message = "I need access to your calendar manager to analyze attention items."
+            }
         }
         // Generic context
         else {
