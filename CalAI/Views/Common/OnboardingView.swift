@@ -149,7 +149,7 @@ struct OnboardingView: View {
         .sheet(isPresented: $outlookCalendarManager.showCalendarSelection) {
             OutlookCalendarSelectionView(outlookCalendarManager: outlookCalendarManager)
         }
-        .onChange(of: outlookCalendarManager.selectedCalendar?.id) { _, _ in
+        .onChange(of: outlookCalendarManager.selectedCalendar?.id) { _ in
             // Update connection status when calendar is selected
             outlookCalendarConnected = outlookCalendarManager.isSignedIn && outlookCalendarManager.selectedCalendar != nil
         }
