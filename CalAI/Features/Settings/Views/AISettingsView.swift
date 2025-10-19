@@ -59,11 +59,11 @@ struct AISettingsView: View {
                     HStack {
                         Text("Speed (Rate)")
                         Spacer()
-                        Text("\(String(format: "%.1f", speechRate))x")
+                        Text("\(String(format: "%.2f", speechRate))x")
                             .foregroundColor(.secondary)
                             .frame(width: 50)
                     }
-                    Slider(value: $speechRate, in: 0.3...0.7, step: 0.05)
+                    Slider(value: $speechRate, in: 0.3...0.7, step: 0.01)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
