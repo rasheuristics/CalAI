@@ -71,7 +71,8 @@ struct ContentView: View {
             OnboardingView(
                 calendarManager: calendarManager,
                 googleCalendarManager: googleCalendarManager,
-                outlookCalendarManager: outlookCalendarManager
+                outlookCalendarManager: outlookCalendarManager,
+                voiceManager: voiceManager
             )
         }
         .onAppear {

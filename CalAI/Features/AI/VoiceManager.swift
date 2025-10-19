@@ -24,10 +24,21 @@ class VoiceManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        requestPermissions()
+        // Don't request permissions automatically - will be requested from onboarding
+        checkExistingPermissions()
     }
 
-    private func requestPermissions() {
+    private func checkExistingPermissions() {
+        // Check if permissions were already granted without requesting
+        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        let micStatus = AVAudioSession.sharedInstance().recordPermission
+
+        DispatchQueue.main.async {
+            self.hasRecordingPermission = (speechStatus == .authorized && micStatus == .granted)
+        }
+    }
+
+    func requestPermissions() {
         print("🎤 Requesting speech recognition permissions...")
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             DispatchQueue.main.async {

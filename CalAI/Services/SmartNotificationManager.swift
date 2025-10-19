@@ -201,7 +201,7 @@ class SmartNotificationManager: NSObject, ObservableObject {
         super.init()
         locationManager.delegate = self
         checkNotificationPermission()
-        requestLocationPermission()
+        // Don't request location permission automatically - will be requested from onboarding
     }
 
     // MARK: - Permission Management
@@ -234,7 +234,7 @@ class SmartNotificationManager: NSObject, ObservableObject {
         }
     }
 
-    private func requestLocationPermission() {
+    func requestLocationPermission() {
         locationManager.requestWhenInUseAuthorization()
         locationManager.startUpdatingLocation()
     }

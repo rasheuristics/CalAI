@@ -9,11 +9,11 @@ struct OnboardingView: View {
     @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var googleCalendarManager: GoogleCalendarManager
     @ObservedObject var outlookCalendarManager: OutlookCalendarManager
+    @ObservedObject var voiceManager: VoiceManager
 
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var currentPage = 0
     @Environment(\.dismiss) private var dismiss
-    @State private var locationManager = CLLocationManager()
 
     @State private var calendarAccessGranted = false
     @State private var googleCalendarConnected = false
@@ -146,6 +146,13 @@ struct OnboardingView: View {
                 .padding(.bottom, DesignSystem.Spacing.xl)
             }
         }
+        .sheet(isPresented: $outlookCalendarManager.showCalendarSelection) {
+            OutlookCalendarSelectionView(outlookCalendarManager: outlookCalendarManager)
+        }
+        .onChange(of: outlookCalendarManager.selectedCalendar) { _, _ in
+            // Update connection status when calendar is selected
+            outlookCalendarConnected = outlookCalendarManager.isSignedIn && outlookCalendarManager.selectedCalendar != nil
+        }
     }
 
     private func handleNextTap() {
@@ -186,34 +193,37 @@ struct OnboardingView: View {
 
     private func requestMicrophoneAccess() {
         print("🎤 Requesting microphone access from onboarding...")
-        AVAudioSession.sharedInstance().requestRecordPermission { granted in
-            DispatchQueue.main.async {
-                self.microphoneAccessGranted = granted
-                print("🎤 Microphone access: \(granted)")
+        voiceManager.requestPermissions()
+
+        // Check status after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.microphoneAccessGranted = self.voiceManager.hasRecordingPermission
+            if self.microphoneAccessGranted {
+                print("✅ Microphone access granted")
             }
         }
     }
 
     private func requestLocationAccess() {
         print("📍 Requesting location access from onboarding...")
-        locationManager.requestWhenInUseAuthorization()
+        SmartNotificationManager.shared.requestLocationPermission()
 
         // Check status after a delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            let status = self.locationManager.authorizationStatus
+            let locationManager = CLLocationManager()
+            let status = locationManager.authorizationStatus
             self.locationAccessGranted = (status == .authorizedWhenInUse || status == .authorizedAlways)
         }
     }
 
     private func requestNotificationAccess() {
         print("🔔 Requesting notification access from onboarding...")
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound, .timeSensitive]) { granted, error in
+        SmartNotificationManager.shared.requestNotificationPermission { granted in
             DispatchQueue.main.async {
                 self.notificationAccessGranted = granted
                 if granted {
                     print("✅ Notification access granted")
-                } else if let error = error {
-                    print("❌ Notification access error: \(error.localizedDescription)")
+                    SmartNotificationManager.shared.setupNotificationCategories()
                 }
             }
         }
@@ -237,10 +247,12 @@ struct OnboardingView: View {
         outlookCalendarManager.signIn()
 
         // Check connection status after a delay
+        // Note: User will need to select a calendar after signing in
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.outlookCalendarConnected = self.outlookCalendarManager.isSignedIn
-            if self.outlookCalendarConnected {
-                print("✅ Outlook Calendar connected")
+            // Consider connected if signed in and has a selected calendar
+            self.outlookCalendarConnected = self.outlookCalendarManager.isSignedIn && self.outlookCalendarManager.selectedCalendar != nil
+            if self.outlookCalendarManager.isSignedIn {
+                print("✅ Outlook signed in, selected calendar: \(self.outlookCalendarManager.selectedCalendar?.displayName ?? "none")")
             }
         }
     }
@@ -430,11 +442,13 @@ struct OnboardingPage {
 }
 
 // MARK: - Preview
+// Note: OutlookCalendarSelectionView and CalendarRow are defined in SettingsTabView.swift
 
 #Preview {
     OnboardingView(
         calendarManager: CalendarManager(),
         googleCalendarManager: GoogleCalendarManager(),
-        outlookCalendarManager: OutlookCalendarManager()
+        outlookCalendarManager: OutlookCalendarManager(),
+        voiceManager: VoiceManager()
     )
 }
