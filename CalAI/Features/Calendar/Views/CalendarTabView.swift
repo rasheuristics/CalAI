@@ -2463,7 +2463,8 @@ struct DraggableEventView: View {
                                 handleHorizontalDragEnd(dayChange: dayChange)
                                 hasBeenMoved = true
                                 print("🎯 Event parked at new day: \(dayChange)")
-                                // Keep the offset - event stays parked until next drag
+                                // KEEP horizontalDragOffset - event stays visually parked at new day
+                                // DO NOT reset to 0! It needs to stay for visual consistency
                             } else {
                                 print("🎯 No day change, reverting")
                                 withAnimation {
@@ -2482,7 +2483,7 @@ struct DraggableEventView: View {
                                 hasBeenMoved = true
                                 print("🎯 Event parked at new time: \(snappedMinutes) minutes")
                                 // KEEP dragOffset - event stays visually parked until segments rebuild with updated event
-                                // DO NOT reset dragOffset here!
+                                // DO NOT reset dragOffset to 0! It needs to stay for visual consistency
                             } else {
                                 print("🎯 No time change, reverting")
                                 withAnimation {
