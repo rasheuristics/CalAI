@@ -13,6 +13,8 @@ struct ContentView: View {
     // PHASE 12 DISABLED
     // @StateObject private var postMeetingService = PostMeetingService.shared
     @State private var selectedTab: Int = 0
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @State private var showOnboarding = false
 
     var body: some View {
         ZStack {
@@ -65,10 +67,19 @@ struct ContentView: View {
             .background(Color.clear)
         }
         .preferredColorScheme(appearanceManager.currentMode.colorScheme)
+        .fullScreenCover(isPresented: $showOnboarding) {
+            OnboardingView()
+        }
         .onAppear {
             print("========================================")
             print("🔴🔴🔴 CALAI APP LAUNCHED - CONSOLE IS WORKING! 🔴🔴🔴")
             print("========================================")
+
+            // Check if onboarding needs to be shown
+            if !hasCompletedOnboarding {
+                print("📋 First launch detected - showing onboarding")
+                showOnboarding = true
+            }
 
             // Perform secure storage migration if needed
             if !SecureStorage.isMigrationCompleted() {
@@ -87,7 +98,10 @@ struct ContentView: View {
             // PHASE 12 DISABLED - PostMeetingService Configuration
             // postMeetingService.configure(calendarManager: calendarManager, aiManager: aiManager)
 
-            calendarManager.requestCalendarAccess()
+            // Only request calendar access if onboarding is completed
+            if hasCompletedOnboarding {
+                calendarManager.requestCalendarAccess()
+            }
             setupiOS26TabBar()
         }
         // PHASE 12 DISABLED - Post-Meeting Summary Sheet
