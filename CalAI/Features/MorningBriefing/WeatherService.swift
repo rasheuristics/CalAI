@@ -15,18 +15,43 @@ class WeatherService: NSObject, ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     // OpenWeatherMap API Key - Fallback for iOS 15 and WeatherKit auth failures
-    // Using a demo/shared key for development - users should get their own from openweathermap.org
+    // Users should get their own free key from openweathermap.org and enter it in Settings
     private var apiKey: String? {
         get {
-            // Check if user has set their own key
+            // Try to get from secure keychain first
+            do {
+                let key = try SecureStorage.retrieve(key: "openWeatherMapAPIKey")
+                if !key.isEmpty {
+                    return key
+                }
+            } catch {
+                // Key not found in keychain, try UserDefaults for migration
+            }
+
+            // Check UserDefaults for legacy key and migrate if found
             if let userKey = UserDefaults.standard.string(forKey: "openWeatherMapAPIKey"), !userKey.isEmpty {
+                // Migrate to secure storage
+                try? SecureStorage.store(key: "openWeatherMapAPIKey", value: userKey)
+                UserDefaults.standard.removeObject(forKey: "openWeatherMapAPIKey")
                 return userKey
             }
-            // Use demo key as fallback (limited requests per day)
-            return "bf6b6c9842f882091a13f38933e2ce54" // Demo key - replace with your own
+
+            // No API key configured - return nil
+            // User needs to get a free key from openweathermap.org
+            return nil
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: "openWeatherMapAPIKey")
+            do {
+                if let newValue = newValue, !newValue.isEmpty {
+                    try SecureStorage.store(key: "openWeatherMapAPIKey", value: newValue)
+                    // Remove from UserDefaults if it exists there
+                    UserDefaults.standard.removeObject(forKey: "openWeatherMapAPIKey")
+                } else {
+                    try? SecureStorage.delete(key: "openWeatherMapAPIKey")
+                }
+            } catch {
+                print("❌ Failed to store OpenWeatherMap API key: \(error)")
+            }
         }
     }
 
