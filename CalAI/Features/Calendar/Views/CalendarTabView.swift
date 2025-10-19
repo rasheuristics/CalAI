@@ -1931,9 +1931,10 @@ struct CompressedDayTimelineView: View {
             ForEach(Array(0...23), id: \.self) { hour in
                 HStack {
                     formattedTimeView(hourToDate(hour))
+                        .offset(y: -8) // Offset up so grid line goes through center of AM/PM text
                     Spacer()
                 }
-                .frame(width: hourLabelWidth, height: CGFloat(60 * pxPerMinute))
+                .frame(width: hourLabelWidth, height: CGFloat(60 * pxPerMinute), alignment: .top)
             }
         }
     }
@@ -2214,11 +2215,21 @@ struct DraggableEventView: View {
     @State private var hasBeenMoved = false // Track if event was moved
     @State private var savedMinutesOffset: Int = 0 // Minutes offset after drag ends
     @State private var savedDayOffset: Int = 0 // Day offset after drag ends
+    @StateObject private var colorManager = EventColorManager.shared
 
     enum DragDirection {
         case undetermined
         case vertical   // Time change
         case horizontal // Day change (week view only)
+    }
+
+    // Get color for event - custom color if set, otherwise calendar source color
+    private var eventColor: Color {
+        if colorManager.shouldUseCustomColor(for: event.id),
+           let customColor = colorManager.getCustomColor(for: event.id) {
+            return customColor
+        }
+        return colorForCalendarSource(event.source)
     }
 
     // Calculate live preview times based on current drag OR saved offset
@@ -2346,13 +2357,13 @@ struct DraggableEventView: View {
                     .fill(Color.white.opacity(0.15))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(colorForCalendarSource(event.source).opacity(0.15))
+                            .fill(eventColor.opacity(0.15))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(colorForCalendarSource(event.source).opacity(0.6), lineWidth: 1.5)
+                            .stroke(eventColor.opacity(0.6), lineWidth: 1.5)
                     )
-                    .shadow(color: colorForCalendarSource(event.source).opacity(0.3), radius: 8, x: 0, y: 4)
+                    .shadow(color: eventColor.opacity(0.3), radius: 8, x: 0, y: 4)
             )
             .accessibilityLabel("\(event.title ?? "Untitled Event"), \(formatTime(event.start)) to \(formatTime(event.end))\(event.eventLocation.map { ", at \($0)" } ?? "")")
             .scaleEffect(isDragging ? 1.02 : (isPressingDown ? 0.98 : 1.0))

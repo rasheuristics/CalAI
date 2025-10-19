@@ -1,5 +1,6 @@
 import SwiftUI
 import EventKit
+import MapKit
 
 struct EditEventView: View {
     @ObservedObject var calendarManager: CalendarManager
@@ -19,230 +20,26 @@ struct EditEventView: View {
     @State private var selectedColor: Color = .blue
     @State private var attachments: [AttachmentItem] = []
     @State private var showingDocumentPicker = false
+    @State private var showingLocationPicker = false
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
     @State private var successMessage: String?
     @State private var showingDeleteConfirmation = false
+    @StateObject private var colorManager = EventColorManager.shared
 
     var body: some View {
         Form {
-                Section("Event Details") {
-                    TextField("Title", text: $title)
-                        .dynamicFont(size: 17, fontManager: fontManager)
-
-                    TextField("Location", text: $location)
-                        .dynamicFont(size: 17, fontManager: fontManager)
-                }
-
-                Section("Date & Time") {
-                    Toggle("All Day", isOn: $isAllDay)
-                        .dynamicFont(size: 17, fontManager: fontManager)
-
-                    if !isAllDay {
-                        DatePicker("Starts", selection: $startDate, displayedComponents: [.date, .hourAndMinute])
-                            .dynamicFont(size: 17, fontManager: fontManager)
-
-                        DatePicker("Ends", selection: $endDate, displayedComponents: [.date, .hourAndMinute])
-                            .dynamicFont(size: 17, fontManager: fontManager)
-                    } else {
-                        DatePicker("Starts", selection: $startDate, displayedComponents: .date)
-                            .dynamicFont(size: 17, fontManager: fontManager)
-
-                        DatePicker("Ends", selection: $endDate, displayedComponents: .date)
-                            .dynamicFont(size: 17, fontManager: fontManager)
-                    }
-                }
-
-                Section("Notes") {
-                    TextEditor(text: $notes)
-                        .dynamicFont(size: 17, fontManager: fontManager)
-                        .frame(minHeight: 100)
-                }
-
-                Section("Calendar") {
-                    HStack {
-                        Text("Source:")
-                            .dynamicFont(size: 17, fontManager: fontManager)
-
-                        Spacer()
-
-                        Text(event.sourceLabel)
-                            .dynamicFont(size: 17, weight: .medium, fontManager: fontManager)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color(.systemGray5))
-                            .cornerRadius(6)
-                    }
-
-                    if let calendarName = event.calendarName {
-                        HStack {
-                            Text("Calendar:")
-                                .dynamicFont(size: 17, fontManager: fontManager)
-
-                            Spacer()
-
-                            HStack(spacing: 8) {
-                                if let color = event.calendarColor {
-                                    Circle()
-                                        .fill(color)
-                                        .frame(width: 12, height: 12)
-                                }
-                                Text(calendarName)
-                                    .dynamicFont(size: 17, fontManager: fontManager)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-
-                Section("Repeat") {
-                    Picker("Repeat", selection: $selectedRepeat) {
-                        ForEach(RepeatOption.allCases) { option in
-                            Text(option.displayName)
-                                .dynamicFont(size: 17, fontManager: fontManager)
-                                .tag(option)
-                        }
-                    }
-                    .dynamicFont(size: 17, fontManager: fontManager)
-                }
-
-                Section {
-                    ColorPicker("Card Color", selection: $selectedColor, supportsOpacity: false)
-                        .dynamicFont(size: 17, fontManager: fontManager)
-
-                    HStack {
-                        Text("Preview:")
-                            .dynamicFont(size: 15, fontManager: fontManager)
-                            .foregroundColor(.secondary)
-
-                        Spacer()
-
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(selectedColor)
-                            .frame(width: 60, height: 30)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                            )
-                    }
-                } header: {
-                    Text("Event Card Color")
-                } footer: {
-                    Text("This color affects how the event appears in CalAI. For iOS Calendar events, the actual calendar color is managed in the iOS Calendar settings.")
-                        .dynamicFont(size: 13, fontManager: fontManager)
-                }
-
-                Section("URL") {
-                    TextField("Event URL", text: $eventURL)
-                        .dynamicFont(size: 17, fontManager: fontManager)
-                        .keyboardType(.URL)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                }
-
-                Section("Attachments") {
-                    if attachments.isEmpty {
-                        Button(action: {
-                            showingDocumentPicker = true
-                        }) {
-                            HStack {
-                                Image(systemName: "paperclip")
-                                    .foregroundColor(.blue)
-                                Text("Add Attachment")
-                                    .dynamicFont(size: 17, fontManager: fontManager)
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                    } else {
-                        ForEach(attachments) { attachment in
-                            HStack {
-                                Image(systemName: "doc")
-                                    .foregroundColor(.secondary)
-                                Text(attachment.name)
-                                    .dynamicFont(size: 17, fontManager: fontManager)
-                                Spacer()
-                                Button(action: {
-                                    removeAttachment(attachment)
-                                }) {
-                                    Image(systemName: "trash")
-                                        .foregroundColor(.red)
-                                }
-                            }
-                        }
-
-                        Button(action: {
-                            showingDocumentPicker = true
-                        }) {
-                            HStack {
-                                Image(systemName: "paperclip")
-                                    .foregroundColor(.blue)
-                                Text("Add Another Attachment")
-                                    .dynamicFont(size: 17, fontManager: fontManager)
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                    }
-                }
-
-                if let errorMessage = errorMessage {
-                    Section {
-                        Text(errorMessage)
-                            .foregroundColor(.red)
-                            .dynamicFont(size: 14, fontManager: fontManager)
-                    }
-                }
-
-                Section {
-                    Button(action: { saveEvent() }) {
-                        HStack {
-                            Spacer()
-                            Text("Save Changes")
-                                .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
-                                .foregroundColor(.blue)
-                            Spacer()
-                        }
-                    }
-                    .disabled(title.isEmpty || isLoading)
-                }
-
-                Section {
-                    Button(action: { showingDeleteConfirmation = true }) {
-                        HStack {
-                            Spacer()
-                            Text("Delete Event")
-                                .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
-                                .foregroundColor(.red)
-                            Spacer()
-                        }
-                    }
-                    .disabled(isLoading)
-                }
+            eventDetailsSection
+            calendarSection
+            dateTimeSection
+            repeatSection
+            colorSection
+            urlSection
+            attachmentsSection
+            notesSection
+            errorSection
+            actionButtons
         }
-        .overlay(
-            Group {
-                if isLoading {
-                    ZStack {
-                        Color.black.opacity(0.3)
-                            .ignoresSafeArea()
-
-                        VStack {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .scaleEffect(1.2)
-
-                            Text("Updating Event...")
-                                .dynamicFont(size: 14, fontManager: fontManager)
-                                .foregroundColor(.white)
-                                .padding(.top, 8)
-                        }
-                        .padding()
-                        .background(Color.black.opacity(0.7))
-                        .cornerRadius(10)
-                    }
-                }
-            }
-        )
         .onAppear {
             loadEventData()
         }
@@ -257,6 +54,19 @@ struct EditEventView: View {
                     addAttachment(from: url)
                 }
             }
+        }
+        .sheet(isPresented: $showingLocationPicker) {
+            LocationPickerView(
+                selectedLocation: $location,
+                fontManager: fontManager,
+                onLocationSelected: { selectedLocation in
+                    location = selectedLocation
+                    showingLocationPicker = false
+                },
+                onCancel: {
+                    showingLocationPicker = false
+                }
+            )
         }
         .alert("Delete Event", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -287,7 +97,284 @@ struct EditEventView: View {
                 }
             }
         )
+        .overlay(
+            Group {
+                if isLoading {
+                    ZStack {
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+
+                        VStack {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(1.2)
+
+                            Text("Updating Event...")
+                                .dynamicFont(size: 14, fontManager: fontManager)
+                                .foregroundColor(.white)
+                                .padding(.top, 8)
+                        }
+                        .padding()
+                        .background(Color.black.opacity(0.7))
+                        .cornerRadius(10)
+                    }
+                }
+            }
+        )
     }
+
+    // MARK: - Form Sections
+
+    private var eventDetailsSection: some View {
+        Section("Event Details") {
+            TextField("Title", text: $title)
+                .dynamicFont(size: 17, fontManager: fontManager)
+
+            // Location field with search
+            Button(action: {
+                showingLocationPicker = true
+            }) {
+                HStack {
+                    Text("Location")
+                        .dynamicFont(size: 17, fontManager: fontManager)
+                        .foregroundColor(.primary)
+
+                    Spacer()
+
+                    if location.isEmpty {
+                        Text("Add location")
+                            .dynamicFont(size: 17, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    } else {
+                        HStack(spacing: 4) {
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(.blue)
+                            Text(location)
+                                .dynamicFont(size: 17, fontManager: fontManager)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var calendarSection: some View {
+        Section("Calendar") {
+            HStack {
+                Text("Source:")
+                    .dynamicFont(size: 17, fontManager: fontManager)
+
+                Spacer()
+
+                Text(event.sourceLabel)
+                    .dynamicFont(size: 17, weight: .medium, fontManager: fontManager)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(.systemGray5))
+                    .cornerRadius(6)
+            }
+
+            if let calendarName = event.calendarName {
+                HStack {
+                    Text("Calendar:")
+                        .dynamicFont(size: 17, fontManager: fontManager)
+
+                    Spacer()
+
+                    HStack(spacing: 8) {
+                        if let color = event.calendarColor {
+                            Circle()
+                                .fill(color)
+                                .frame(width: 12, height: 12)
+                        }
+                        Text(calendarName)
+                            .dynamicFont(size: 17, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var dateTimeSection: some View {
+        Section("Date & Time") {
+            Toggle("All Day", isOn: $isAllDay)
+                .dynamicFont(size: 17, fontManager: fontManager)
+
+            if !isAllDay {
+                DatePicker("Starts", selection: $startDate, displayedComponents: [.date, .hourAndMinute])
+                    .dynamicFont(size: 17, fontManager: fontManager)
+
+                DatePicker("Ends", selection: $endDate, displayedComponents: [.date, .hourAndMinute])
+                    .dynamicFont(size: 17, fontManager: fontManager)
+            } else {
+                DatePicker("Starts", selection: $startDate, displayedComponents: .date)
+                    .dynamicFont(size: 17, fontManager: fontManager)
+
+                DatePicker("Ends", selection: $endDate, displayedComponents: .date)
+                    .dynamicFont(size: 17, fontManager: fontManager)
+            }
+        }
+    }
+
+    private var repeatSection: some View {
+        Section("Repeat") {
+            Picker("Repeat", selection: $selectedRepeat) {
+                ForEach(RepeatOption.allCases) { option in
+                    Text(option.displayName)
+                        .dynamicFont(size: 17, fontManager: fontManager)
+                        .tag(option)
+                }
+            }
+            .dynamicFont(size: 17, fontManager: fontManager)
+        }
+    }
+
+    private var colorSection: some View {
+        Section {
+            ColorPicker("Card Color", selection: $selectedColor, supportsOpacity: false)
+                .dynamicFont(size: 17, fontManager: fontManager)
+
+            HStack {
+                Text("Preview:")
+                    .dynamicFont(size: 15, fontManager: fontManager)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(selectedColor)
+                    .frame(width: 60, height: 30)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                    )
+            }
+        } header: {
+            Text("Event Card Color")
+        } footer: {
+            Text("This color affects how the event appears in CalAI. For iOS Calendar events, the actual calendar color is managed in the iOS Calendar settings.")
+                .dynamicFont(size: 13, fontManager: fontManager)
+        }
+    }
+
+    private var urlSection: some View {
+        Section("URL") {
+            TextField("Event URL", text: $eventURL)
+                .dynamicFont(size: 17, fontManager: fontManager)
+                .keyboardType(.URL)
+                .autocapitalization(.none)
+                .disableAutocorrection(true)
+        }
+    }
+
+    private var attachmentsSection: some View {
+        Section("Attachments") {
+            if attachments.isEmpty {
+                Button(action: {
+                    showingDocumentPicker = true
+                }) {
+                    HStack {
+                        Image(systemName: "paperclip")
+                            .foregroundColor(.blue)
+                        Text("Add Attachment")
+                            .dynamicFont(size: 17, fontManager: fontManager)
+                            .foregroundColor(.blue)
+                    }
+                }
+            } else {
+                ForEach(attachments) { attachment in
+                    HStack {
+                        Image(systemName: "doc")
+                            .foregroundColor(.secondary)
+                        Text(attachment.name)
+                            .dynamicFont(size: 17, fontManager: fontManager)
+                        Spacer()
+                        Button(action: {
+                            removeAttachment(attachment)
+                        }) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                        }
+                    }
+                }
+
+                Button(action: {
+                    showingDocumentPicker = true
+                }) {
+                    HStack {
+                        Image(systemName: "paperclip")
+                            .foregroundColor(.blue)
+                        Text("Add Another Attachment")
+                            .dynamicFont(size: 17, fontManager: fontManager)
+                            .foregroundColor(.blue)
+                    }
+                }
+            }
+        }
+    }
+
+    private var notesSection: some View {
+        Section("Notes") {
+            TextEditor(text: $notes)
+                .dynamicFont(size: 17, fontManager: fontManager)
+                .frame(minHeight: 100)
+        }
+    }
+
+    @ViewBuilder
+    private var errorSection: some View {
+        if let errorMessage = errorMessage {
+            Section {
+                Text(errorMessage)
+                    .foregroundColor(.red)
+                    .dynamicFont(size: 14, fontManager: fontManager)
+            }
+        }
+    }
+
+    private var actionButtons: some View {
+        Group {
+            Section {
+                Button(action: { saveEvent() }) {
+                    HStack {
+                        Spacer()
+                        Text("Save Changes")
+                            .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+                            .foregroundColor(.blue)
+                        Spacer()
+                    }
+                }
+                .disabled(title.isEmpty || isLoading)
+            }
+
+            Section {
+                Button(action: { showingDeleteConfirmation = true }) {
+                    HStack {
+                        Spacer()
+                        Text("Delete Event")
+                            .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+                            .foregroundColor(.red)
+                        Spacer()
+                    }
+                }
+                .disabled(isLoading)
+            }
+        }
+    }
+
+
+    // MARK: - Helper Methods
 
     private func loadEventData() {
         title = event.title
@@ -297,8 +384,11 @@ struct EditEventView: View {
         endDate = event.endDate
         isAllDay = event.isAllDay
 
-        // Load color from event (calendar color or default)
-        if let calendarColor = event.calendarColor {
+        // Load color from EventColorManager if custom color is set
+        if colorManager.shouldUseCustomColor(for: event.id),
+           let customColor = colorManager.getCustomColor(for: event.id) {
+            selectedColor = customColor
+        } else if let calendarColor = event.calendarColor {
             selectedColor = calendarColor
         } else {
             selectedColor = .blue
@@ -307,11 +397,6 @@ struct EditEventView: View {
         // Load URL and recurrence from EKEvent if available
         if let ekEvent = event.originalEvent as? EKEvent {
             eventURL = ekEvent.url?.absoluteString ?? ""
-
-            // Load calendar color from EKCalendar
-            if let calendarColor = ekEvent.calendar.cgColor {
-                selectedColor = Color(calendarColor)
-            }
 
             // Load recurrence rule
             if let recurrenceRules = ekEvent.recurrenceRules, let rule = recurrenceRules.first {
@@ -391,6 +476,10 @@ struct EditEventView: View {
                 if success {
                     print("✅ Event updated successfully, refreshing calendar and conflicts...")
                     print("📊 Current conflict count BEFORE refresh: \(calendarManager.detectedConflicts.count)")
+
+                    // Save custom color to EventColorManager
+                    colorManager.setUseCustomColor(true, for: event.id)
+                    colorManager.setCustomColor(selectedColor, for: event.id)
 
                     // Show success message
                     withAnimation {
