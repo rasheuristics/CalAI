@@ -15,6 +15,27 @@ enum AIOutputMode: String, CaseIterable {
     case voiceOnly = "Voice Only"
 }
 
+enum AIProcessingMode: String, CaseIterable {
+    case patternBased = "Pattern-Based (Fast & Free)"
+    case hybrid = "Hybrid (Smart & Efficient)"
+    case fullLLM = "Full LLM (Most Conversational)"
+
+    var displayName: String {
+        return self.rawValue
+    }
+
+    var description: String {
+        switch self {
+        case .patternBased:
+            return "Uses local pattern matching. Fast, free, but limited context awareness."
+        case .hybrid:
+            return "Pattern matching for simple commands, LLM for complex ones. Balanced approach."
+        case .fullLLM:
+            return "All commands processed by AI. Fully conversational with context, but uses API credits."
+        }
+    }
+}
+
 struct Config {
     private static let anthropicAPIKeyKeychainKey = "anthropic_api_key"
     private static let openaiAPIKeyKeychainKey = "openai_api_key"
@@ -22,6 +43,7 @@ struct Config {
     private static let openaiAPIKeyUserDefaultsKey = "OpenAIAPIKey" // Legacy - for migration
     private static let aiProviderUserDefaultsKey = "AIProvider"
     private static let aiOutputModeUserDefaultsKey = "AIOutputMode"
+    private static let aiProcessingModeUserDefaultsKey = "AIProcessingMode"
     private static let migrationCompletedKey = "api_keys_migration_completed"
 
     // MARK: - Migration
@@ -79,6 +101,17 @@ struct Config {
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: aiOutputModeUserDefaultsKey)
+        }
+    }
+
+    // MARK: - AI Processing Mode
+    static var aiProcessingMode: AIProcessingMode {
+        get {
+            let modeString = UserDefaults.standard.string(forKey: aiProcessingModeUserDefaultsKey) ?? AIProcessingMode.hybrid.rawValue
+            return AIProcessingMode(rawValue: modeString) ?? .hybrid
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: aiProcessingModeUserDefaultsKey)
         }
     }
 

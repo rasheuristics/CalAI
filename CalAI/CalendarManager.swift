@@ -1868,6 +1868,7 @@ class CalendarManager: ObservableObject {
                 print("✅ Creating event: \(title) at \(startDate) in \(command.calendarSource ?? "default") calendar")
                 let endDate = command.endDate ?? Calendar.current.date(byAdding: .hour, value: 1, to: startDate)!
 
+                // Voice-created events skip conflict check since the AI already warned the user
                 createEvent(
                     title: title,
                     startDate: startDate,
@@ -1876,19 +1877,7 @@ class CalendarManager: ObservableObject {
                     notes: command.notes,
                     participants: command.participants,
                     calendarSource: command.calendarSource,
-                    onConflict: { [weak self] conflictResult in
-                        // Store conflict details for UI to handle
-                        self?.pendingConflictResult = conflictResult
-                        self?.pendingEventDetails = (
-                            title: title,
-                            startDate: startDate,
-                            endDate: endDate,
-                            location: command.location,
-                            notes: command.notes,
-                            participants: command.participants,
-                            calendarSource: command.calendarSource
-                        )
-                    }
+                    skipConflictCheck: true  // ← ADDED: Skip conflicts for voice commands
                 )
             } else {
                 print("❌ Missing title or start date for event creation")
@@ -2022,11 +2011,17 @@ class CalendarManager: ObservableObject {
             }
 
         case .deleteEvent:
-            print("🗑️ Delete event: \(command.searchQuery ?? command.title ?? "event")")
-            if let searchQuery = command.searchQuery ?? command.title {
+            print("🗑️ Delete event: \(command.searchQuery ?? command.title ?? command.eventId ?? "event")")
+
+            // Try deleting by exact event ID first (from conversational AI)
+            if let eventId = command.eventId {
+                deleteEventById(eventId: eventId)
+            }
+            // Fallback to search query
+            else if let searchQuery = command.searchQuery ?? command.title {
                 deleteEventBySearch(searchQuery: searchQuery)
             } else {
-                print("❌ Missing search query for event deletion")
+                print("❌ Missing event ID or search query for event deletion")
             }
 
         case .extendEvent:
@@ -2604,6 +2599,36 @@ class CalendarManager: ObservableObject {
     }
 
     /// Delete an event by search query
+    private func deleteEventById(eventId: String) {
+        print("🗑️ Deleting event by ID: '\(eventId)'")
+
+        // Find event by exact ID
+        guard let eventToDelete = unifiedEvents.first(where: { $0.id == eventId }) else {
+            print("❌ Could not find event with ID '\(eventId)'")
+            postNotificationMessage("❌ Could not find that event")
+            return
+        }
+
+        print("📍 Found event: '\(eventToDelete.title)' on \(eventToDelete.sourceLabel)")
+
+        // Delete based on calendar source
+        switch eventToDelete.source {
+        case .ios:
+            if let ekEvent = eventToDelete.originalEvent as? EKEvent {
+                deleteEvent(ekEvent)
+            } else {
+                print("❌ Could not cast to EKEvent")
+                postNotificationMessage("❌ Failed to delete event")
+            }
+
+        case .google:
+            deleteGoogleEventBySearch(eventId: eventToDelete.id)
+
+        case .outlook:
+            deleteOutlookEventBySearch(eventId: eventToDelete.id)
+        }
+    }
+
     private func deleteEventBySearch(searchQuery: String) {
         print("🗑️ Deleting event matching: '\(searchQuery)'")
 

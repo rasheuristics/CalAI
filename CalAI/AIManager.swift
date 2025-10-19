@@ -95,6 +95,8 @@ class AIManager: ObservableObject {
 
     private let parser: NaturalLanguageParser
     private let smartEventParser: SmartEventParser
+    private let voiceResponseGenerator: VoiceResponseGenerator
+    private let conversationalAI: ConversationalAIService
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -105,6 +107,8 @@ class AIManager: ObservableObject {
     init() {
         self.parser = NaturalLanguageParser()
         self.smartEventParser = SmartEventParser()
+        self.voiceResponseGenerator = VoiceResponseGenerator()
+        self.conversationalAI = ConversationalAIService()
     }
 
     // MARK: - Context Management
@@ -162,12 +166,41 @@ class AIManager: ObservableObject {
         // Add to conversation context
         addToContext(cleanTranscript)
 
-        // Classify intent first (now with context awareness)
-        let intent = classifyIntent(from: cleanTranscript)
-        print("🎯 Classified intent: \(intent)")
+        // Check processing mode and route accordingly
+        let processingMode = Config.aiProcessingMode
+        print("⚙️ Processing mode: \(processingMode.displayName)")
 
         Task {
             do {
+                // ROUTING BASED ON PROCESSING MODE
+                switch processingMode {
+                case .fullLLM:
+                    // Full LLM Mode: Always use conversational AI
+                    try await handleWithConversationalAI(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+                    return
+
+                case .hybrid:
+                    // Hybrid Mode: Try pattern-based first, fallback to LLM if complex
+                    let shouldUseLLM = isComplexCommand(cleanTranscript)
+                    if shouldUseLLM {
+                        print("🤖 Hybrid: Routing to LLM (complex command)")
+                        try await handleWithConversationalAI(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+                        return
+                    } else {
+                        print("⚡ Hybrid: Using pattern-based (simple command)")
+                        // Continue to pattern-based processing below
+                    }
+
+                case .patternBased:
+                    // Pattern-Based Mode: Use existing implementation
+                    print("📋 Pattern-based processing")
+                    // Continue to pattern-based processing below
+                }
+
+                // PATTERN-BASED PROCESSING (for patternBased mode and hybrid-simple commands)
+                let intent = classifyIntent(from: cleanTranscript)
+                print("🎯 Classified intent: \(intent)")
+
                 switch intent {
                 case .query:
                     // Handle calendar queries (what's on my schedule, etc.)
@@ -175,7 +208,43 @@ class AIManager: ObservableObject {
 
                 case .create:
                     // Handle event creation using SmartEventParser
-                    await handleEventCreation(transcript: cleanTranscript, completion: completion)
+                    await handleEventCreation(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+
+                case .modify:
+                    // Handle event modifications (reschedule, edit, update)
+                    await handleModify(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+
+                case .delete:
+                    // Handle event deletion/cancellation
+                    await handleDelete(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+
+                case .search:
+                    // Handle event search (find specific events)
+                    await handleSearch(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+
+                case .availability:
+                    // Handle availability queries (am I free at X?)
+                    await handleAvailability(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+
+                case .analytics:
+                    // Handle analytics/summary queries
+                    await handleAnalytics(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+
+                case .contextAware:
+                    // Handle context-aware queries (do I have time for lunch?)
+                    await handleContextAware(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+
+                case .focusTime:
+                    // Handle focus time / smart blocking
+                    await handleFocusTime(transcript: cleanTranscript, completion: completion)
+
+                case .conflicts:
+                    // Handle conflict detection
+                    await handleConflicts(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+
+                case .batch:
+                    // Handle batch operations
+                    await handleBatch(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
 
                 case .conversation:
                     // Handle general conversation
@@ -192,6 +261,180 @@ class AIManager: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - Conversational AI Handling
+
+    private func handleWithConversationalAI(
+        transcript: String,
+        calendarEvents: [UnifiedEvent],
+        completion: @escaping (AICalendarResponse) -> Void
+    ) async throws {
+        print("🤖 Processing with Conversational AI...")
+
+        // Call conversational AI service
+        let action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
+
+        print("✅ AI Action: intent=\(action.intent), needsClarification=\(action.needsClarification)")
+
+        // Convert AI action to calendar response
+        let response = convertAIActionToResponse(action, calendarEvents: calendarEvents)
+
+        await MainActor.run {
+            self.isProcessing = false
+            completion(response)
+        }
+    }
+
+    private func convertAIActionToResponse(
+        _ action: ConversationalAIService.AIAction,
+        calendarEvents: [UnifiedEvent]
+    ) -> AICalendarResponse {
+
+        // Handle clarification requests
+        if action.needsClarification {
+            return AICalendarResponse(
+                message: action.clarificationQuestion ?? action.message,
+                shouldContinueListening: true
+            )
+        }
+
+        // Convert intent to calendar command
+        var command: CalendarCommand? = nil
+
+        switch action.intent {
+        case "query":
+            if let startDateStr = action.parameters["start_date"]?.stringValue,
+               let endDateStr = action.parameters["end_date"]?.stringValue,
+               let startDate = ISO8601DateFormatter().date(from: startDateStr),
+               let endDate = ISO8601DateFormatter().date(from: endDateStr) {
+
+                let relevantEvents = calendarEvents.filter { $0.startDate >= startDate && $0.startDate < endDate }
+                let eventResults = relevantEvents.map { event in
+                    EventResult(
+                        id: event.id,
+                        title: event.title,
+                        startDate: event.startDate,
+                        endDate: event.endDate,
+                        location: event.location,
+                        source: event.source.rawValue,
+                        color: nil
+                    )
+                }
+
+                command = CalendarCommand(type: .queryEvents, queryStartDate: startDate, queryEndDate: endDate)
+
+                return AICalendarResponse(
+                    message: action.message,
+                    command: command,
+                    eventResults: eventResults,
+                    shouldContinueListening: action.shouldContinueListening
+                )
+            }
+
+        case "create":
+            if let title = action.parameters["title"]?.stringValue,
+               let startTimeStr = action.parameters["start_time"]?.stringValue {
+
+                // Parse date with flexible ISO8601 formatter
+                let startTime = parseFlexibleISO8601Date(startTimeStr)
+
+                if let startTime = startTime {
+                    let duration = action.parameters["duration_minutes"]?.intValue ?? 60
+                    let endTime = startTime.addingTimeInterval(TimeInterval(duration * 60))
+
+                    command = CalendarCommand(
+                        type: .createEvent,
+                        title: title,
+                        startDate: startTime,
+                        endDate: endTime,
+                        location: action.parameters["location"]?.stringValue,
+                        notes: action.parameters["notes"]?.stringValue
+                    )
+
+                    print("✅ Created calendar command: \(title) at \(startTime)")
+                } else {
+                    print("❌ Failed to parse date: \(startTimeStr)")
+                }
+            } else {
+                print("❌ Missing title or start_time in create action")
+            }
+
+        case "delete":
+            if let eventId = action.parameters["event_id"]?.stringValue {
+                command = CalendarCommand(type: .deleteEvent, eventId: eventId)
+            }
+
+        case "modify":
+            if let eventId = action.parameters["event_id"]?.stringValue {
+                var newStartDate: Date? = nil
+                if let newStartStr = action.parameters["new_start_time"]?.stringValue {
+                    newStartDate = ISO8601DateFormatter().date(from: newStartStr)
+                }
+
+                command = CalendarCommand(
+                    type: .updateEvent,
+                    eventId: eventId,
+                    newStartDate: newStartDate,
+                    newTitle: action.parameters["new_title"]?.stringValue
+                )
+            }
+
+        default:
+            // Conversation or unknown intent
+            break
+        }
+
+        return AICalendarResponse(
+            message: action.message,
+            command: command,
+            shouldContinueListening: action.shouldContinueListening
+        )
+    }
+
+    private func isComplexCommand(_ transcript: String) -> Bool {
+        let lowercased = transcript.lowercased()
+
+        // Pronouns and references that need context
+        let contextIndicators = [
+            "it", "this", "that", "them", "those",
+            "the meeting", "the event", "the appointment",
+            "first one", "second one", "last one", "next one",
+            "earlier", "before", "previous"
+        ]
+
+        for indicator in contextIndicators {
+            if lowercased.contains(indicator) {
+                print("🔍 Complex command detected: contains '\(indicator)'")
+                return true
+            }
+        }
+
+        // Multiple operations in one command
+        if (lowercased.contains("and") || lowercased.contains("then")) &&
+           (lowercased.contains("cancel") || lowercased.contains("move") || lowercased.contains("schedule")) {
+            print("🔍 Complex command detected: multiple operations")
+            return true
+        }
+
+        // Ambiguous commands that benefit from LLM understanding
+        let ambiguousPatterns = [
+            "do i have time",
+            "can i fit",
+            "how's my",
+            "am i busy",
+            "what should i"
+        ]
+
+        for pattern in ambiguousPatterns {
+            if lowercased.contains(pattern) {
+                print("🔍 Complex command detected: ambiguous pattern '\(pattern)'")
+                return true
+            }
+        }
+
+        print("✅ Simple command - using pattern-based")
+        return false
     }
 
     // MARK: - Error Handling
@@ -250,91 +493,279 @@ class AIManager: ObservableObject {
     // MARK: - Intent Classification
 
     private enum UserIntent {
-        case query    // Asking about schedule/events
-        case create   // Creating/modifying events
+        case query        // Asking about schedule/events ("What's my schedule?")
+        case create       // Creating new events ("Schedule a meeting")
+        case modify       // Modifying existing events ("Move my 2pm meeting")
+        case delete       // Deleting/canceling events ("Cancel my meeting")
+        case search       // Finding specific events ("When is my dentist appointment?")
+        case availability // Checking free time ("Am I free at 2pm?")
+        case analytics    // Schedule analytics ("How many meetings this week?")
+        case contextAware // Context-aware queries ("Do I have time for lunch?")
+        case focusTime    // Smart blocking ("Block focus time tomorrow")
+        case conflicts    // Conflict detection ("Show me conflicts today")
+        case batch        // Batch operations ("Move all Monday meetings")
         case conversation // General chat
     }
 
     private func classifyIntent(from text: String) -> UserIntent {
         let lowercased = text.lowercased()
 
-        // Query patterns - asking about schedule
+        // PRIORITY 1: Delete/Cancel patterns (most specific - check first)
+        let deletePatterns = [
+            ("cancel", 10), ("delete", 10), ("remove", 10), ("clear", 8)
+        ]
+        var deleteScore = 0
+        for (keyword, weight) in deletePatterns {
+            if lowercased.contains(keyword) {
+                deleteScore += weight
+                print("🗑️ Delete keyword found: '\(keyword)'")
+                return .delete // Immediate return for delete commands
+            }
+        }
+
+        // PRIORITY 2: Batch operations (very specific - "all" indicator)
+        let batchPatterns = [
+            ("move all", 15), ("clear all", 15), ("cancel all", 15),
+            ("delete all", 15), ("accept all", 15), ("decline all", 15),
+            ("remove all", 15)
+        ]
+        var batchScore = 0
+        for (keyword, weight) in batchPatterns {
+            if lowercased.contains(keyword) {
+                batchScore += weight
+                print("📦 Batch keyword found: '\(keyword)'")
+                return .batch // Immediate return for batch commands
+            }
+        }
+
+        // PRIORITY 3: Analytics patterns (counting, statistics)
+        let analyticsPatterns = [
+            ("how many", 10), ("how much", 10), ("what's my busiest", 10),
+            ("compare", 8), ("what percentage", 10), ("show me.*trends", 8),
+            ("hours.*in meetings", 8), ("meeting trends", 8)
+        ]
+        var analyticsScore = 0
+        for (keyword, weight) in analyticsPatterns {
+            if lowercased.range(of: keyword, options: .regularExpression) != nil {
+                analyticsScore += weight
+                print("📊 Analytics keyword found: '\(keyword)'")
+            }
+        }
+        if analyticsScore >= 8 {
+            return .analytics
+        }
+
+        // PRIORITY 4: Conflict detection patterns
+        let conflictPatterns = [
+            ("conflicts", 10), ("overlaps", 10), ("double.?book", 10),
+            ("find a time that works", 8), ("when are.*both free", 8),
+            ("suggest a better time", 7), ("resolve.*conflict", 10)
+        ]
+        var conflictScore = 0
+        for (keyword, weight) in conflictPatterns {
+            if lowercased.range(of: keyword, options: .regularExpression) != nil {
+                conflictScore += weight
+                print("⚠️ Conflict keyword found: '\(keyword)'")
+            }
+        }
+        if conflictScore >= 7 {
+            return .conflicts
+        }
+
+        // PRIORITY 5: Focus time / Smart blocking patterns
+        let focusTimePatterns = [
+            ("block focus", 10), ("block.*time", 8), ("protect.*lunch", 8),
+            ("add buffer", 8), ("prep time", 7), ("deep work", 8),
+            ("wind.?down time", 7), ("focus time", 10)
+        ]
+        var focusTimeScore = 0
+        for (keyword, weight) in focusTimePatterns {
+            if lowercased.range(of: keyword, options: .regularExpression) != nil {
+                focusTimeScore += weight
+                print("🎯 Focus time keyword found: '\(keyword)'")
+            }
+        }
+        if focusTimeScore >= 7 {
+            return .focusTime
+        }
+
+        // PRIORITY 6: Context-aware patterns (specific flow questions)
+        let contextAwarePatterns = [
+            ("time for lunch", 8), ("squeeze in", 8), ("time to eat", 8),
+            ("back.?to.?back", 8), ("what should i prepare", 8),
+            ("time for.*workout", 7), ("needs my attention", 7)
+        ]
+        var contextAwareScore = 0
+        for (keyword, weight) in contextAwarePatterns {
+            if lowercased.range(of: keyword, options: .regularExpression) != nil {
+                contextAwareScore += weight
+                print("🧠 Context-aware keyword found: '\(keyword)'")
+            }
+        }
+        if contextAwareScore >= 7 {
+            return .contextAware
+        }
+
+        // PRIORITY 7: Modify/Reschedule patterns (very specific)
+        let modifyPatterns = [
+            ("move", 10), ("reschedule", 10), ("change", 8), ("update", 8),
+            ("edit", 8), ("push", 7), ("shift", 7), ("extend", 6),
+            ("shorten", 6), ("add.*to my", 5) // "add John to my meeting"
+        ]
+        var modifyScore = 0
+        for (keyword, weight) in modifyPatterns {
+            if lowercased.range(of: keyword, options: .regularExpression) != nil {
+                modifyScore += weight
+                print("✏️ Modify keyword found: '\(keyword)'")
+            }
+        }
+        if modifyScore >= 8 {
+            return .modify
+        }
+
+        // PRIORITY 8: Availability patterns (specific question about free time)
+        let availabilityPatterns = [
+            ("am i free", 10), ("am i available", 10), ("do i have time", 8),
+            ("can i fit", 8), ("when am i free", 10), ("when's my next free", 10),
+            ("what's my first available", 10), ("find me an hour", 8),
+            ("what time slots are open", 8), ("when can i schedule", 7)
+        ]
+        var availabilityScore = 0
+        for (keyword, weight) in availabilityPatterns {
+            if lowercased.contains(keyword) {
+                availabilityScore += weight
+                print("📅 Availability keyword found: '\(keyword)'")
+            }
+        }
+        if availabilityScore >= 7 {
+            return .availability
+        }
+
+        // PRIORITY 9: Search patterns (looking for specific event)
+        let searchPatterns = [
+            ("when is my", 10), ("when's my", 10), ("find my", 10),
+            ("where is my", 10), ("search for", 10), ("who's invited", 8),
+            ("what's the location", 8), ("how long is", 7)
+        ]
+        var searchScore = 0
+        for (keyword, weight) in searchPatterns {
+            if lowercased.contains(keyword) {
+                searchScore += weight
+                print("🔍 Search keyword found: '\(keyword)'")
+            }
+        }
+        // Boost if asking "when is" about specific event
+        if (lowercased.contains("when is") || lowercased.contains("when's")) &&
+           !lowercased.contains("my schedule") && !lowercased.contains("my next") {
+            searchScore += 5
+        }
+        if searchScore >= 7 {
+            return .search
+        }
+
+        // PRIORITY 10: Query patterns (general schedule questions)
         let queryPatterns = [
-            // Question words
-            ("what", 3), ("what's", 3), ("whats", 3), ("when", 2), ("where", 2),
-            ("show", 2), ("tell", 2), ("list", 2),
             // Schedule inquiry phrases
-            ("do i have", 4), ("am i free", 4), ("am i busy", 4),
-            ("any events", 3), ("anything on", 3), ("anything scheduled", 3),
-            // Time references with questions
-            ("my schedule", 3), ("my day", 3), ("my calendar", 3),
-            ("my events", 3), ("my meetings", 3), ("my afternoon", 3), ("my morning", 3),
-            // Look/check patterns
-            ("look like", 3), ("looks like", 3), ("check my", 2)
+            ("what's my schedule", 8), ("what do i have", 8), ("what am i doing", 8),
+            ("do i have anything", 7), ("show me", 6), ("what's on my calendar", 8),
+            ("what's happening", 6), ("what's next", 7), ("what's my next", 7),
+            ("what's coming up", 7), ("what's my week", 7), ("what time does", 5),
+            // Question words (weaker signals)
+            ("what", 2), ("what's", 2), ("show", 3), ("tell me", 3)
         ]
-
-        // Creation patterns - creating/modifying events
-        let createPatterns = [
-            // Strong creation verbs
-            ("schedule", 4), ("create", 4), ("add", 4), ("book", 4),
-            ("make", 3), ("set up", 4), ("plan", 3), ("arrange", 3),
-            // Event phrases
-            ("put on", 3), ("new event", 5), ("new meeting", 5),
-            // Time + action patterns
-            ("at", 1), ("on", 1), ("for", 1) // Weak signals, need other context
-        ]
-
-        // Conversation patterns
-        let conversationPatterns = [
-            ("hello", 5), ("hi", 5), ("hey", 5), ("good morning", 5),
-            ("good afternoon", 5), ("good evening", 5), ("thanks", 5),
-            ("thank you", 5), ("goodbye", 5), ("bye", 5)
-        ]
-
-        // Calculate scores
         var queryScore = 0
-        var createScore = 0
-        var conversationScore = 0
-
         for (keyword, weight) in queryPatterns {
             if lowercased.contains(keyword) {
                 queryScore += weight
             }
         }
+        // Boost query score if starts with question words
+        if lowercased.hasPrefix("what") || lowercased.hasPrefix("show") {
+            queryScore += 4
+        }
 
+        // PRIORITY 11: Create patterns (creating new events)
+        let createPatterns = [
+            // Strong creation verbs with context
+            ("schedule a", 10), ("schedule.*meeting", 10), ("add.*appointment", 10),
+            ("create an event", 10), ("book time", 10), ("set up a", 10),
+            // Event type mentions with action
+            (".*meeting.*at", 6), (".*appointment.*at", 6), (".*lunch.*at", 6)
+        ]
+        var createScore = 0
         for (keyword, weight) in createPatterns {
-            if lowercased.contains(keyword) {
+            if lowercased.range(of: keyword, options: .regularExpression) != nil {
                 createScore += weight
             }
         }
 
+        // Only boost create score if NOT a query context
+        let isQueryContext = lowercased.contains("my schedule") ||
+                             lowercased.contains("the schedule") ||
+                             lowercased.contains("what's on") ||
+                             lowercased.contains("what am i") ||
+                             lowercased.contains("do i have")
+
+        if !isQueryContext {
+            // Boost create score if contains time indicators and action verbs
+            if (lowercased.contains(" at ") || lowercased.contains(" on ")) &&
+               (lowercased.contains("schedule") || lowercased.contains("book") ||
+                lowercased.contains("add") || lowercased.contains("create")) {
+                createScore += 5
+            }
+            // Boost if contains "with" (participants)
+            if lowercased.contains(" with ") &&
+               (lowercased.contains("meeting") || lowercased.contains("call") || lowercased.contains("lunch")) {
+                createScore += 3
+            }
+        }
+
+        // PRIORITY 12: Conversation patterns
+        let conversationPatterns = [
+            ("hello", 10), ("hi", 10), ("hey", 10), ("good morning", 10),
+            ("good afternoon", 10), ("good evening", 10), ("thanks", 10),
+            ("thank you", 10), ("goodbye", 10), ("bye", 10), ("help", 8)
+        ]
+        var conversationScore = 0
         for (keyword, weight) in conversationPatterns {
-            if lowercased.contains(keyword) {
+            if lowercased.contains(keyword) && !lowercased.contains("meeting") {
                 conversationScore += weight
             }
         }
 
-        // Boost query score if starts with question words
-        if lowercased.hasPrefix("what") || lowercased.hasPrefix("when") ||
-           lowercased.hasPrefix("show") || lowercased.hasPrefix("tell") {
-            queryScore += 5
-        }
+        print("📊 Intent scores - Query: \(queryScore), Create: \(createScore), Modify: \(modifyScore), Delete: \(deleteScore), Search: \(searchScore), Availability: \(availabilityScore), Analytics: \(analyticsScore), Context: \(contextAwareScore), Focus: \(focusTimeScore), Conflicts: \(conflictScore), Batch: \(batchScore), Conversation: \(conversationScore)")
 
-        // Boost create score if contains time indicators and action verbs
-        if (lowercased.contains("at") || lowercased.contains("on")) &&
-           (lowercased.contains("schedule") || lowercased.contains("book") || lowercased.contains("add")) {
-            createScore += 3
-        }
+        // Return intent with highest score (with thresholds)
+        // Note: delete and batch already returned early if detected
+        let scores = [
+            ("conversation", conversationScore, 8),
+            ("analytics", analyticsScore, 8),  // Fixed: should be 8, not 0
+            ("conflicts", conflictScore, 7),
+            ("focusTime", focusTimeScore, 7),
+            ("contextAware", contextAwareScore, 7),
+            ("search", searchScore, 5),
+            ("availability", availabilityScore, 5),
+            ("modify", modifyScore, 5),
+            ("create", createScore, 3),
+            ("query", queryScore, 0)
+        ]
 
-        print("📊 Intent scores - Query: \(queryScore), Create: \(createScore), Conversation: \(conversationScore)")
-
-        // Return intent with highest score
-        if queryScore >= createScore && queryScore >= conversationScore && queryScore > 0 {
-            return .query
-        } else if createScore > queryScore && createScore >= conversationScore && createScore > 2 {
-            return .create
-        } else if conversationScore > 0 {
-            return .conversation
+        for (intentName, score, threshold) in scores {
+            if score >= threshold {
+                switch intentName {
+                case "conversation": return .conversation
+                case "analytics": return .analytics
+                case "conflicts": return .conflicts
+                case "focusTime": return .focusTime
+                case "contextAware": return .contextAware
+                case "search": return .search
+                case "availability": return .availability
+                case "modify": return .modify
+                case "create": return .create
+                case "query": return .query
+                default: break
+                }
+            }
         }
 
         // Default: if uncertain, treat as query
@@ -343,7 +774,7 @@ class AIManager: ObservableObject {
 
     // MARK: - Event Creation Handling
 
-    private func handleEventCreation(transcript: String, completion: @escaping (AICalendarResponse) -> Void) async {
+    private func handleEventCreation(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
         print("📝 Handling event creation with SmartEventParser")
 
         // Parse the command using SmartEventParser
@@ -353,8 +784,10 @@ class AIManager: ObservableObject {
         case .success(let entities, let confirmation):
             print("✅ SmartEventParser success with high confidence")
 
-            // Convert ExtractedEntities to CalendarCommand
-            guard let calendarCommand = await convertToCalendarCommand(entities) else {
+            // Convert ExtractedEntities to CalendarCommand (with conflict check)
+            let (calendarCommand, conflicts) = await convertToCalendarCommand(entities, calendarEvents: calendarEvents)
+
+            guard let command = calendarCommand else {
                 let errorResponse = AICalendarResponse(message: "I couldn't create the event. Please try again with more details.")
                 await MainActor.run {
                     self.isProcessing = false
@@ -363,18 +796,27 @@ class AIManager: ObservableObject {
                 return
             }
 
-            let requiresConfirmation = self.commandRequiresConfirmation(calendarCommand)
+            // Generate response using VoiceResponseGenerator
+            let voiceResponse = voiceResponseGenerator.generateCreateResponse(
+                eventTitle: entities.title ?? "event",
+                eventDate: entities.time ?? Date(),
+                conflicts: conflicts,
+                duration: entities.duration
+            )
+
+            let requiresConfirmation = self.commandRequiresConfirmation(command)
 
             var aiResponse = AICalendarResponse(
-                message: confirmation,
-                command: calendarCommand,
+                message: voiceResponse.fullMessage,
+                command: command,
                 requiresConfirmation: requiresConfirmation,
-                confirmationMessage: confirmation
+                confirmationMessage: voiceResponse.fullMessage,
+                shouldContinueListening: voiceResponse.followUp != nil
             )
 
             if Config.aiOutputMode == .voiceOnly && requiresConfirmation {
                 print("🎤 Voice-only mode: Awaiting confirmation")
-                self.pendingCommand = calendarCommand
+                self.pendingCommand = command
                 self.conversationState = .awaitingConfirmation
                 aiResponse.command = nil // Clear command for this turn
             }
@@ -439,12 +881,12 @@ class AIManager: ObservableObject {
     }
 
     // Convert ExtractedEntities to CalendarCommand
-    private func convertToCalendarCommand(_ entities: ExtractedEntities) async -> CalendarCommand? {
+    private func convertToCalendarCommand(_ entities: ExtractedEntities, calendarEvents: [UnifiedEvent] = []) async -> (command: CalendarCommand?, conflicts: [UnifiedEvent]) {
         // Ensure we have minimum required fields
         guard let title = entities.title,
               let startDate = entities.time else {
             print("⚠️ Missing required fields: title or time")
-            return nil
+            return (nil, [])
         }
 
         // Calculate end date
@@ -456,13 +898,20 @@ class AIManager: ObservableObject {
             endDate = startDate.addingTimeInterval(3600)
         }
 
+        // Check for conflicts
+        let conflicts = voiceResponseGenerator.checkConflicts(
+            newEventStart: startDate,
+            newEventEnd: endDate,
+            in: calendarEvents
+        )
+
         // Match attendee names to emails
         var participantEmails: [String] = []
         if !entities.attendeeNames.isEmpty {
             participantEmails = await matchAttendeesToEmails(entities.attendeeNames)
         }
 
-        return CalendarCommand(
+        let command = CalendarCommand(
             type: .createEvent,
             title: title,
             startDate: startDate,
@@ -470,6 +919,8 @@ class AIManager: ObservableObject {
             location: entities.location,
             participants: participantEmails.isEmpty ? nil : participantEmails
         )
+
+        return (command, conflicts)
     }
 
     // Match attendee names to contact emails
@@ -584,7 +1035,9 @@ class AIManager: ObservableObject {
                 // We have all required fields - create the event
                 print("✅ All required fields filled, creating event...")
 
-                guard let calendarCommand = await convertToCalendarCommand(updatedEntities) else {
+                let (calendarCommand, conflicts) = await convertToCalendarCommand(updatedEntities, calendarEvents: [])
+
+                guard let command = calendarCommand else {
                     let errorResponse = AICalendarResponse(message: "Sorry, I couldn't create that event. Please try again.")
                     await MainActor.run {
                         self.conversationState = .idle
@@ -595,9 +1048,19 @@ class AIManager: ObservableObject {
                     return
                 }
 
-                // Generate confirmation message
-                let confirmation = generateEventConfirmation(updatedEntities)
-                let response = AICalendarResponse(message: confirmation, command: calendarCommand)
+                // Generate response using VoiceResponseGenerator
+                let voiceResponse = voiceResponseGenerator.generateCreateResponse(
+                    eventTitle: updatedEntities.title ?? "event",
+                    eventDate: updatedEntities.time ?? Date(),
+                    conflicts: conflicts,
+                    duration: updatedEntities.duration
+                )
+
+                let response = AICalendarResponse(
+                    message: voiceResponse.fullMessage,
+                    command: command,
+                    shouldContinueListening: voiceResponse.followUp != nil
+                )
 
                 await MainActor.run {
                     self.conversationState = .idle
@@ -666,34 +1129,14 @@ class AIManager: ObservableObject {
 
         print("📅 Found \(relevantEvents.count) events in range")
 
-        // Generate natural language response using AI (with retry and fallback)
-        let responseText: String
-        do {
-            let prompt = generateQueryPrompt(transcript: transcript, events: relevantEvents, startDate: startDate, endDate: endDate)
-            let estimatedInputTokens = prompt.split(separator: " ").count
-            print("📊 Estimated input tokens: ~\(estimatedInputTokens) words")
+        // Use VoiceResponseGenerator to create response
+        let voiceResponse = voiceResponseGenerator.generateQueryResponse(
+            events: relevantEvents,
+            timeRange: (start: startDate, end: endDate)
+        )
 
-            // Try with retry logic for network issues
-            // Reduced maxTokens from 300 to 150 for faster/cheaper responses
-            let rawResponse = try await retryWithBackoff(maxRetries: 2, initialDelay: 1.0) {
-                try await self.parser.generateText(prompt: prompt, maxTokens: 150)
-            }
-
-            let estimatedOutputTokens = rawResponse.split(separator: " ").count
-            print("🤖 Raw LLM response (\(estimatedOutputTokens) words): \(rawResponse)")
-
-            // Strip out any bulleted/numbered lists from LLM response
-            let withoutLists = stripListsFromResponse(rawResponse)
-
-            // Strip out dates from the response
-            responseText = stripDatesFromResponse(withoutLists)
-            print("✅ Cleaned response: \(responseText)")
-        } catch {
-            print("⚠️ LLM query generation failed: \(error.localizedDescription)")
-            print("📝 Using simple fallback response")
-            // Fallback to simple text-based response
-            responseText = generateSimpleQueryResponse(events: relevantEvents, startDate: startDate, endDate: endDate)
-        }
+        let responseText = voiceResponse.fullMessage
+        print("✅ Generated response: \(responseText)")
 
         // Convert events to EventResult format
         let eventResults = relevantEvents.map { event in
@@ -717,7 +1160,8 @@ class AIManager: ObservableObject {
         let response = AICalendarResponse(
             message: responseText,
             command: command,
-            eventResults: eventResults
+            eventResults: eventResults,
+            shouldContinueListening: voiceResponse.followUp != nil
         )
 
         await MainActor.run {
@@ -819,13 +1263,29 @@ class AIManager: ObservableObject {
         let calendar = Calendar.current
         let now = Date()
 
-        // Today (many variations)
-        if lowercased.contains("today") ||
-           lowercased.contains("my day") ||
-           lowercased.contains("this morning") ||
-           lowercased.contains("this afternoon") ||
-           lowercased.contains("this evening") ||
-           lowercased.contains("tonight") {
+        // Specific time of day (more specific than full day)
+        if lowercased.contains("this morning") {
+            let startOfDay = calendar.startOfDay(for: now)
+            let noon = calendar.date(byAdding: .hour, value: 12, to: startOfDay)!
+            return (startOfDay, noon)
+        }
+
+        if lowercased.contains("this afternoon") {
+            let startOfDay = calendar.startOfDay(for: now)
+            let noon = calendar.date(byAdding: .hour, value: 12, to: startOfDay)!
+            let evening = calendar.date(byAdding: .hour, value: 17, to: startOfDay)!
+            return (noon, evening)
+        }
+
+        if lowercased.contains("this evening") || lowercased.contains("tonight") {
+            let startOfDay = calendar.startOfDay(for: now)
+            let evening = calendar.date(byAdding: .hour, value: 17, to: startOfDay)!
+            let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+            return (evening, endOfDay)
+        }
+
+        // Today (general - full day)
+        if lowercased.contains("today") || lowercased.contains("my day") {
             let startOfDay = calendar.startOfDay(for: now)
             let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
             return (startOfDay, endOfDay)
@@ -973,22 +1433,6 @@ class AIManager: ObservableObject {
             response += ", and wrap up with \(last.title) at \(timeLast)."
         }
 
-        // Closing statement
-        if isToday {
-            let hour = calendar.component(.hour, from: Date())
-            if hour < 12 {
-                response += " Have a productive day!"
-            } else if hour < 17 {
-                response += " You've got this!"
-            } else {
-                response += " Finish strong!"
-            }
-        } else if isTomorrow {
-            response += " Get some rest tonight!"
-        } else {
-            response += " Mark your calendar!"
-        }
-
         return response
     }
 
@@ -1078,6 +1522,580 @@ class AIManager: ObservableObject {
         return "I'm here to help with your calendar. Try asking 'What's on my schedule today?' or 'Create a meeting tomorrow at 2pm'."
     }
 
+    // MARK: - Modify Event Handling
+
+    private func handleModify(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        print("✏️ Handling modify command: \(transcript)")
+
+        // Extract which event to modify
+        let eventReference = extractEventReference(from: transcript, in: calendarEvents)
+
+        if let event = eventReference {
+            // Found the event - now determine what to modify
+            let response = AICalendarResponse(
+                message: "I found '\(event.title)'. To modify it, please use the Edit button in the event details, or tell me specifically what you'd like to change.",
+                eventResults: [EventResult(
+                    id: event.id,
+                    title: event.title,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    location: event.location,
+                    source: event.source.rawValue,
+                    color: nil
+                )]
+            )
+
+            await MainActor.run {
+                self.isProcessing = false
+                completion(response)
+            }
+        } else {
+            let response = AICalendarResponse(message: "I couldn't find that event. Can you be more specific about which event you'd like to modify?")
+            await MainActor.run {
+                self.isProcessing = false
+                completion(response)
+            }
+        }
+    }
+
+    // MARK: - Delete Event Handling
+
+    private func handleDelete(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        print("🗑️ Handling delete command: \(transcript)")
+
+        // Extract which event to delete
+        let eventReference = extractEventReference(from: transcript, in: calendarEvents)
+
+        if let event = eventReference {
+            let command = CalendarCommand(
+                type: .deleteEvent,
+                eventId: event.id,
+                searchQuery: event.title
+            )
+
+            // Use VoiceResponseGenerator to create response
+            let voiceResponse = voiceResponseGenerator.generateDeleteResponse(eventTitle: event.title)
+
+            let response = AICalendarResponse(
+                message: voiceResponse.fullMessage,
+                command: command,
+                shouldContinueListening: voiceResponse.followUp != nil
+            )
+
+            await MainActor.run {
+                self.isProcessing = false
+                completion(response)
+            }
+        } else {
+            let response = AICalendarResponse(message: "I couldn't find that event to delete. Which event did you want to cancel?")
+            await MainActor.run {
+                self.isProcessing = false
+                completion(response)
+            }
+        }
+    }
+
+    // MARK: - Search Event Handling
+
+    private func handleSearch(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        print("🔍 Handling search command: \(transcript)")
+
+        // Extract search query
+        let searchQuery = extractSearchQuery(from: transcript)
+        print("🔍 Search query: \(searchQuery)")
+
+        // Search for matching events
+        let matchingEvents = calendarEvents.filter { event in
+            let titleMatch = event.title.lowercased().contains(searchQuery.lowercased())
+            let locationMatch = event.location?.lowercased().contains(searchQuery.lowercased()) ?? false
+            return titleMatch || locationMatch
+        }.sorted { $0.startDate < $1.startDate }
+
+        // Use VoiceResponseGenerator to create response
+        let voiceResponse = voiceResponseGenerator.generateSearchResponse(
+            query: searchQuery,
+            results: matchingEvents
+        )
+
+        let eventResults = matchingEvents.map { event in
+            EventResult(
+                id: event.id,
+                title: event.title,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                location: event.location,
+                source: event.source.rawValue,
+                color: nil
+            )
+        }
+
+        let response = AICalendarResponse(
+            message: voiceResponse.fullMessage,
+            eventResults: eventResults,
+            shouldContinueListening: voiceResponse.followUp != nil
+        )
+
+        await MainActor.run {
+            self.isProcessing = false
+            completion(response)
+        }
+    }
+
+    // MARK: - Availability Handling
+
+    private func handleAvailability(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        print("📅 Handling availability query: \(transcript)")
+
+        // Extract time range from query
+        let (startDate, endDate) = extractTimeRange(from: transcript)
+
+        // Find events in that range
+        let eventsInRange = calendarEvents.filter { event in
+            event.startDate >= startDate && event.startDate < endDate
+        }.sorted { $0.startDate < $1.startDate }
+
+        let calendar = Calendar.current
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+
+        if eventsInRange.isEmpty {
+            let dayReference = calendar.isDateInToday(startDate) ? "today" : "then"
+            let response = AICalendarResponse(message: "Yes, you're free \(dayReference). You don't have any events scheduled.")
+            await MainActor.run {
+                self.isProcessing = false
+                completion(response)
+            }
+        } else {
+            // Find gaps between events
+            var message = "You have \(eventsInRange.count) event\(eventsInRange.count == 1 ? "" : "s") scheduled. "
+
+            // Show first event time
+            if let firstEvent = eventsInRange.first {
+                message += "Your first event is at \(timeFormatter.string(from: firstEvent.startDate))"
+            }
+
+            // Find free slots
+            var freeSlots: [(start: Date, end: Date)] = []
+
+            // Before first event
+            if let firstEvent = eventsInRange.first, firstEvent.startDate > startDate {
+                freeSlots.append((startDate, firstEvent.startDate))
+            }
+
+            // Between events
+            for i in 0..<eventsInRange.count-1 {
+                let currentEnd = eventsInRange[i].endDate
+                let nextStart = eventsInRange[i+1].startDate
+                if nextStart > currentEnd {
+                    freeSlots.append((currentEnd, nextStart))
+                }
+            }
+
+            // After last event
+            if let lastEvent = eventsInRange.last, lastEvent.endDate < endDate {
+                freeSlots.append((lastEvent.endDate, endDate))
+            }
+
+            if !freeSlots.isEmpty {
+                message += ". You're free "
+                let slotDescriptions = freeSlots.prefix(3).map { slot in
+                    "from \(timeFormatter.string(from: slot.start)) to \(timeFormatter.string(from: slot.end))"
+                }
+                message += slotDescriptions.joined(separator: ", ")
+                message += "."
+            }
+
+            let response = AICalendarResponse(message: message)
+            await MainActor.run {
+                self.isProcessing = false
+                completion(response)
+            }
+        }
+    }
+
+    // MARK: - Helper Methods for New Handlers
+
+    private func extractEventReference(from text: String, in events: [UnifiedEvent]) -> UnifiedEvent? {
+        let lowercased = text.lowercased()
+        let now = Date()
+        let calendar = Calendar.current
+
+        // Look for time reference like "my 2pm meeting" or "3:30 event"
+        if let timeMatch = lowercased.range(of: #"\b(\d{1,2}):?(\d{2})?\s*(am|pm)?\b"#, options: .regularExpression) {
+            let timeString = String(lowercased[timeMatch])
+            print("🕐 Found time reference: \(timeString)")
+
+            // Find event at or near that time
+            for event in events.sorted(by: { $0.startDate < $1.startDate }) {
+                let eventHour = calendar.component(.hour, from: event.startDate)
+                let eventMinute = calendar.component(.minute, from: event.startDate)
+
+                // Convert timeString to comparable hour
+                if timeString.contains(String(eventHour)) || timeString.contains(String(format: "%d", eventHour % 12)) {
+                    return event
+                }
+            }
+        }
+
+        // Look for "next" event
+        if lowercased.contains("next") || lowercased.contains("upcoming") {
+            return events.filter { $0.startDate > now }.sorted { $0.startDate < $1.startDate }.first
+        }
+
+        // Look for event title match
+        let words = lowercased.components(separatedBy: .whitespacesAndNewlines)
+        for event in events {
+            let eventTitleWords = event.title.lowercased().components(separatedBy: .whitespacesAndNewlines)
+            let matchingWords = words.filter { word in
+                eventTitleWords.contains(where: { $0.contains(word) && word.count > 3 })
+            }
+            if matchingWords.count >= 1 {
+                return event
+            }
+        }
+
+        // Look for today's events if "today" mentioned
+        if lowercased.contains("today") {
+            return events.filter { calendar.isDateInToday($0.startDate) }.sorted { $0.startDate < $1.startDate }.first
+        }
+
+        return nil
+    }
+
+    private func extractSearchQuery(from text: String) -> String {
+        let lowercased = text.lowercased()
+
+        // Remove search trigger words
+        let triggers = ["when is my", "when's my", "find my", "where is my", "search for", "find", "search"]
+        var cleaned = lowercased
+
+        for trigger in triggers {
+            cleaned = cleaned.replacingOccurrences(of: trigger, with: "")
+        }
+
+        // Clean up
+        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        cleaned = cleaned.replacingOccurrences(of: "  ", with: " ")
+
+        // Remove common filler words
+        let fillers = ["the", "my", "a", "an"]
+        let words = cleaned.components(separatedBy: " ")
+        let meaningfulWords = words.filter { !fillers.contains($0) && !$0.isEmpty }
+
+        return meaningfulWords.joined(separator: " ")
+    }
+
+    // MARK: - Analytics Handling
+
+    private func handleAnalytics(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        print("📊 Handling analytics query: \(transcript)")
+
+        let lowercased = transcript.lowercased()
+        let calendar = Calendar.current
+        let now = Date()
+
+        // Determine time range for analysis
+        let (startDate, endDate) = extractTimeRange(from: transcript)
+
+        let eventsInRange = calendarEvents.filter { event in
+            event.startDate >= startDate && event.startDate < endDate
+        }.sorted { $0.startDate < $1.startDate }
+
+        var message = ""
+
+        // "How many meetings"
+        if lowercased.contains("how many") {
+            let count = eventsInRange.count
+            let timeRef = calendar.isDateInToday(startDate) ? "today" :
+                         calendar.isDateInTomorrow(startDate) ? "tomorrow" :
+                         lowercased.contains("week") ? "this week" :
+                         lowercased.contains("month") ? "this month" : "in that period"
+
+            message = "You have \(count) event\(count == 1 ? "" : "s") \(timeRef)."
+        }
+        // "How much free time" or "hours in meetings"
+        else if lowercased.contains("how much") || lowercased.contains("hours") {
+            let totalMinutes = eventsInRange.reduce(0) { total, event in
+                let duration = event.endDate.timeIntervalSince(event.startDate) / 60
+                return total + Int(duration)
+            }
+
+            let hours = totalMinutes / 60
+            let minutes = totalMinutes % 60
+
+            if lowercased.contains("free time") {
+                // Calculate free time
+                let dayDuration = Int(endDate.timeIntervalSince(startDate) / 60)
+                let freeMinutes = dayDuration - totalMinutes
+                let freeHours = freeMinutes / 60
+                let freeMins = freeMinutes % 60
+
+                message = "You have \(freeHours) hour\(freeHours == 1 ? "" : "s")"
+                if freeMins > 0 {
+                    message += " and \(freeMins) minute\(freeMins == 1 ? "" : "s")"
+                }
+                message += " of free time."
+            } else {
+                message = "You're in meetings for \(hours) hour\(hours == 1 ? "" : "s")"
+                if minutes > 0 {
+                    message += " and \(minutes) minute\(minutes == 1 ? "" : "s")"
+                }
+                message += "."
+            }
+        }
+        // "What's my busiest day"
+        else if lowercased.contains("busiest") {
+            // Group events by day
+            var eventsByDay: [Date: [UnifiedEvent]] = [:]
+            for event in eventsInRange {
+                let dayStart = calendar.startOfDay(for: event.startDate)
+                if eventsByDay[dayStart] == nil {
+                    eventsByDay[dayStart] = []
+                }
+                eventsByDay[dayStart]?.append(event)
+            }
+
+            if let busiestDay = eventsByDay.max(by: { $0.value.count < $1.value.count }) {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .medium
+                let dayName = formatter.string(from: busiestDay.key)
+
+                message = "Your busiest day is \(dayName) with \(busiestDay.value.count) event\(busiestDay.value.count == 1 ? "" : "s")."
+            } else {
+                message = "You don't have any events scheduled."
+            }
+        }
+        // Generic summary
+        else {
+            message = "You have \(eventsInRange.count) event\(eventsInRange.count == 1 ? "" : "s") scheduled."
+        }
+
+        let response = AICalendarResponse(message: message)
+        await MainActor.run {
+            self.isProcessing = false
+            completion(response)
+        }
+    }
+
+    // MARK: - Context-Aware Handling
+
+    private func handleContextAware(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        print("🧠 Handling context-aware query: \(transcript)")
+
+        let lowercased = transcript.lowercased()
+        let calendar = Calendar.current
+        let now = Date()
+
+        let todayEvents = calendarEvents.filter { event in
+            calendar.isDateInToday(event.startDate)
+        }.sorted { $0.startDate < $1.startDate }
+
+        let upcomingEvents = todayEvents.filter { $0.startDate > now }
+
+        var message = ""
+
+        // "Do I have time for lunch"
+        if lowercased.contains("time for lunch") || lowercased.contains("time to eat") {
+            let lunchStart = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: now)!
+            let lunchEnd = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: now)!
+
+            let lunchTimeEvents = todayEvents.filter { event in
+                event.startDate < lunchEnd && event.endDate > lunchStart
+            }
+
+            if lunchTimeEvents.isEmpty {
+                message = "Yes, you have time for lunch. You're free between 12 PM and 2 PM."
+            } else if let nextEvent = upcomingEvents.first {
+                let timeUntilNext = nextEvent.startDate.timeIntervalSince(now) / 60
+                if timeUntilNext >= 30 {
+                    message = "Yes, you have about \(Int(timeUntilNext)) minutes before your next meeting."
+                } else {
+                    message = "You only have \(Int(timeUntilNext)) minutes until your next meeting. It might be tight."
+                }
+            }
+        }
+        // "Can I squeeze in a workout" or similar
+        else if lowercased.contains("squeeze in") || lowercased.contains("time for.*workout") {
+            if let nextEvent = upcomingEvents.first {
+                let minutesAvailable = Int(nextEvent.startDate.timeIntervalSince(now) / 60)
+
+                if minutesAvailable >= 60 {
+                    message = "Yes, you have \(minutesAvailable) minutes before your next meeting at \(DateFormatter.localizedString(from: nextEvent.startDate, dateStyle: .none, timeStyle: .short))."
+                } else if minutesAvailable >= 30 {
+                    message = "You have \(minutesAvailable) minutes, which might be enough for a quick session."
+                } else {
+                    message = "You only have \(minutesAvailable) minutes before your next meeting. It's pretty tight."
+                }
+            } else {
+                message = "Yes, you're free for the rest of the day."
+            }
+        }
+        // "Back to back meetings"
+        else if lowercased.contains("back") && lowercased.contains("back") {
+            var hasBackToBack = false
+            for i in 0..<todayEvents.count-1 {
+                let gap = todayEvents[i+1].startDate.timeIntervalSince(todayEvents[i].endDate)
+                if gap < 300 { // Less than 5 minutes
+                    hasBackToBack = true
+                    break
+                }
+            }
+
+            if hasBackToBack {
+                message = "Yes, you have back-to-back meetings today."
+            } else {
+                message = "No, you have breaks between your meetings today."
+            }
+        }
+        // "What should I prepare for tomorrow"
+        else if lowercased.contains("prepare") {
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)!
+            let tomorrowEvents = calendarEvents.filter { event in
+                calendar.isDate(event.startDate, inSameDayAs: tomorrow)
+            }.sorted { $0.startDate < $1.startDate }
+
+            if tomorrowEvents.isEmpty {
+                message = "You don't have anything scheduled tomorrow."
+            } else {
+                let eventTitles = tomorrowEvents.prefix(3).map { $0.title }.joined(separator: ", ")
+                message = "Tomorrow you have \(tomorrowEvents.count) event\(tomorrowEvents.count == 1 ? "" : "s"): \(eventTitles)."
+            }
+        }
+        // Generic context
+        else {
+            if upcomingEvents.isEmpty {
+                message = "You're free for the rest of the day."
+            } else if let nextEvent = upcomingEvents.first {
+                let minutesUntil = Int(nextEvent.startDate.timeIntervalSince(now) / 60)
+                message = "Your next event is in \(minutesUntil) minutes: \(nextEvent.title)."
+            }
+        }
+
+        let response = AICalendarResponse(message: message)
+        await MainActor.run {
+            self.isProcessing = false
+            completion(response)
+        }
+    }
+
+    // MARK: - Focus Time Handling
+
+    private func handleFocusTime(transcript: String, completion: @escaping (AICalendarResponse) -> Void) async {
+        print("🎯 Handling focus time request: \(transcript)")
+
+        let lowercased = transcript.lowercased()
+
+        // Extract duration if specified
+        var duration = 120 // Default 2 hours
+        if lowercased.contains("1 hour") || lowercased.contains("one hour") {
+            duration = 60
+        } else if let match = lowercased.range(of: #"(\d+)\s*hours?"#, options: .regularExpression) {
+            let numStr = String(lowercased[match]).components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+            if let hours = Int(numStr) {
+                duration = hours * 60
+            }
+        }
+
+        // Determine type of block
+        var blockTitle = "Focus Time"
+        if lowercased.contains("deep work") {
+            blockTitle = "Deep Work"
+        } else if lowercased.contains("prep time") {
+            blockTitle = "Prep Time"
+        } else if lowercased.contains("lunch") {
+            blockTitle = "Lunch"
+            duration = 60
+        }
+
+        let message = "I'd suggest using the calendar to manually block '\(blockTitle)' for \(duration / 60) hour\(duration == 60 ? "" : "s"). You can create this event yourself or ask me to 'Schedule \(blockTitle) tomorrow at [time]'."
+
+        let response = AICalendarResponse(message: message)
+        await MainActor.run {
+            self.isProcessing = false
+            completion(response)
+        }
+    }
+
+    // MARK: - Conflicts Handling
+
+    private func handleConflicts(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        print("⚠️ Handling conflict detection: \(transcript)")
+
+        let (startDate, endDate) = extractTimeRange(from: transcript)
+
+        let eventsInRange = calendarEvents.filter { event in
+            event.startDate >= startDate && event.startDate < endDate
+        }.sorted { $0.startDate < $1.startDate }
+
+        // Find overlapping events
+        var conflicts: [(UnifiedEvent, UnifiedEvent)] = []
+        for i in 0..<eventsInRange.count {
+            for j in (i+1)..<eventsInRange.count {
+                let event1 = eventsInRange[i]
+                let event2 = eventsInRange[j]
+
+                // Check if they overlap
+                if event1.endDate > event2.startDate && event2.endDate > event1.startDate {
+                    conflicts.append((event1, event2))
+                }
+            }
+        }
+
+        let message: String
+        if conflicts.isEmpty {
+            message = "No scheduling conflicts found. Your calendar looks good."
+        } else {
+            let timeFormatter = DateFormatter()
+            timeFormatter.timeStyle = .short
+
+            let conflictDesc = conflicts.prefix(3).map { pair in
+                "\(pair.0.title) and \(pair.1.title) at \(timeFormatter.string(from: pair.0.startDate))"
+            }.joined(separator: ", ")
+
+            message = "Found \(conflicts.count) conflict\(conflicts.count == 1 ? "" : "s"): \(conflictDesc)."
+        }
+
+        let response = AICalendarResponse(message: message)
+        await MainActor.run {
+            self.isProcessing = false
+            completion(response)
+        }
+    }
+
+    // MARK: - Batch Operations Handling
+
+    private func handleBatch(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        print("📦 Handling batch operation: \(transcript)")
+
+        let lowercased = transcript.lowercased()
+
+        // Determine operation type
+        let operation: String
+        if lowercased.contains("move all") || lowercased.contains("reschedule all") {
+            operation = "move"
+        } else if lowercased.contains("cancel all") || lowercased.contains("delete all") {
+            operation = "delete"
+        } else if lowercased.contains("clear all") {
+            operation = "clear"
+        } else {
+            operation = "modify"
+        }
+
+        // Extract scope (which events)
+        let (startDate, endDate) = extractTimeRange(from: transcript)
+        let eventsInRange = calendarEvents.filter { event in
+            event.startDate >= startDate && event.startDate < endDate
+        }
+
+        let message = "Batch operations require manual confirmation. You have \(eventsInRange.count) event\(eventsInRange.count == 1 ? "" : "s") matching your criteria. Please use the calendar interface to \(operation) them individually."
+
+        let response = AICalendarResponse(message: message)
+        await MainActor.run {
+            self.isProcessing = false
+            completion(response)
+        }
+    }
+
     // MARK: - Confirmation Flow Handling
 
     private func handleConfirmation(transcript: String, completion: @escaping (AICalendarResponse) -> Void) {
@@ -1111,10 +2129,42 @@ class AIManager: ObservableObject {
         self.conversationContext.removeAll()
         self.lastQueryTimeRange = nil
         self.lastQueryEvents.removeAll()
+        self.conversationalAI.clearContext()  // Clear conversational AI context
+        print("🔄 Reset conversation state and cleared AI context")
         print("🔄 Conversation state and context reset to idle.")
     }
 
     // MARK: - Helper Methods
+
+    private func parseFlexibleISO8601Date(_ dateString: String) -> Date? {
+        // Try standard ISO8601 with timezone first
+        let isoFormatter = ISO8601DateFormatter()
+        if let date = isoFormatter.date(from: dateString) {
+            return date
+        }
+
+        // Try without timezone (assume local time)
+        // OpenAI often returns dates like "2025-10-19T13:00:00" without timezone
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        formatter.timeZone = TimeZone.current
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+
+        if let date = formatter.date(from: dateString) {
+            print("✅ Parsed date without timezone: \(dateString) -> \(date)")
+            return date
+        }
+
+        // Try with additional format variations
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+        if let date = formatter.date(from: dateString) {
+            print("✅ Parsed date with milliseconds: \(dateString) -> \(date)")
+            return date
+        }
+
+        print("❌ Failed to parse date: \(dateString)")
+        return nil
+    }
 
     private func commandRequiresConfirmation(_ command: CalendarCommand) -> Bool {
         switch command.type {

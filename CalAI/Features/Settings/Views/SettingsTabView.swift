@@ -14,6 +14,7 @@ struct SettingsTabView: View {
     @State private var anthropicAPIKey = Config.anthropicAPIKey
     @State private var openaiAPIKey = Config.openaiAPIKey
     @State private var selectedAIProvider = Config.aiProvider
+    @State private var selectedProcessingMode = Config.aiProcessingMode
     @State private var showingAPIKeyAlert = false
     @State private var isAnthropicKeyVisible = false
     @State private var isOpenAIKeyVisible = false
@@ -392,6 +393,34 @@ struct SettingsTabView: View {
                             .onChange(of: selectedAIProvider) { newValue in
                                 Config.aiProvider = newValue
                             }
+                        }
+
+                        Divider()
+                            .padding(.vertical, 8)
+
+                        // AI Processing Mode Selection
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "cpu")
+                                    .foregroundColor(.purple)
+                                Text("Processing Mode")
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                            }
+
+                            Picker("Processing Mode", selection: $selectedProcessingMode) {
+                                ForEach(AIProcessingMode.allCases, id: \.self) { mode in
+                                    Text(mode.displayName).tag(mode)
+                                }
+                            }
+                            .pickerStyle(MenuPickerStyle())
+                            .onChange(of: selectedProcessingMode) { newValue in
+                                Config.aiProcessingMode = newValue
+                            }
+
+                            Text(selectedProcessingMode.description)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
 
                         // Anthropic API Key Section
