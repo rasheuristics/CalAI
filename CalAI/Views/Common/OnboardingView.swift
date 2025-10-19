@@ -2,6 +2,7 @@ import SwiftUI
 import EventKit
 import CoreLocation
 import AVFoundation
+import UserNotifications
 
 /// Onboarding flow for new users
 struct OnboardingView: View {
@@ -19,6 +20,7 @@ struct OnboardingView: View {
     @State private var outlookCalendarConnected = false
     @State private var microphoneAccessGranted = false
     @State private var locationAccessGranted = false
+    @State private var notificationAccessGranted = false
 
     private let pages: [OnboardingPage] = [
         OnboardingPage(
@@ -101,11 +103,13 @@ struct OnboardingView: View {
                                 outlookCalendarConnected: $outlookCalendarConnected,
                                 microphoneAccessGranted: $microphoneAccessGranted,
                                 locationAccessGranted: $locationAccessGranted,
+                                notificationAccessGranted: $notificationAccessGranted,
                                 onRequestCalendar: requestCalendarAccess,
                                 onConnectGoogle: connectGoogleCalendar,
                                 onConnectOutlook: connectOutlookCalendar,
                                 onRequestMicrophone: requestMicrophoneAccess,
-                                onRequestLocation: requestLocationAccess
+                                onRequestLocation: requestLocationAccess,
+                                onRequestNotification: requestNotificationAccess
                             )
                             .tag(index)
                         } else {
@@ -201,6 +205,20 @@ struct OnboardingView: View {
         }
     }
 
+    private func requestNotificationAccess() {
+        print("🔔 Requesting notification access from onboarding...")
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound, .timeSensitive]) { granted, error in
+            DispatchQueue.main.async {
+                self.notificationAccessGranted = granted
+                if granted {
+                    print("✅ Notification access granted")
+                } else if let error = error {
+                    print("❌ Notification access error: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     private func connectGoogleCalendar() {
         print("📅 Connecting Google Calendar from onboarding...")
         googleCalendarManager.signIn()
@@ -265,12 +283,14 @@ struct PermissionsPageView: View {
     @Binding var outlookCalendarConnected: Bool
     @Binding var microphoneAccessGranted: Bool
     @Binding var locationAccessGranted: Bool
+    @Binding var notificationAccessGranted: Bool
 
     let onRequestCalendar: () -> Void
     let onConnectGoogle: () -> Void
     let onConnectOutlook: () -> Void
     let onRequestMicrophone: () -> Void
     let onRequestLocation: () -> Void
+    let onRequestNotification: () -> Void
 
     var body: some View {
         ScrollView {
@@ -335,6 +355,15 @@ struct PermissionsPageView: View {
                         description: "Travel time calculations",
                         isGranted: locationAccessGranted,
                         action: onRequestLocation
+                    )
+
+                    // Notification Permission
+                    PermissionButton(
+                        icon: "bell.fill",
+                        title: "Notification Access",
+                        description: "Smart event reminders",
+                        isGranted: notificationAccessGranted,
+                        action: onRequestNotification
                     )
                 }
                 .padding(.horizontal, DesignSystem.Spacing.md)

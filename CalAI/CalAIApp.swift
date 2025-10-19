@@ -34,20 +34,10 @@ struct CalAIApp: App {
                     GIDSignIn.sharedInstance.configuration = configuration
                     print("✅ Google Sign-In configured")
 
-                    // Initialize smart notifications
-                    let notificationManager = SmartNotificationManager.shared
-                    let travelManager = TravelTimeManager.shared
-
-                    // Request notification permission
-                    notificationManager.requestNotificationPermission { granted in
-                        if granted {
-                            print("✅ Time-sensitive notifications enabled")
-                            notificationManager.setupNotificationCategories()
-                        }
-                    }
-
-                    // Request location permission for travel time calculations
-                    travelManager.requestLocationPermission()
+                    // Initialize managers (but don't request permissions yet)
+                    // Permissions will be requested during onboarding
+                    let _ = SmartNotificationManager.shared
+                    let _ = TravelTimeManager.shared
                 }
                 .onOpenURL { url in
                     print("🔵 App received URL: \(url)")
