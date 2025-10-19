@@ -68,7 +68,11 @@ struct ContentView: View {
         }
         .preferredColorScheme(appearanceManager.currentMode.colorScheme)
         .fullScreenCover(isPresented: $showOnboarding) {
-            OnboardingView()
+            OnboardingView(
+                calendarManager: calendarManager,
+                googleCalendarManager: googleCalendarManager,
+                outlookCalendarManager: outlookCalendarManager
+            )
         }
         .onAppear {
             print("========================================")

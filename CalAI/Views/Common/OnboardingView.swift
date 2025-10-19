@@ -5,12 +5,13 @@ import AVFoundation
 
 /// Onboarding flow for new users
 struct OnboardingView: View {
+    @ObservedObject var calendarManager: CalendarManager
+    @ObservedObject var googleCalendarManager: GoogleCalendarManager
+    @ObservedObject var outlookCalendarManager: OutlookCalendarManager
+
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var currentPage = 0
     @Environment(\.dismiss) private var dismiss
-    @State private var calendarManager: CalendarManager?
-    @State private var googleCalendarManager: GoogleCalendarManager?
-    @State private var outlookCalendarManager: OutlookCalendarManager?
     @State private var locationManager = CLLocationManager()
 
     @State private var calendarAccessGranted = false
@@ -165,10 +166,7 @@ struct OnboardingView: View {
 
     private func requestCalendarAccess() {
         print("📅 Requesting calendar access from onboarding...")
-        if calendarManager == nil {
-            calendarManager = CalendarManager()
-        }
-        calendarManager?.requestCalendarAccess()
+        calendarManager.requestCalendarAccess()
 
         // Check status after a delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -205,14 +203,11 @@ struct OnboardingView: View {
 
     private func connectGoogleCalendar() {
         print("📅 Connecting Google Calendar from onboarding...")
-        if googleCalendarManager == nil {
-            googleCalendarManager = GoogleCalendarManager()
-        }
-        googleCalendarManager?.signIn()
+        googleCalendarManager.signIn()
 
         // Check connection status after a delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.googleCalendarConnected = self.googleCalendarManager?.isSignedIn ?? false
+            self.googleCalendarConnected = self.googleCalendarManager.isSignedIn
             if self.googleCalendarConnected {
                 print("✅ Google Calendar connected")
             }
@@ -221,14 +216,11 @@ struct OnboardingView: View {
 
     private func connectOutlookCalendar() {
         print("📅 Connecting Outlook Calendar from onboarding...")
-        if outlookCalendarManager == nil {
-            outlookCalendarManager = OutlookCalendarManager()
-        }
-        outlookCalendarManager?.signIn()
+        outlookCalendarManager.signIn()
 
         // Check connection status after a delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.outlookCalendarConnected = self.outlookCalendarManager?.isSignedIn ?? false
+            self.outlookCalendarConnected = self.outlookCalendarManager.isSignedIn
             if self.outlookCalendarConnected {
                 print("✅ Outlook Calendar connected")
             }
@@ -411,5 +403,9 @@ struct OnboardingPage {
 // MARK: - Preview
 
 #Preview {
-    OnboardingView()
+    OnboardingView(
+        calendarManager: CalendarManager(),
+        googleCalendarManager: GoogleCalendarManager(),
+        outlookCalendarManager: OutlookCalendarManager()
+    )
 }
