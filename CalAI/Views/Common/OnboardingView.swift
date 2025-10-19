@@ -170,6 +170,10 @@ struct OnboardingView: View {
     private func completeOnboarding() {
         HapticManager.shared.success()
         hasCompletedOnboarding = true
+
+        // Initialize morning briefing now that onboarding is complete
+        MorningBriefingService.shared.initializeAfterOnboarding()
+
         dismiss()
     }
 

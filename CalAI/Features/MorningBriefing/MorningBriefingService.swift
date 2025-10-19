@@ -26,21 +26,30 @@ class MorningBriefingService: ObservableObject {
         self.weatherService = WeatherService.shared
         print("📋 MorningBriefingService: WeatherService set to \(weatherService != nil ? "✅ shared instance" : "❌ nil")")
 
+        // Don't request location permission automatically - will be requested from onboarding
+        // weatherService?.requestLocationPermission()
+        print("📋 MorningBriefingService: Skipping automatic permission requests")
+
+        // Don't schedule notification automatically - will be scheduled after onboarding
+        // Notifications require permission which should be requested from onboarding
+        print("📋 MorningBriefingService: Configuration complete (notifications will be scheduled after onboarding)")
+    }
+
+    // MARK: - Settings Management
+
+    /// Initialize notifications after onboarding completes and permissions are granted
+    func initializeAfterOnboarding() {
+        print("📋 MorningBriefingService: Initializing after onboarding...")
+
         // Request location permission for weather
         weatherService?.requestLocationPermission()
-        print("📋 MorningBriefingService: Location permission requested")
 
         // Schedule notification if enabled
         if settings.isEnabled {
             print("📋 MorningBriefingService: Scheduling notifications (enabled)")
             scheduleNotification()
-        } else {
-            print("📋 MorningBriefingService: Notifications disabled in settings")
         }
-        print("📋 MorningBriefingService: Configuration complete")
     }
-
-    // MARK: - Settings Management
 
     func updateSettings(_ newSettings: MorningBriefingSettings) {
         settings = newSettings
