@@ -282,8 +282,9 @@ class CalendarManager: ObservableObject {
     // Add event sheet state
     @Published var showingAddEventFromCalendar: Bool = false
 
-    // Track internal deletions to prevent reload loops
+    // Track internal operations to prevent reload loops
     var isPerformingInternalDeletion = false
+    var isPerformingInternalUpdate = false
 
     // Approved conflicts (conflicts user chose to keep both)
     private var approvedConflicts: Set<String> = [] {
@@ -445,10 +446,15 @@ class CalendarManager: ObservableObject {
     @objc private func calendarDatabaseChanged() {
         print("🔄 iOS calendar database changed - syncing...")
 
-        // Skip reload if we're in the middle of deleting an event ourselves
-        // (to prevent re-fetching and rebuilding immediately after deletion)
+        // Skip reload if we're in the middle of performing internal operations
+        // (to prevent re-fetching and rebuilding immediately after our own changes)
         if isPerformingInternalDeletion {
             print("⏭️ Skipping sync - internal deletion in progress")
+            return
+        }
+
+        if isPerformingInternalUpdate {
+            print("⏭️ Skipping sync - internal update in progress")
             return
         }
 
@@ -496,6 +502,11 @@ class CalendarManager: ObservableObject {
                 let oldStart = event.startDate
                 event.startDate = newStart
                 event.endDate = newEnd
+
+                // Set flag to prevent reload loop
+                isPerformingInternalUpdate = true
+                print("🔄 Set isPerformingInternalUpdate = true")
+
                 do {
                     try eventStore.save(event, span: .thisEvent)
                     print("✅ iOS event updated: \(event.title ?? "Untitled")")
@@ -548,10 +559,21 @@ class CalendarManager: ObservableObject {
                         }
 
                         print("🔔 Notified all observers of event time change")
+
+                        // Reset flag after a delay to allow EventKit notification to be skipped
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                            self?.isPerformingInternalUpdate = false
+                            print("🔄 Reset isPerformingInternalUpdate = false")
+                        }
                     }
 
                 } catch {
                     print("❌ Failed to save iOS event: \(error)")
+                    // Reset flag on error too
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                        self?.isPerformingInternalUpdate = false
+                        print("🔄 Reset isPerformingInternalUpdate = false (error)")
+                    }
                 }
             }
 
