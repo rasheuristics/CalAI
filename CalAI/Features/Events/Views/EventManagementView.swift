@@ -9,17 +9,18 @@ struct EventManagementView: View {
 
     let event: UnifiedEvent
 
-    @State private var selectedTab: EventTab = .edit
+    @State private var selectedTab: EventTab = .tasks
+    @State private var triggerSave: Bool = false
 
     enum EventTab: String, CaseIterable {
-        case edit = "Edit"
         case tasks = "Tasks"
+        case edit = "Edit"
         case share = "Share"
 
         var icon: String {
             switch self {
-            case .edit: return "pencil"
             case .tasks: return "sparkles"
+            case .edit: return "pencil"
             case .share: return "square.and.arrow.up"
             }
         }
@@ -39,17 +40,18 @@ struct EventManagementView: View {
 
                 // Tab Content
                 TabView(selection: $selectedTab) {
+                    // Tasks Tab
+                    EventTasksTabView(event: event, fontManager: fontManager)
+                        .tag(EventTab.tasks)
+
                     // Edit Tab
                     EditEventView(
                         calendarManager: calendarManager,
                         fontManager: fontManager,
-                        event: event
+                        event: event,
+                        triggerSave: $triggerSave
                     )
                     .tag(EventTab.edit)
-
-                    // Tasks Tab
-                    EventTasksTabView(event: event, fontManager: fontManager)
-                        .tag(EventTab.tasks)
 
                     // Share Tab
                     shareTabContent
@@ -62,7 +64,8 @@ struct EventManagementView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
-                        dismiss()
+                        // Trigger save for the current tab
+                        triggerSave.toggle()
                     }
                     .dynamicFont(size: 17, fontManager: fontManager)
                 }

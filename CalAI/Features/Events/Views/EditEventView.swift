@@ -8,6 +8,7 @@ struct EditEventView: View {
     @Environment(\.dismiss) private var dismiss
 
     let event: UnifiedEvent
+    var triggerSave: Binding<Bool>?
 
     @State private var title: String = ""
     @State private var location: String = ""
@@ -42,6 +43,12 @@ struct EditEventView: View {
         }
         .onAppear {
             loadEventData()
+        }
+        .onChange(of: triggerSave?.wrappedValue) { _ in
+            // Save when parent triggers it
+            if triggerSave != nil {
+                saveEvent()
+            }
         }
         .onChange(of: startDate) { newValue in
             if endDate <= newValue {
