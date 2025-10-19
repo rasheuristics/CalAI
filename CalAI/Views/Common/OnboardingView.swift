@@ -208,14 +208,13 @@ struct OnboardingView: View {
         if googleCalendarManager == nil {
             googleCalendarManager = GoogleCalendarManager()
         }
-        googleCalendarManager?.signIn { success in
-            DispatchQueue.main.async {
-                self.googleCalendarConnected = success
-                if success {
-                    print("✅ Google Calendar connected")
-                } else {
-                    print("❌ Google Calendar connection failed")
-                }
+        googleCalendarManager?.signIn()
+
+        // Check connection status after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.googleCalendarConnected = self.googleCalendarManager?.isSignedIn ?? false
+            if self.googleCalendarConnected {
+                print("✅ Google Calendar connected")
             }
         }
     }
@@ -225,14 +224,13 @@ struct OnboardingView: View {
         if outlookCalendarManager == nil {
             outlookCalendarManager = OutlookCalendarManager()
         }
-        outlookCalendarManager?.signIn { success in
-            DispatchQueue.main.async {
-                self.outlookCalendarConnected = success
-                if success {
-                    print("✅ Outlook Calendar connected")
-                } else {
-                    print("❌ Outlook Calendar connection failed")
-                }
+        outlookCalendarManager?.signIn()
+
+        // Check connection status after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.outlookCalendarConnected = self.outlookCalendarManager?.isSignedIn ?? false
+            if self.outlookCalendarConnected {
+                print("✅ Outlook Calendar connected")
             }
         }
     }
