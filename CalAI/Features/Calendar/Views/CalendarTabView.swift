@@ -2075,6 +2075,11 @@ struct CompressedDayTimelineView: View {
                 .shadow(color: (isMultiDay ? Color.orange : Color.green).opacity(0.3), radius: 8, x: 0, y: 4)
         )
         .accessibilityLabel("\(isMultiDay ? "Multi-day" : "All day") event: \(event.title ?? "Untitled Event")\(event.eventLocation.map { ", at \($0)" } ?? "")")
+        .onTapGesture {
+            // Call the tap callback to open event management view
+            onEventTap?(event.originalEvent)
+            print("👆 All-day event tapped: \(event.title ?? "Untitled")")
+        }
     }
 
     @ViewBuilder

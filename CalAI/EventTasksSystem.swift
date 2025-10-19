@@ -1164,11 +1164,11 @@ struct EventTasksTabView: View {
         let sourceTitle = calendar.source.title.lowercased()
 
         if sourceTitle.contains("google") || sourceTitle.contains("gmail") {
-            return "g.circle.fill"
+            return "globe"
         } else if sourceTitle.contains("outlook") || sourceTitle.contains("microsoft") || sourceTitle.contains("exchange") {
-            return "envelope.circle.fill"
+            return "envelope"
         } else {
-            return "calendar.circle.fill"
+            return "calendar"
         }
     }
 
@@ -1346,6 +1346,11 @@ struct EventDetailsTabView: View {
     @State private var attachmentURLs: [URL] = []
     @State private var showAttachmentPicker: Bool = false
     @State private var structuredLocation: CLLocation?
+    @State private var useCustomColor: Bool = false
+    @State private var customColor: Color = EventColorManager.predefinedColors[0]
+    @StateObject private var colorManager = EventColorManager.shared
+    @State private var showingDeleteConfirmation: Bool = false
+    @Environment(\.dismiss) var dismiss
 
     var body: some View {
         Form {
@@ -1408,25 +1413,123 @@ struct EventDetailsTabView: View {
             // Calendar Selection (iOS events only)
             if event.source == .ios, !availableCalendars.isEmpty {
                 Section("Calendar") {
-                    Picker("Calendar", selection: $selectedCalendar) {
-                        ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
-                            HStack(spacing: 12) {
-                                Image(systemName: calendarSourceIcon(for: calendar))
-                                    .foregroundColor(calendarSourceColor(for: calendar))
-                                    .frame(width: 20)
+                    NavigationLink {
+                        List {
+                            ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
+                                Button {
+                                    selectedCalendar = calendar
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: calendarSourceIcon(for: calendar))
+                                            .font(.system(size: 20))
+                                            .foregroundStyle(calendarSourceColor(for: calendar))
 
-                                Circle()
-                                    .fill(Color(cgColor: calendar.cgColor))
-                                    .frame(width: 12, height: 12)
+                                        Circle()
+                                            .fill(Color(cgColor: calendar.cgColor))
+                                            .frame(width: 12, height: 12)
 
-                                Text(calendar.title)
-                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                        Text(calendar.title)
+                                            .dynamicFont(size: 17, fontManager: fontManager)
+                                            .foregroundColor(.primary)
+
+                                        Spacer()
+
+                                        if selectedCalendar?.calendarIdentifier == calendar.calendarIdentifier {
+                                            Image(systemName: "checkmark")
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .tag(calendar as EKCalendar?)
+                        }
+                        .navigationTitle("Select Calendar")
+                        .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        HStack {
+                            Text("Calendar")
+                                .dynamicFont(size: 17, fontManager: fontManager)
+                            Spacer()
+                            if let selected = selectedCalendar {
+                                HStack(spacing: 8) {
+                                    Image(systemName: calendarSourceIcon(for: selected))
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(calendarSourceColor(for: selected))
+
+                                    Circle()
+                                        .fill(Color(cgColor: selected.cgColor))
+                                        .frame(width: 12, height: 12)
+
+                                    Text(selected.title)
+                                        .dynamicFont(size: 17, fontManager: fontManager)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
                         }
                     }
-                    .dynamicFont(size: 17, fontManager: fontManager)
                 }
+            }
+
+            Section {
+                Toggle("Use Custom Color", isOn: $useCustomColor)
+                    .dynamicFont(size: 17, fontManager: fontManager)
+                    .onChange(of: useCustomColor) { newValue in
+                        // Update immediately for live preview
+                        colorManager.setUseCustomColor(newValue, for: event.id)
+                        if !newValue {
+                            colorManager.removeCustomColor(for: event.id)
+                        }
+                    }
+
+                if useCustomColor {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Event Color")
+                            .dynamicFont(size: 13, weight: .semibold, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+
+                        // Predefined colors grid
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 12) {
+                            ForEach(EventColorManager.predefinedColors.indices, id: \.self) { index in
+                                let color = EventColorManager.predefinedColors[index]
+                                Button {
+                                    customColor = color
+                                    // Update immediately for live preview
+                                    colorManager.setCustomColor(color, for: event.id)
+                                } label: {
+                                    ZStack {
+                                        Circle()
+                                            .fill(color)
+                                            .frame(width: 44, height: 44)
+
+                                        if customColor.toHex() == color.toHex() {
+                                            Image(systemName: "checkmark")
+                                                .foregroundColor(.white)
+                                                .font(.system(size: 16, weight: .bold))
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    }
+                } else {
+                    HStack {
+                        Text("Using calendar color")
+                            .dynamicFont(size: 15, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        if let calendar = selectedCalendar {
+                            Circle()
+                                .fill(Color(cgColor: calendar.cgColor))
+                                .frame(width: 24, height: 24)
+                        }
+                    }
+                }
+            } header: {
+                Text("Event Card Color")
             }
 
             Section("Date & Time") {
@@ -1610,6 +1713,22 @@ struct EventDetailsTabView: View {
                 .disabled(title.isEmpty || isLoading)
             }
 
+            // Delete Event Section
+            Section {
+                Button(action: {
+                    showingDeleteConfirmation = true
+                }) {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "trash")
+                        Text("Delete Event")
+                            .dynamicFont(size: 17, fontManager: fontManager)
+                        Spacer()
+                    }
+                    .foregroundColor(.red)
+                }
+            }
+
             if let errorMessage = errorMessage {
                 Section {
                     Text(errorMessage)
@@ -1633,6 +1752,14 @@ struct EventDetailsTabView: View {
             if endDate <= newValue {
                 endDate = Calendar.current.date(byAdding: .hour, value: 1, to: newValue) ?? newValue
             }
+        }
+        .alert("Delete Event", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                deleteEvent()
+            }
+        } message: {
+            Text("Are you sure you want to delete this event? This action cannot be undone.")
         }
     }
 
@@ -1683,6 +1810,12 @@ struct EventDetailsTabView: View {
                 structuredLocation = structured.geoLocation
             }
         }
+
+        // Load custom color settings
+        useCustomColor = colorManager.shouldUseCustomColor(for: event.id)
+        if let savedColor = colorManager.getCustomColor(for: event.id) {
+            customColor = savedColor
+        }
     }
 
     private func saveEvent() {
@@ -1713,6 +1846,14 @@ struct EventDetailsTabView: View {
                 isLoading = false
 
                 if success {
+                    // Save custom color settings
+                    colorManager.setUseCustomColor(useCustomColor, for: event.id)
+                    if useCustomColor {
+                        colorManager.setCustomColor(customColor, for: event.id)
+                    } else {
+                        colorManager.removeCustomColor(for: event.id)
+                    }
+
                     // Refresh calendar data to reflect changes
                     calendarManager.refreshAllCalendars()
                     showSuccessMessage = true
@@ -1844,6 +1985,112 @@ struct EventDetailsTabView: View {
         }
     }
 
+    // MARK: - Delete Event
+
+    private func deleteEvent() {
+        isLoading = true
+        errorMessage = nil
+
+        switch event.source {
+        case .ios:
+            deleteIOSEvent()
+        case .google:
+            deleteGoogleEvent()
+        case .outlook:
+            deleteOutlookEvent()
+        }
+    }
+
+    private func deleteIOSEvent() {
+        guard let ekEvent = event.originalEvent as? EKEvent else {
+            errorMessage = "Could not find original iOS event"
+            isLoading = false
+            return
+        }
+
+        do {
+            try calendarManager.eventStore.remove(ekEvent, span: .thisEvent)
+            print("✅ Successfully deleted iOS event")
+
+            // Delete from Core Data cache
+            CoreDataManager.shared.permanentlyDeleteEvent(eventId: event.id, source: .ios)
+
+            // Refresh events
+            calendarManager.loadAllUnifiedEvents()
+
+            isLoading = false
+            dismiss()
+        } catch {
+            print("❌ Failed to delete iOS event: \(error.localizedDescription)")
+            errorMessage = "Failed to delete event: \(error.localizedDescription)"
+            isLoading = false
+        }
+    }
+
+    private func deleteGoogleEvent() {
+        guard let googleManager = calendarManager.googleCalendarManager else {
+            errorMessage = "Google Calendar not connected"
+            isLoading = false
+            return
+        }
+
+        // Track deletion to prevent reappearance
+        calendarManager.deletedEventIds.insert(event.id)
+
+        Task {
+            let success = await googleManager.deleteEvent(eventId: event.id)
+
+            await MainActor.run {
+                // Delete from Core Data cache regardless of server success
+                CoreDataManager.shared.permanentlyDeleteEvent(eventId: event.id, source: .google)
+
+                if success {
+                    print("✅ Google event deleted successfully from server and cache")
+                    calendarManager.loadAllUnifiedEvents()
+                    isLoading = false
+                    dismiss()
+                } else {
+                    print("⚠️ Failed to delete from Google server, but removed from local cache")
+                    calendarManager.loadAllUnifiedEvents()
+                    isLoading = false
+                    dismiss()
+                }
+            }
+        }
+    }
+
+    private func deleteOutlookEvent() {
+        guard let outlookManager = calendarManager.outlookCalendarManager else {
+            errorMessage = "Outlook Calendar not connected"
+            isLoading = false
+            return
+        }
+
+        // Track deletion to prevent reappearance
+        calendarManager.deletedEventIds.insert(event.id)
+
+        Task {
+            let success = await outlookManager.deleteEvent(eventId: event.id)
+
+            await MainActor.run {
+                // Delete from Core Data cache regardless of server success
+                CoreDataManager.shared.permanentlyDeleteEvent(eventId: event.id, source: .outlook)
+
+                if success {
+                    print("✅ Outlook event deleted successfully from server and cache")
+                    calendarManager.loadAllUnifiedEvents()
+                    isLoading = false
+                    dismiss()
+                } else {
+                    print("⚠️ Failed to delete from Outlook server, but removed from local cache")
+                    calendarManager.loadAllUnifiedEvents()
+                    isLoading = false
+                    dismiss()
+                }
+            }
+        }
+    }
+
     // MARK: - Helper Methods for New Fields
 
     private func removeAttendee(_ attendee: String) {
@@ -1924,11 +2171,11 @@ struct EventDetailsTabView: View {
         let sourceTitle = calendar.source.title.lowercased()
 
         if sourceTitle.contains("google") || sourceTitle.contains("gmail") {
-            return "g.circle.fill"
+            return "globe"
         } else if sourceTitle.contains("outlook") || sourceTitle.contains("microsoft") || sourceTitle.contains("exchange") {
-            return "envelope.circle.fill"
+            return "envelope"
         } else {
-            return "calendar.circle.fill"
+            return "calendar"
         }
     }
 

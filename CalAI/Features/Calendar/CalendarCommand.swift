@@ -106,8 +106,9 @@ struct AICalendarResponse: Codable {
     let needsMoreInfo: Bool
     let partialCommand: CalendarCommand?
     let eventResults: [EventResult]? // Events returned from queries
+    let shouldContinueListening: Bool // Auto-restart listening after speaking (for follow-up questions)
 
-    init(message: String, command: CalendarCommand? = nil, requiresConfirmation: Bool = false, confirmationMessage: String? = nil, needsMoreInfo: Bool = false, partialCommand: CalendarCommand? = nil, eventResults: [EventResult]? = nil) {
+    init(message: String, command: CalendarCommand? = nil, requiresConfirmation: Bool = false, confirmationMessage: String? = nil, needsMoreInfo: Bool = false, partialCommand: CalendarCommand? = nil, eventResults: [EventResult]? = nil, shouldContinueListening: Bool = false) {
         self.message = message
         self.command = command
         self.requiresConfirmation = requiresConfirmation
@@ -115,6 +116,7 @@ struct AICalendarResponse: Codable {
         self.needsMoreInfo = needsMoreInfo
         self.partialCommand = partialCommand
         self.eventResults = eventResults
+        self.shouldContinueListening = shouldContinueListening
     }
 }
 

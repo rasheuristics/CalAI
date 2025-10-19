@@ -15,6 +15,12 @@ class VoiceManager: NSObject, ObservableObject {
     private var completionHandler: ((String) -> Void)?
     private var partialTranscriptHandler: ((String) -> Void)?
     private var latestTranscript = ""
+    private var hasProcessedResult = false // Prevents duplicate processing
+
+    // Silence detection
+    private var silenceTimer: Timer?
+    private let silenceThreshold: TimeInterval = 2.5 // 2.5 seconds of silence
+    private var autoStopEnabled = true // Can be toggled
 
     override init() {
         super.init()
@@ -83,6 +89,7 @@ class VoiceManager: NSObject, ObservableObject {
         print("✅ All permissions and requirements met")
         completionHandler = completion
         partialTranscriptHandler = onPartialTranscript
+        hasProcessedResult = false // Reset for new session
 
         // Clear previous transcript
         DispatchQueue.main.async {
@@ -157,14 +164,21 @@ class VoiceManager: NSObject, ObservableObject {
                         self?.currentTranscript = newTranscript
                         self?.partialTranscriptHandler?(newTranscript)
                     }
+
+                    // Reset silence timer on new transcript
+                    self?.resetSilenceTimer()
                 }
 
                 if result.isFinal {
                     print("✅ Final transcript: \(self?.latestTranscript ?? "")")
+                    self?.invalidateSilenceTimer()
                     DispatchQueue.main.async {
-                        if let transcript = self?.latestTranscript, !transcript.isEmpty {
-                            self?.completionHandler?(transcript)
-                            self?.stopListening()
+                        guard let self = self, !self.hasProcessedResult else { return }
+                        let transcript = self.latestTranscript
+                        if !transcript.isEmpty {
+                            self.hasProcessedResult = true
+                            self.completionHandler?(transcript)
+                            self.stopListening()
                         }
                     }
                     return
@@ -175,30 +189,83 @@ class VoiceManager: NSObject, ObservableObject {
                 print("❌ Recognition error: \(error)")
                 print("📝 Current stored transcript: '\(self?.latestTranscript ?? "")'")
 
+                self?.invalidateSilenceTimer()
+
                 // Don't process on cancellation errors - these happen during normal stop
                 let nsError = error as NSError
                 if nsError.domain == "kLSRErrorDomain" && nsError.code == 301 {
                     print("🔄 Recognition canceled - using stored transcript if available")
                     DispatchQueue.main.async {
-                        if let transcript = self?.latestTranscript, !transcript.isEmpty {
-                            print("✅ Processing stored transcript: \(transcript)")
-                            self?.completionHandler?(transcript)
+                        guard let self = self, !self.hasProcessedResult else {
+                            self?.stopListening()
+                            return
                         }
-                        self?.stopListening()
+                        let transcript = self.latestTranscript
+                        if !transcript.isEmpty {
+                            print("✅ Processing stored transcript: \(transcript)")
+                            self.hasProcessedResult = true
+                            self.completionHandler?(transcript)
+                        }
+                        self.stopListening()
                     }
                 } else {
                     // Other errors - use delayed processing
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        if let transcript = self?.latestTranscript, !transcript.isEmpty {
-                            print("🔄 Using stored transcript after delay: \(transcript)")
-                            self?.completionHandler?(transcript)
+                        guard let self = self, !self.hasProcessedResult else {
+                            self?.stopListening()
+                            return
                         }
-                        self?.stopListening()
+                        let transcript = self.latestTranscript
+                        if !transcript.isEmpty {
+                            print("🔄 Using stored transcript after delay: \(transcript)")
+                            self.hasProcessedResult = true
+                            self.completionHandler?(transcript)
+                        }
+                        self.stopListening()
                     }
                 }
             }
         }
         print("🚀 Speech recognition task started")
+    }
+
+    private func resetSilenceTimer() {
+        guard autoStopEnabled else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.silenceTimer?.invalidate()
+            self?.silenceTimer = Timer.scheduledTimer(withTimeInterval: self?.silenceThreshold ?? 2.5, repeats: false) { [weak self] _ in
+                print("⏱️ Silence detected - auto-stopping")
+                self?.handleSilenceDetected()
+            }
+        }
+    }
+
+    private func invalidateSilenceTimer() {
+        DispatchQueue.main.async { [weak self] in
+            self?.silenceTimer?.invalidate()
+            self?.silenceTimer = nil
+        }
+    }
+
+    private func handleSilenceDetected() {
+        guard autoStopEnabled, isListening else { return }
+
+        print("🔇 Silence threshold reached - finalizing transcript")
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, !self.hasProcessedResult else {
+                self?.stopListening()
+                return
+            }
+            let transcript = self.latestTranscript
+            if !transcript.isEmpty {
+                print("✅ Auto-stop with transcript: \(transcript)")
+                self.hasProcessedResult = true
+                self.completionHandler?(transcript)
+            }
+            self.stopListening()
+        }
     }
 
     func stopListening() {
@@ -208,6 +275,8 @@ class VoiceManager: NSObject, ObservableObject {
             print("⚠️ Already stopped listening")
             return
         }
+
+        invalidateSilenceTimer()
 
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
