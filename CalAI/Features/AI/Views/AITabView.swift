@@ -495,8 +495,8 @@ struct AITabView: View {
                                 Capsule()
                                     .fill(buttonColor)
                             )
-                            .scaleEffect(isInAutoLoopMode && !voiceManager.isListening ? (pulseAnimation ? 1.05 : 1.0) : 1.0)
-                            .animation(isInAutoLoopMode && !voiceManager.isListening ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : .default, value: pulseAnimation)
+                            .scaleEffect(isInAutoLoopMode ? (pulseAnimation ? 1.05 : 1.0) : 1.0)
+                            .animation(isInAutoLoopMode ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : .default, value: pulseAnimation)
                         }
                     }
                     .padding(.trailing, 8)
@@ -517,12 +517,20 @@ struct AITabView: View {
         if aiManager.conversationState == .awaitingConfirmation {
             return "Answer"
         }
+        // In auto-loop mode, always show "Speak" even when listening
+        if isInAutoLoopMode {
+            return "Speak"
+        }
         return voiceManager.isListening ? "Send" : "Speak"
     }
 
     private var buttonIcon: String? {
         if speechManager.isSpeaking {
             return speechManager.isPaused ? "play.fill" : "pause.fill"
+        }
+        // In auto-loop mode, always show waveform icon
+        if isInAutoLoopMode {
+            return "waveform"
         }
         if voiceManager.isListening {
             return "paperplane.fill"
@@ -531,6 +539,10 @@ struct AITabView: View {
     }
 
     private var buttonColor: Color {
+        // In auto-loop mode, keep black color even when listening
+        if isInAutoLoopMode {
+            return Color.black
+        }
         if voiceManager.isListening {
             return Color.red
         }
