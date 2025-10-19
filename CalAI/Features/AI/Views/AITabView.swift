@@ -734,8 +734,7 @@ struct AITabView: View {
         }
 
         // Start 5-second inactivity timer
-        inactivityTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
-            guard let self = self else { return }
+        inactivityTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
             if self.voiceManager.isListening {
                 print("⏱️ 5-second inactivity timeout - ending auto-loop (keeping history)")
                 self.voiceManager.stopListening()
