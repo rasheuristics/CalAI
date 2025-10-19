@@ -9,9 +9,13 @@ struct OnboardingView: View {
     @State private var currentPage = 0
     @Environment(\.dismiss) private var dismiss
     @State private var calendarManager: CalendarManager?
+    @State private var googleCalendarManager: GoogleCalendarManager?
+    @State private var outlookCalendarManager: OutlookCalendarManager?
     @State private var locationManager = CLLocationManager()
 
     @State private var calendarAccessGranted = false
+    @State private var googleCalendarConnected = false
+    @State private var outlookCalendarConnected = false
     @State private var microphoneAccessGranted = false
     @State private var locationAccessGranted = false
 
@@ -92,9 +96,13 @@ struct OnboardingView: View {
                         if pages[index].type == .permissions {
                             PermissionsPageView(
                                 calendarAccessGranted: $calendarAccessGranted,
+                                googleCalendarConnected: $googleCalendarConnected,
+                                outlookCalendarConnected: $outlookCalendarConnected,
                                 microphoneAccessGranted: $microphoneAccessGranted,
                                 locationAccessGranted: $locationAccessGranted,
                                 onRequestCalendar: requestCalendarAccess,
+                                onConnectGoogle: connectGoogleCalendar,
+                                onConnectOutlook: connectOutlookCalendar,
                                 onRequestMicrophone: requestMicrophoneAccess,
                                 onRequestLocation: requestLocationAccess
                             )
@@ -194,6 +202,40 @@ struct OnboardingView: View {
             self.locationAccessGranted = (status == .authorizedWhenInUse || status == .authorizedAlways)
         }
     }
+
+    private func connectGoogleCalendar() {
+        print("📅 Connecting Google Calendar from onboarding...")
+        if googleCalendarManager == nil {
+            googleCalendarManager = GoogleCalendarManager()
+        }
+        googleCalendarManager?.signIn { success in
+            DispatchQueue.main.async {
+                self.googleCalendarConnected = success
+                if success {
+                    print("✅ Google Calendar connected")
+                } else {
+                    print("❌ Google Calendar connection failed")
+                }
+            }
+        }
+    }
+
+    private func connectOutlookCalendar() {
+        print("📅 Connecting Outlook Calendar from onboarding...")
+        if outlookCalendarManager == nil {
+            outlookCalendarManager = OutlookCalendarManager()
+        }
+        outlookCalendarManager?.signIn { success in
+            DispatchQueue.main.async {
+                self.outlookCalendarConnected = success
+                if success {
+                    print("✅ Outlook Calendar connected")
+                } else {
+                    print("❌ Outlook Calendar connection failed")
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Onboarding Page View
@@ -229,62 +271,86 @@ struct OnboardingPageView: View {
 
 struct PermissionsPageView: View {
     @Binding var calendarAccessGranted: Bool
+    @Binding var googleCalendarConnected: Bool
+    @Binding var outlookCalendarConnected: Bool
     @Binding var microphoneAccessGranted: Bool
     @Binding var locationAccessGranted: Bool
 
     let onRequestCalendar: () -> Void
+    let onConnectGoogle: () -> Void
+    let onConnectOutlook: () -> Void
     let onRequestMicrophone: () -> Void
     let onRequestLocation: () -> Void
 
     var body: some View {
-        VStack(spacing: DesignSystem.Spacing.xl) {
-            Image(systemName: "hand.raised.fill")
-                .font(.system(size: 80))
-                .foregroundColor(.white)
-                .shadow(color: .black.opacity(0.2), radius: 10)
+        ScrollView {
+            VStack(spacing: DesignSystem.Spacing.lg) {
+                Image(systemName: "hand.raised.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.2), radius: 10)
 
-            Text("Grant Permissions")
-                .font(.system(size: 32, weight: .bold))
-                .foregroundColor(.white)
-                .multilineTextAlignment(.center)
+                Text("Connect & Permissions")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
 
-            Text("CalAI needs these permissions to provide the best experience")
-                .font(.body)
-                .foregroundColor(.white.opacity(0.9))
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, DesignSystem.Spacing.xl)
+                Text("Connect your calendars and grant permissions")
+                    .font(.body)
+                    .foregroundColor(.white.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, DesignSystem.Spacing.xl)
 
-            VStack(spacing: DesignSystem.Spacing.md) {
-                // Calendar Permission
-                PermissionButton(
-                    icon: "calendar",
-                    title: "Calendar Access",
-                    description: "View and manage your events",
-                    isGranted: calendarAccessGranted,
-                    action: onRequestCalendar
-                )
+                VStack(spacing: DesignSystem.Spacing.sm) {
+                    // iOS Calendar Permission
+                    PermissionButton(
+                        icon: "calendar",
+                        title: "iOS Calendar",
+                        description: "Access your device calendar",
+                        isGranted: calendarAccessGranted,
+                        action: onRequestCalendar
+                    )
 
-                // Microphone Permission
-                PermissionButton(
-                    icon: "mic.fill",
-                    title: "Microphone Access",
-                    description: "Voice commands and AI assistant",
-                    isGranted: microphoneAccessGranted,
-                    action: onRequestMicrophone
-                )
+                    // Google Calendar Connection
+                    PermissionButton(
+                        icon: "g.circle.fill",
+                        title: "Google Calendar",
+                        description: "Connect your Google Calendar",
+                        isGranted: googleCalendarConnected,
+                        action: onConnectGoogle
+                    )
 
-                // Location Permission
-                PermissionButton(
-                    icon: "location.fill",
-                    title: "Location Access",
-                    description: "Travel time and location-based features",
-                    isGranted: locationAccessGranted,
-                    action: onRequestLocation
-                )
+                    // Outlook Calendar Connection
+                    PermissionButton(
+                        icon: "envelope.circle.fill",
+                        title: "Outlook Calendar",
+                        description: "Connect your Outlook Calendar",
+                        isGranted: outlookCalendarConnected,
+                        action: onConnectOutlook
+                    )
+
+                    // Microphone Permission
+                    PermissionButton(
+                        icon: "mic.fill",
+                        title: "Microphone Access",
+                        description: "Voice commands and AI assistant",
+                        isGranted: microphoneAccessGranted,
+                        action: onRequestMicrophone
+                    )
+
+                    // Location Permission
+                    PermissionButton(
+                        icon: "location.fill",
+                        title: "Location Access",
+                        description: "Travel time calculations",
+                        isGranted: locationAccessGranted,
+                        action: onRequestLocation
+                    )
+                }
+                .padding(.horizontal, DesignSystem.Spacing.md)
             }
-            .padding(.horizontal, DesignSystem.Spacing.lg)
+            .padding(.vertical)
         }
-        .padding()
     }
 }
 
