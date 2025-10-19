@@ -312,6 +312,11 @@ struct AITabView: View {
     @State private var textEditorHeight: CGFloat = 40
     @State private var isTextInputActive: Bool = false
 
+    // Auto-loop conversation mode
+    @State private var isInAutoLoopMode: Bool = false
+    @State private var inactivityTimer: Timer?
+    @State private var pulseAnimation: Bool = false
+
     // Computed property to show either user input or live dictation
     private var displayText: Binding<String> {
         Binding(
@@ -490,6 +495,8 @@ struct AITabView: View {
                                 Capsule()
                                     .fill(buttonColor)
                             )
+                            .scaleEffect(isInAutoLoopMode && !voiceManager.isListening ? (pulseAnimation ? 1.05 : 1.0) : 1.0)
+                            .animation(isInAutoLoopMode && !voiceManager.isListening ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : .default, value: pulseAnimation)
                         }
                     }
                     .padding(.trailing, 8)
@@ -601,7 +608,9 @@ struct AITabView: View {
             if speechManager.isPaused {
                 speechManager.resumeSpeaking()
             } else {
+                // Pause button exits auto-loop mode
                 speechManager.pauseSpeaking()
+                exitAutoLoopMode()
             }
             return
         }
@@ -610,25 +619,67 @@ struct AITabView: View {
         if voiceManager.isListening {
             voiceManager.stopListening()
         } else {
+            // Enter auto-loop mode when speak button is pressed
+            isInAutoLoopMode = true
             withAnimation {
                 showConversationWindow = true
             }
-            voiceManager.startListening { finalTranscript in
-                if !finalTranscript.isEmpty {
-                    handleTranscript(finalTranscript)
-                }
-            }
+            startListeningWithAutoLoop()
         }
     }
 
     private func handleTranscript(_ transcript: String) {
+        // Check if this is a new topic when user restarts conversation after inactivity
+        if !isInAutoLoopMode && conversationHistory.count > 0 {
+            // User manually pressed speak button after auto-loop ended
+            // AI will determine if this is a continuation or new topic
+            checkAndClearHistoryIfNeeded(transcript: transcript) { shouldClearHistory in
+                if shouldClearHistory {
+                    print("🆕 New topic detected - clearing conversation history")
+                    self.conversationHistory.removeAll()
+                }
+                self.processTranscript(transcript)
+            }
+        } else {
+            // During auto-loop or first message, just process normally
+            processTranscript(transcript)
+        }
+    }
+
+    private func processTranscript(_ transcript: String) {
         if aiManager.conversationState != .awaitingConfirmation {
             let userMessage = ConversationItem(message: transcript, isUser: true)
             conversationHistory.append(userMessage)
         }
         aiManager.processVoiceCommand(transcript, conversationHistory: conversationHistory, calendarEvents: calendarManager.unifiedEvents, calendarManager: calendarManager) { response in
-            handleAIResponse(response)
+            self.handleAIResponse(response)
         }
+    }
+
+    private func checkAndClearHistoryIfNeeded(transcript: String, completion: @escaping (Bool) -> Void) {
+        // Use AI to determine if this is a new topic or continuation
+        guard let lastMessage = conversationHistory.last?.message else {
+            completion(false)
+            return
+        }
+
+        // Simple heuristic for now: check if the new query is completely different
+        let continuationKeywords = ["also", "and", "additionally", "what about", "how about", "more", "another", "continue", "tell me more", "what else"]
+        let lowerTranscript = transcript.lowercased()
+
+        // If user uses continuation keywords, keep history
+        if continuationKeywords.contains(where: { lowerTranscript.contains($0) }) {
+            completion(false)
+            return
+        }
+
+        // If the topics are completely different (no shared keywords), clear history
+        let previousWords = Set(lastMessage.lowercased().components(separatedBy: .whitespaces))
+        let currentWords = Set(lowerTranscript.components(separatedBy: .whitespaces))
+        let commonWords = previousWords.intersection(currentWords).filter { $0.count > 3 } // Ignore short words
+
+        // If less than 2 common words, likely a new topic
+        completion(commonWords.count < 2)
     }
 
     private func handleAIResponse(_ response: AICalendarResponse) {
@@ -637,20 +688,12 @@ struct AITabView: View {
             conversationHistory.append(aiMessage)
         }
         if Config.aiOutputMode != .textOnly {
-            let shouldContinue = response.shouldContinueListening
-
-            // Speak with completion handler to auto-restart listening if needed
+            // Speak with completion handler to auto-restart listening in auto-loop mode
             SpeechManager.shared.speak(text: response.message) {
-                // If response contains a follow-up question, automatically restart listening
-                if shouldContinue && !self.voiceManager.isListening {
-                    print("🎤 Auto-restarting listening for follow-up question")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        self.voiceManager.startListening { finalTranscript in
-                            if !finalTranscript.isEmpty {
-                                self.handleTranscript(finalTranscript)
-                            }
-                        }
-                    }
+                // If in auto-loop mode, automatically restart listening
+                if self.isInAutoLoopMode && !self.voiceManager.isListening {
+                    print("🔄 Auto-loop: Restarting listening after AI response")
+                    self.startListeningWithAutoLoop()
                 }
             }
         }
@@ -668,7 +711,52 @@ struct AITabView: View {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         isTextInputActive = false
     }
+
+    // MARK: - Auto-Loop Mode Functions
+
+    private func startListeningWithAutoLoop() {
+        // Cancel any existing inactivity timer
+        inactivityTimer?.invalidate()
+        inactivityTimer = nil
+
+        // Start pulse animation
+        withAnimation {
+            pulseAnimation = true
+        }
+
+        // Start listening
+        voiceManager.startListening { finalTranscript in
+            if !finalTranscript.isEmpty {
+                // Reset inactivity timer when user speaks
+                self.inactivityTimer?.invalidate()
+                self.handleTranscript(finalTranscript)
+            }
+        }
+
+        // Start 5-second inactivity timer
+        inactivityTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            if self.voiceManager.isListening {
+                print("⏱️ 5-second inactivity timeout - ending auto-loop (keeping history)")
+                self.voiceManager.stopListening()
+                self.exitAutoLoopMode()
+            }
+        }
+    }
+
+    private func exitAutoLoopMode() {
+        print("🚪 Exiting auto-loop mode")
+        isInAutoLoopMode = false
+        inactivityTimer?.invalidate()
+        inactivityTimer = nil
+        withAnimation {
+            pulseAnimation = false
+        }
+        // Note: We keep conversation history as per requirements
+    }
 }
+
+
 
 // MARK: - UI Components
 
