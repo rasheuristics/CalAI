@@ -1961,6 +1961,10 @@ class AIManager: ObservableObject {
                 message = "Tomorrow you have \(tomorrowEvents.count) event\(tomorrowEvents.count == 1 ? "" : "s"): \(eventTitles)."
             }
         }
+        // "What needs my attention"
+        else if lowercased.contains("needs my attention") || lowercased.contains("need my attention") {
+            message = calendarManager.analyzeAttentionItems()
+        }
         // Generic context
         else {
             if upcomingEvents.isEmpty {

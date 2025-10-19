@@ -3045,6 +3045,81 @@ class CalendarManager: ObservableObject {
         return "\(event.sourceLabel) Calendar"
     }
 
+    // MARK: - Attention Analysis
+
+    /// Analyze calendar for items that need user attention
+    func analyzeAttentionItems() -> String {
+        var issues: [String] = []
+        let now = Date()
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)!
+
+        // Get upcoming events (next 7 days)
+        let upcomingEvents = unifiedEvents.filter { event in
+            event.startDate > now && event.startDate < calendar.date(byAdding: .day, value: 7, to: now)!
+        }.sorted { $0.startDate < $1.startDate }
+
+        // 1. Check for conflicts
+        let conflicts = detectedConflicts.filter { !isConflictApproved($0) }
+        if !conflicts.isEmpty {
+            issues.append("⚠️ \(conflicts.count) scheduling conflict\(conflicts.count > 1 ? "s" : "") detected")
+        }
+
+        // 2. Check for preparation needs (presentations, demos, important meetings)
+        let preparationKeywords = ["presentation", "demo", "pitch", "interview", "executive", "board meeting", "client meeting"]
+        let preparationEvents = upcomingEvents.filter { event in
+            let title = event.title.lowercased()
+            let description = (event.description ?? "").lowercased()
+            return preparationKeywords.contains { title.contains($0) || description.contains($0) }
+        }
+        if !preparationEvents.isEmpty {
+            issues.append("📋 \(preparationEvents.count) event\(preparationEvents.count > 1 ? "s" : "") may need preparation")
+        }
+
+        // 3. Check for travel warnings (tight gaps between events at different locations)
+        var travelWarnings = 0
+        for i in 0..<upcomingEvents.count - 1 {
+            let current = upcomingEvents[i]
+            let next = upcomingEvents[i + 1]
+
+            // Check if events have different locations
+            if let currentLoc = current.location, let nextLoc = next.location,
+               !currentLoc.isEmpty, !nextLoc.isEmpty, currentLoc != nextLoc {
+
+                // Check gap between events (< 15 minutes)
+                let gap = next.startDate.timeIntervalSince(current.endDate) / 60.0
+                if gap < 15 {
+                    travelWarnings += 1
+                }
+            }
+        }
+        if travelWarnings > 0 {
+            issues.append("🚗 \(travelWarnings) tight gap\(travelWarnings > 1 ? "s" : "") between events at different locations")
+        }
+
+        // 4. Check for missing information
+        var missingInfo = 0
+        for event in upcomingEvents.prefix(10) {
+            if event.location?.isEmpty ?? true || event.description?.isEmpty ?? true {
+                missingInfo += 1
+            }
+        }
+        if missingInfo > 0 {
+            issues.append("ℹ️ \(missingInfo) upcoming event\(missingInfo > 1 ? "s" : "") missing location or description")
+        }
+
+        // 5. Check for pending invites (if detectable from event status)
+        // Note: This would require EKEvent status checking, which might not be available for all sources
+
+        // Build summary
+        if issues.isEmpty {
+            return "✅ Everything looks good! No issues requiring attention."
+        } else {
+            let summary = "Here's what needs your attention:\n\n" + issues.joined(separator: "\n")
+            return summary
+        }
+    }
+
     // MARK: - Approved Conflicts Management
 
     /// Mark a conflict as approved (user chose to keep both events)

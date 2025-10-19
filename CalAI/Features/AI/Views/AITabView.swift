@@ -373,25 +373,28 @@ struct AITabView: View {
 
             Spacer()
 
-            // Three Action Buttons (scrollable)
+            // Three Action Buttons (scrollable) - Ordered by most common use
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ActionButton(
-                        category: .eventManagement,
-                        isSelected: selectedActionCategory == .eventManagement,
-                        onTap: { handleActionButtonTap(.eventManagement) }
-                    )
-
+                    // 🔵 QUERIES - Most common action (time-aware)
                     ActionButton(
                         category: .eventQueries,
                         isSelected: selectedActionCategory == .eventQueries,
                         onTap: { handleActionButtonTap(.eventQueries) }
                     )
 
+                    // 🟢 SCHEDULE - Quick voice scheduling
                     ActionButton(
                         category: .scheduleManagement,
                         isSelected: selectedActionCategory == .scheduleManagement,
                         onTap: { handleActionButtonTap(.scheduleManagement) }
+                    )
+
+                    // 🟠 MANAGE - Attention dashboard
+                    ActionButton(
+                        category: .eventManagement,
+                        isSelected: selectedActionCategory == .eventManagement,
+                        onTap: { handleActionButtonTap(.eventManagement) }
                     )
                 }
                 .padding(.horizontal, 20)
@@ -530,8 +533,47 @@ struct AITabView: View {
     // MARK: - Actions
 
     private func handleActionButtonTap(_ category: CommandCategory) {
+        // Deselect if tapping the same button again - cancel action
+        if selectedActionCategory == category {
+            withAnimation {
+                selectedActionCategory = nil
+            }
+            return
+        }
+
         withAnimation {
-            selectedActionCategory = selectedActionCategory == category ? nil : category
+            selectedActionCategory = category
+            showConversationWindow = true
+        }
+
+        switch category {
+        case .eventQueries:
+            // Automatically send time-aware query
+            handleTranscript(category.autoQuery)
+
+        case .scheduleManagement:
+            // Speak the prompt and activate voice input
+            SpeechManager.shared.speak(text: category.autoQuery) {
+                // After speaking prompt, start listening
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self.voiceManager.startListening { finalTranscript in
+                        if !finalTranscript.isEmpty {
+                            self.handleTranscript(finalTranscript)
+                        }
+                    }
+                }
+            }
+
+        case .eventManagement:
+            // Send attention query with analysis
+            handleTranscript(category.autoQuery)
+        }
+
+        // Clear selection after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            withAnimation {
+                self.selectedActionCategory = nil
+            }
         }
     }
 
@@ -595,7 +637,22 @@ struct AITabView: View {
             conversationHistory.append(aiMessage)
         }
         if Config.aiOutputMode != .textOnly {
-            SpeechManager.shared.speak(text: response.message)
+            let shouldContinue = response.shouldContinueListening
+
+            // Speak with completion handler to auto-restart listening if needed
+            SpeechManager.shared.speak(text: response.message) {
+                // If response contains a follow-up question, automatically restart listening
+                if shouldContinue && !self.voiceManager.isListening {
+                    print("🎤 Auto-restarting listening for follow-up question")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self.voiceManager.startListening { finalTranscript in
+                            if !finalTranscript.isEmpty {
+                                self.handleTranscript(finalTranscript)
+                            }
+                        }
+                    }
+                }
+            }
         }
         if let command = response.command {
             calendarManager.handleAICalendarResponse(AICalendarResponse(message: "", command: command))
@@ -620,14 +677,23 @@ private struct ActionButton: View {
     let isSelected: Bool
     let onTap: () -> Void
 
+    // Color coding for buttons
+    private var buttonColor: Color {
+        switch category {
+        case .eventQueries: return .blue
+        case .scheduleManagement: return .green
+        case .eventManagement: return .orange
+        }
+    }
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 6) {
                 Image(systemName: category.icon)
                     .font(.system(size: 16))
-                    .foregroundColor(isSelected ? .white : .blue)
+                    .foregroundColor(isSelected ? .white : buttonColor)
 
-                Text(category.rawValue)
+                Text(category.displayText)
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(isSelected ? .white : .primary)
@@ -638,7 +704,7 @@ private struct ActionButton: View {
             .padding(.vertical, 10)
             .background(
                 Capsule()
-                    .fill(isSelected ? Color.blue : Color(.systemGray6))
+                    .fill(isSelected ? buttonColor : Color(.systemGray6))
             )
             .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
         }
@@ -689,15 +755,52 @@ private struct CommandCardListView: View {
 }
 
 private enum CommandCategory: String, CaseIterable {
-    case eventManagement = "Manage"
     case eventQueries = "Queries"
     case scheduleManagement = "Schedule"
+    case eventManagement = "Manage"
 
     var icon: String {
         switch self {
-        case .eventManagement: return "calendar.badge.plus"
-        case .eventQueries: return "magnifyingglass.circle.fill"
-        case .scheduleManagement: return "calendar"
+        case .eventManagement: return "exclamationmark.triangle.fill"
+        case .eventQueries: return "calendar.badge.clock"
+        case .scheduleManagement: return "calendar.badge.plus"
+        }
+    }
+
+    var displayText: String {
+        switch self {
+        case .eventQueries:
+            // Time-aware query text
+            let hour = Calendar.current.component(.hour, from: Date())
+            if hour < 10 {
+                return "Today"
+            } else if hour < 18 {
+                return "What's Next"
+            } else {
+                return "Tomorrow"
+            }
+        case .scheduleManagement:
+            return "Schedule"
+        case .eventManagement:
+            return "Manage"
+        }
+    }
+
+    var autoQuery: String {
+        switch self {
+        case .eventQueries:
+            let hour = Calendar.current.component(.hour, from: Date())
+            if hour < 10 {
+                return "What's my schedule today?"
+            } else if hour < 18 {
+                return "What's next?"
+            } else {
+                return "What's tomorrow?"
+            }
+        case .scheduleManagement:
+            return "What would you like to schedule?"
+        case .eventManagement:
+            return "What needs my attention?"
         }
     }
 
