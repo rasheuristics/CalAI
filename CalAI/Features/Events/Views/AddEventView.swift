@@ -118,8 +118,7 @@ struct AddEventView: View {
     @State private var sendInvitations = true
     @State private var isLoading = false
     @State private var errorMessage: String?
-    @State private var useCustomColor = false
-    @State private var customColor: Color = EventColorManager.predefinedColors[0]
+    @State private var customColor: Color = .blue
     @StateObject private var colorManager = EventColorManager.shared
 
     // Location selection states
@@ -249,56 +248,29 @@ struct AddEventView: View {
                 }
 
                 Section {
-                    Toggle("Use Custom Color", isOn: $useCustomColor)
+                    ColorPicker("Card Color", selection: $customColor, supportsOpacity: false)
                         .dynamicFont(size: 17, fontManager: fontManager)
 
-                    if useCustomColor {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Event Color")
-                                .dynamicFont(size: 13, weight: .semibold, fontManager: fontManager)
-                                .foregroundColor(.secondary)
+                    HStack {
+                        Text("Preview:")
+                            .dynamicFont(size: 15, fontManager: fontManager)
+                            .foregroundColor(.secondary)
 
-                            // Predefined colors grid
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 12) {
-                                ForEach(EventColorManager.predefinedColors.indices, id: \.self) { index in
-                                    let color = EventColorManager.predefinedColors[index]
-                                    Button {
-                                        customColor = color
-                                    } label: {
-                                        ZStack {
-                                            Circle()
-                                                .fill(color)
-                                                .frame(width: 44, height: 44)
+                        Spacer()
 
-                                            if customColor.toHex() == color.toHex() {
-                                                Image(systemName: "checkmark")
-                                                    .foregroundColor(.white)
-                                                    .font(.system(size: 16, weight: .bold))
-                                            }
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.vertical, 8)
-                        }
-                    } else {
-                        HStack {
-                            Text("Using calendar color")
-                                .dynamicFont(size: 15, fontManager: fontManager)
-                                .foregroundColor(.secondary)
-
-                            Spacer()
-
-                            if let calendar = selectedSpecificCalendar, let color = calendar.color {
-                                Circle()
-                                    .fill(color)
-                                    .frame(width: 24, height: 24)
-                            }
-                        }
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(customColor)
+                            .frame(width: 60, height: 30)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                            )
                     }
                 } header: {
                     Text("Event Card Color")
+                } footer: {
+                    Text("This color affects how the event appears in CalAI. For iOS Calendar events, the actual calendar color is managed in the iOS Calendar settings.")
+                        .dynamicFont(size: 13, fontManager: fontManager)
                 }
 
                 Section("Date & Time") {
@@ -549,12 +521,10 @@ struct AddEventView: View {
             print("📅 Outlook Calendar event creation: \(selectedCal.id)")
         }
 
-        // Save custom color if enabled
+        // Save custom color
         if let eventId = eventId {
-            colorManager.setUseCustomColor(useCustomColor, for: eventId)
-            if useCustomColor {
-                colorManager.setCustomColor(customColor, for: eventId)
-            }
+            colorManager.setUseCustomColor(true, for: eventId)
+            colorManager.setCustomColor(customColor, for: eventId)
         }
 
         dismiss()
@@ -581,10 +551,13 @@ struct AddEventView: View {
             selectedCalendar = .outlook
         }
 
-        // Load custom color settings
-        useCustomColor = colorManager.shouldUseCustomColor(for: event.id)
+        // Load custom color if saved
         if let savedColor = colorManager.getCustomColor(for: event.id) {
             customColor = savedColor
+        } else if let calendarColor = event.calendarColor {
+            customColor = calendarColor
+        } else {
+            customColor = .blue
         }
     }
 
@@ -614,13 +587,9 @@ struct AddEventView: View {
             DispatchQueue.main.async {
                 isLoading = false
                 if success {
-                    // Save custom color settings
-                    colorManager.setUseCustomColor(useCustomColor, for: eventToEdit.id)
-                    if useCustomColor {
-                        colorManager.setCustomColor(customColor, for: eventToEdit.id)
-                    } else {
-                        colorManager.removeCustomColor(for: eventToEdit.id)
-                    }
+                    // Save custom color
+                    colorManager.setUseCustomColor(true, for: eventToEdit.id)
+                    colorManager.setCustomColor(customColor, for: eventToEdit.id)
 
                     // Refresh calendar data
                     calendarManager.refreshAllCalendars()
