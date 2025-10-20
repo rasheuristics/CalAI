@@ -344,7 +344,7 @@ final class SyncManagerTests: XCTestCase {
         }
     }
 
-    func testSync_SavesEventsToCore Data() async {
+    func testSync_SavesEventsToCoreData() async {
         // Given
         let beforeSync = Date()
 
