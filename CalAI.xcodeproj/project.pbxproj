@@ -95,11 +95,6 @@
 		50C1FEA72EA4589A0037FA07 /* VoiceResponseGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1FEA62EA4589A0037FA07 /* VoiceResponseGenerator.swift */; };
 		50C1FEA92EA46C300037FA07 /* ConversationalAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1FEA82EA46C300037FA07 /* ConversationalAIService.swift */; };
 		50C1FEAB2EA46C5B0037FA07 /* ConversationContextManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1FEAA2EA46C5B0037FA07 /* ConversationContextManager.swift */; };
-		50C1FEB12EA6AA480037FA07 /* CalendarManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1FEAD2EA6AA480037FA07 /* CalendarManagerTests.swift */; };
-		50C1FEB22EA6AA480037FA07 /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1FEB02EA6AA480037FA07 /* TestHelpers.swift */; };
-		50C1FEB32EA6AA480037FA07 /* SyncManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1FEAF2EA6AA480037FA07 /* SyncManagerTests.swift */; };
-		50C1FEB42EA6AA480037FA07 /* MockEventStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1FEAE2EA6AA480037FA07 /* MockEventStore.swift */; };
-		50C1FEB52EA6AA480037FA07 /* AIManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1FEAC2EA6AA480037FA07 /* AIManagerTests.swift */; };
 		50D8A94F2E99EF81001391E6 /* EventTasksSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50D8A94E2E99EF81001391E6 /* EventTasksSystem.swift */; };
 		550F415622911D2CC80A4805 /* Models/NotificationPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2341A263909C0934BEFEB75 /* Models/NotificationPreferences.swift */; };
 		550F415622911D2CC80A4806 /* Models/AppError.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2341A263909C0934BEFEB76 /* Models/AppError.swift */; };
