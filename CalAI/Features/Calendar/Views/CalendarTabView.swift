@@ -850,6 +850,13 @@ struct DayEventCard: View {
 
     @StateObject private var taskManager = EventTaskManager.shared
 
+    // Drag gesture state
+    @State private var dragOffset: CGFloat = 0
+    @State private var dragProgress: CGFloat = 0
+    @State private var isTransitioning: Bool = false
+    @GestureState private var gestureTranslation: CGSize = .zero
+    @State private var isHorizontalDrag: Bool = false
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             // Time
@@ -898,6 +905,73 @@ struct DayEventCard: View {
                 )
                 .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
         )
+        .offset(x: dragOffset)
+        .opacity(1.0 - (dragProgress * 0.3)) // Fade slightly when dragging
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                .updating($gestureTranslation) { value, state, _ in
+                    state = value.translation
+                }
+                .onChanged { value in
+                    guard !isTransitioning else { return }
+
+                    let horizontalAmount = abs(value.translation.width)
+                    let verticalAmount = abs(value.translation.height)
+
+                    // Detect horizontal drag direction on first significant movement
+                    if !isHorizontalDrag && (horizontalAmount > 15 || verticalAmount > 15) {
+                        isHorizontalDrag = horizontalAmount > verticalAmount
+                    }
+
+                    // Only apply offset for horizontal drags
+                    if isHorizontalDrag {
+                        let screenWidth = UIScreen.main.bounds.width
+                        let rawOffset = value.translation.width
+
+                        // Apply rubber band effect for over-scroll
+                        if abs(rawOffset) > screenWidth {
+                            let excess = abs(rawOffset) - screenWidth
+                            let dampedExcess = excess * 0.3
+                            dragOffset = rawOffset > 0 ? screenWidth + dampedExcess : -(screenWidth + dampedExcess)
+                        } else {
+                            dragOffset = rawOffset
+                        }
+
+                        dragProgress = min(abs(dragOffset) / (screenWidth / 2), 1.0)
+                        print("📱 Dragging horizontally: offset=\(dragOffset), progress=\(dragProgress)")
+                    }
+                }
+                .onEnded { value in
+                    guard !isTransitioning else { return }
+
+                    defer {
+                        // Always reset state
+                        isHorizontalDrag = false
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                            dragOffset = 0
+                            dragProgress = 0
+                        }
+                    }
+
+                    // Only handle completion for horizontal drags
+                    guard isHorizontalDrag else { return }
+
+                    let screenWidth = UIScreen.main.bounds.width
+                    let velocity = abs(value.predictedEndTranslation.width - value.translation.width)
+                    let isQuickSwipe = velocity > 100
+                    let threshold = isQuickSwipe ? screenWidth / 3 : screenWidth / 2
+
+                    if abs(value.translation.width) > threshold {
+                        // Trigger swipe action
+                        HapticManager.shared.light()
+                        handleSwipe(direction: value.translation.width > 0 ? .right : .left)
+                    } else {
+                        // Snap back
+                        HapticManager.shared.light()
+                    }
+                }
+        )
         .onTapGesture {
             onTap()
         }
@@ -921,6 +995,24 @@ struct DayEventCard: View {
 
     private var isAllDay: Bool {
         return event.isAllDay
+    }
+
+    private enum SwipeDirection {
+        case left, right
+    }
+
+    private func handleSwipe(direction: SwipeDirection) {
+        // Handle swipe actions based on direction
+        switch direction {
+        case .left:
+            // Left swipe - could be used for delete or other actions
+            print("📱 Swiped left on event: \(event.title)")
+            // Future: Add delete or other actions here
+        case .right:
+            // Right swipe - could be used for complete or other actions
+            print("📱 Swiped right on event: \(event.title)")
+            // Future: Add complete or other actions here
+        }
     }
 }
 
@@ -2405,42 +2497,47 @@ struct DraggableEventView: View {
                         print("✅ Drag activated on movement: \(event.title ?? "Untitled")")
                     }
 
-                    // If activated, determine drag direction and allow dragging
+                    // If activated, allow dragging with dynamic direction
                     if isDragging {
-                        // Determine drag direction if not yet set
-                        if dragDirection == .undetermined {
-                            let absX = abs(value.translation.width)
-                            let absY = abs(value.translation.height)
+                        let absX = abs(value.translation.width)
+                        let absY = abs(value.translation.height)
 
-                            if absX > 10 || absY > 10 {
-                                if isWeekView && absX > absY {
-                                    dragDirection = .horizontal
-                                    print("📍 Horizontal drag mode (week view)")
-                                } else {
-                                    dragDirection = .vertical
-                                    print("📍 Vertical drag mode (time change)")
-                                }
+                        // Continuously update drag direction based on current predominant movement
+                        if absX > 10 || absY > 10 {
+                            let newDirection: DragDirection = absX > absY ? .horizontal : .vertical
+
+                            // Log direction changes
+                            if dragDirection != newDirection && dragDirection != .undetermined {
+                                print("📍 Direction changed: \(dragDirection) -> \(newDirection)")
                             }
+
+                            dragDirection = newDirection
                         }
 
-                        // Handle dragging based on direction
-                        if dragDirection == .horizontal && isWeekView {
-                            // Horizontal drag for day change with snapping
-                            let screenWidth = UIScreen.main.bounds.width
-                            let dayWidth = screenWidth / 7.0
-                            let dayChange = Int(round(value.translation.width / dayWidth))
+                        // Handle dragging based on current direction
+                        if dragDirection == .horizontal {
+                            if isWeekView {
+                                // Horizontal drag for day change with snapping (week view)
+                                let screenWidth = UIScreen.main.bounds.width
+                                let dayWidth = screenWidth / 7.0
+                                let dayChange = Int(round(value.translation.width / dayWidth))
 
-                            // Snap to day columns
-                            horizontalDragOffset = CGFloat(dayChange) * dayWidth
+                                // Snap to day columns
+                                horizontalDragOffset = CGFloat(dayChange) * dayWidth
 
-                            // Broadcast current day change for header indicator
-                            NotificationCenter.default.post(
-                                name: NSNotification.Name("WeekViewDragUpdate"),
-                                object: nil,
-                                userInfo: ["dayChange": dayChange]
-                            )
+                                // Broadcast current day change for header indicator
+                                NotificationCenter.default.post(
+                                    name: NSNotification.Name("WeekViewDragUpdate"),
+                                    object: nil,
+                                    userInfo: ["dayChange": dayChange]
+                                )
+                            } else {
+                                // Horizontal drag for swipe actions (day/list/month views)
+                                horizontalDragOffset = value.translation.width
+                            }
 
-                            print("📍 Horizontal drag: \(value.translation.width) -> Snapped to day: \(dayChange)")
+                            // Reset vertical offset when in horizontal mode
+                            dragOffset = 0
                         } else if dragDirection == .vertical {
                             // Vertical drag for time change with snapping
                             let minutesPerPixel = 1.0 / pxPerMinute
@@ -2449,7 +2546,9 @@ struct DraggableEventView: View {
 
                             // Show snapped position while dragging
                             dragOffset = snappedMinutes * pxPerMinute
-                            print("📍 Vertical drag: \(value.translation.height) -> Snapped: \(dragOffset)")
+
+                            // Reset horizontal offset when in vertical mode
+                            horizontalDragOffset = 0
                         }
                     }
                 }
@@ -2457,21 +2556,37 @@ struct DraggableEventView: View {
                     print("🔴 Touch ended")
 
                     if isDragging {
-                        if dragDirection == .horizontal && isWeekView {
-                            // Calculate day change based on horizontal movement
-                            let screenWidth = UIScreen.main.bounds.width
-                            let dayWidth = screenWidth / 7.0
-                            let dayChange = Int(round(value.translation.width / dayWidth))
+                        if dragDirection == .horizontal {
+                            if isWeekView {
+                                // Calculate day change based on horizontal movement
+                                let screenWidth = UIScreen.main.bounds.width
+                                let dayWidth = screenWidth / 7.0
+                                let dayChange = Int(round(value.translation.width / dayWidth))
 
-                            if dayChange != 0 {
-                                // Save the change to calendar and mark as moved
-                                handleHorizontalDragEnd(dayChange: dayChange)
-                                hasBeenMoved = true
-                                print("🎯 Event parked at new day: \(dayChange)")
-                                // KEEP horizontalDragOffset - event stays visually parked at new day
-                                // DO NOT reset to 0! It needs to stay for visual consistency
+                                if dayChange != 0 {
+                                    // Save the change to calendar and mark as moved
+                                    handleHorizontalDragEnd(dayChange: dayChange)
+                                    hasBeenMoved = true
+                                    print("🎯 Event parked at new day: \(dayChange)")
+                                    // KEEP horizontalDragOffset - event stays visually parked at new day
+                                    // DO NOT reset to 0! It needs to stay for visual consistency
+                                } else {
+                                    print("🎯 No day change, reverting")
+                                    withAnimation {
+                                        horizontalDragOffset = 0
+                                    }
+                                }
                             } else {
-                                print("🎯 No day change, reverting")
+                                // Handle horizontal swipe in day/list/month views
+                                let screenWidth = UIScreen.main.bounds.width
+                                let threshold = screenWidth / 3.0
+
+                                if abs(value.translation.width) > threshold {
+                                    print("🎯 Horizontal swipe completed: \(value.translation.width > 0 ? "right" : "left")")
+                                    // Future: trigger swipe actions here
+                                }
+
+                                // Always reset for swipe gestures
                                 withAnimation {
                                     horizontalDragOffset = 0
                                 }
