@@ -964,6 +964,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				50C1FEB52EA6AA480037FA07 /* AIManagerTests.swift in Sources */,
+				50C1FEB12EA6AA480037FA07 /* CalendarManagerTests.swift in Sources */,
+				50C1FEB42EA6AA480037FA07 /* MockEventStore.swift in Sources */,
+				50C1FEB32EA6AA480037FA07 /* SyncManagerTests.swift in Sources */,
+				50C1FEB22EA6AA480037FA07 /* TestHelpers.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
