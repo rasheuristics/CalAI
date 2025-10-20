@@ -48,6 +48,15 @@ struct UnifiedEvent: Identifiable {
         }
         return sourceLabel
     }
+
+    /// Get the display color for this event (title-based, with custom override support)
+    var displayColor: Color {
+        return EventColorManager.shared.getColor(
+            for: id,
+            title: title,
+            defaultColor: calendarColor
+        )
+    }
 }
 
 struct ConflictingEvent: Identifiable {

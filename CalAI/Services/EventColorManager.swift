@@ -1,12 +1,13 @@
 import Foundation
 import SwiftUI
 
-/// Manages custom colors for events
+/// Manages custom colors for events based on title
 class EventColorManager: ObservableObject {
     static let shared = EventColorManager()
 
     private let defaults = UserDefaults.standard
-    private let customColorsKey = "eventCustomColors"
+    private let titleColorsKey = "eventTitleColors" // Changed from customColorsKey
+    private let customColorsKey = "eventCustomColors" // Keep for migration
     private let useCustomColorKey = "eventUseCustomColor"
 
     // Predefined color options for quick selection
@@ -25,11 +26,63 @@ class EventColorManager: ObservableObject {
         Color(red: 99/255, green: 99/255, blue: 102/255)    // Dark Gray
     ]
 
-    private init() {}
+    private init() {
+        migrateLegacyColors()
+    }
 
-    // MARK: - Custom Color Management
+    // MARK: - Migration
 
-    /// Set a custom color for an event
+    /// Migrate old eventId-based colors to title-based colors
+    private func migrateLegacyColors() {
+        // This is a one-time migration - old eventId colors are no longer used
+        // New system uses event titles for consistent coloring
+    }
+
+    // MARK: - Title-Based Color Management
+
+    /// Get color for an event title (automatic assignment)
+    func getColorForTitle(_ title: String) -> Color {
+        // Check if user has set a custom color for this title
+        if let customColor = getTitleColor(for: title) {
+            return customColor
+        }
+
+        // Generate consistent color based on title hash
+        return generateColorFromTitle(title)
+    }
+
+    /// Set a custom color for an event title
+    func setTitleColor(_ color: Color, for title: String) {
+        objectWillChange.send()
+        var colors = getTitleColors()
+        colors[title] = color.toHex()
+        saveTitleColors(colors)
+    }
+
+    /// Get custom color for a title (if set by user)
+    func getTitleColor(for title: String) -> Color? {
+        let colors = getTitleColors()
+        guard let hexString = colors[title] else { return nil }
+        return Color(hex: hexString)
+    }
+
+    /// Remove custom color for a title
+    func removeTitleColor(for title: String) {
+        objectWillChange.send()
+        var colors = getTitleColors()
+        colors.removeValue(forKey: title)
+        saveTitleColors(colors)
+    }
+
+    /// Check if title has custom color
+    func hasTitleColor(for title: String) -> Bool {
+        let colors = getTitleColors()
+        return colors[title] != nil
+    }
+
+    // MARK: - Event-Specific Color Override (for individual events with same title)
+
+    /// Set a custom color for a specific event (overrides title-based color)
     func setCustomColor(_ color: Color, for eventId: String) {
         objectWillChange.send()
         var colors = getCustomColors()
@@ -37,14 +90,14 @@ class EventColorManager: ObservableObject {
         saveCustomColors(colors)
     }
 
-    /// Get custom color for an event
+    /// Get custom color for a specific event
     func getCustomColor(for eventId: String) -> Color? {
         let colors = getCustomColors()
         guard let hexString = colors[eventId] else { return nil }
         return Color(hex: hexString)
     }
 
-    /// Remove custom color for an event
+    /// Remove custom color for a specific event
     func removeCustomColor(for eventId: String) {
         objectWillChange.send()
         var colors = getCustomColors()
@@ -52,10 +105,26 @@ class EventColorManager: ObservableObject {
         saveCustomColors(colors)
     }
 
-    /// Check if event has custom color
+    /// Check if event has custom color override
     func hasCustomColor(for eventId: String) -> Bool {
         let colors = getCustomColors()
         return colors[eventId] != nil
+    }
+
+    /// Get final color for an event (checks custom > title-based > default)
+    func getColor(for eventId: String, title: String, defaultColor: Color?) -> Color {
+        // 1. Check if this specific event has a custom color
+        if let customColor = getCustomColor(for: eventId) {
+            return customColor
+        }
+
+        // 2. Check if the title has a custom color
+        if let titleColor = getTitleColor(for: title) {
+            return titleColor
+        }
+
+        // 3. Use automatic title-based color (ignore calendar color)
+        return generateColorFromTitle(title)
     }
 
     // MARK: - Use Custom Color Flag
@@ -76,6 +145,14 @@ class EventColorManager: ObservableObject {
 
     // MARK: - Private Storage Helpers
 
+    private func getTitleColors() -> [String: String] {
+        return defaults.dictionary(forKey: titleColorsKey) as? [String: String] ?? [:]
+    }
+
+    private func saveTitleColors(_ colors: [String: String]) {
+        defaults.set(colors, forKey: titleColorsKey)
+    }
+
     private func getCustomColors() -> [String: String] {
         return defaults.dictionary(forKey: customColorsKey) as? [String: String] ?? [:]
     }
@@ -90,6 +167,16 @@ class EventColorManager: ObservableObject {
 
     private func saveUseCustomColorFlags(_ flags: [String: Bool]) {
         defaults.set(flags, forKey: useCustomColorKey)
+    }
+
+    // MARK: - Color Generation
+
+    /// Generate a consistent color based on title hash
+    private func generateColorFromTitle(_ title: String) -> Color {
+        // Use hash to consistently assign the same color to the same title
+        let hash = abs(title.hashValue)
+        let colorIndex = hash % Self.predefinedColors.count
+        return Self.predefinedColors[colorIndex]
     }
 }
 
