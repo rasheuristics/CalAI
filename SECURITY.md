@@ -8,7 +8,8 @@ CalAI uses iOS Keychain for secure storage of all API keys and sensitive credent
 
 1. **Anthropic API Key** (for Claude AI)
 2. **OpenAI API Key** (for GPT models)
-3. **OpenWeatherMap API Key** (for weather data)
+3. **OpenWeatherMap API Key** (for weather data - fallback only)
+4. **WeatherKit** (Primary weather service - requires Apple Developer Program)
 
 ### Security Features
 
@@ -118,11 +119,36 @@ If automatic migration fails:
 2. Delete and reinstall the app
 3. Re-enter your API keys manually
 
+### WeatherKit Configuration
+
+**Primary Weather Service**: iOS 16+ uses WeatherKit (no API key needed)
+
+#### Setup WeatherKit (Requires Apple Developer Program)
+1. Open project in Xcode
+2. Go to **Signing & Capabilities** tab
+3. Click **"+ Capability"** → Add **WeatherKit**
+4. Xcode automatically:
+   - Updates App Identifier in Developer Portal
+   - Generates new provisioning profile
+   - Enables WeatherKit entitlement
+5. Clean and rebuild project
+
+**Detailed Instructions**: See `WEATHERKIT_FIX_GUIDE.md`
+
+#### Fallback: OpenWeatherMap (Free)
+If WeatherKit is not available:
+1. Sign up at https://openweathermap.org/api
+2. Get free API key (1,000 calls/day)
+3. Enter in **Settings** → **Morning Briefing Settings**
+
+**Priority**: WeatherKit (primary) → OpenWeatherMap (fallback)
+
 ### Code Reference
 
 **SecureStorage Implementation**: `CalAI/Utilities/SecureStorage.swift`
 **API Key Configuration**: `CalAI/Config.swift`
 **Weather API Management**: `CalAI/Features/MorningBriefing/WeatherService.swift`
+**WeatherKit Entitlements**: `CalAI/SupportingFiles/CalAI.entitlements`
 
 ### Reporting Security Issues
 

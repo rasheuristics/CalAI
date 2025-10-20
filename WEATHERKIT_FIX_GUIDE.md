@@ -1,66 +1,98 @@
-# WeatherKit Error 2 Fix Guide
+# WeatherKit Fix Guide - Automatic Signing
 
-## Problem
-You're getting: `WeatherDaemon.WDSJWTAuthenticatorServiceListener.Errors error 2`
+**Issue:** WeatherKit authentication failing with "Error 2" - Provisioning profile missing WeatherKit entitlement
 
-This means WeatherKit authentication is failing even though you have:
-- ✅ Paid Apple Developer Account
-- ✅ WeatherKit enabled in Developer Portal
-- ✅ WeatherKit entitlement in CalAI.entitlements file
+**Solution:** Add WeatherKit capability in Xcode (5 minutes)
 
-## The Solution: Regenerate Provisioning Profile
+**Status:** ✅ Entitlement already in code, just needs Xcode sync
 
-### Option A: Let Xcode Auto-Generate (Recommended)
+---
 
-1. Open Xcode project
-2. Select **CalAI** target (top-left)
-3. Go to **Signing & Capabilities** tab
-4. Under **Team**, click the dropdown and:
-   - Select "None"
-   - Then select your team again
-5. This forces Xcode to regenerate the provisioning profile with WeatherKit
-6. Clean Build Folder (Cmd+Shift+K)
-7. Build and Run (Cmd+R)
+## Prerequisites
 
-### Option B: Manual Provisioning Profile Regeneration
+- ✅ Active Apple Developer Account
+- ✅ Xcode installed
+- ✅ Project using Automatic Signing
+- ✅ Internet connection
 
-1. Go to: https://developer.apple.com/account/resources/profiles/list
-2. Find your provisioning profile for `com.rasheuristics.calendarweaver`
-3. Click on it and click **Delete**
-4. Click **+** to create a new profile
-5. Choose **iOS App Development** (or Distribution if releasing)
-6. Select your App ID: `com.rasheuristics.calendarweaver`
-7. Select your certificate
-8. Select your device
-9. Give it a name and click **Generate**
-10. Download the profile
-11. Double-click to install it in Xcode
-12. In Xcode → Signing & Capabilities → Select the new profile
-13. Clean Build Folder (Cmd+Shift+K)
-14. Build and Run (Cmd+R)
+---
 
-### Option C: Add WeatherKit Capability in Xcode
+## Step-by-Step Instructions
 
-1. Open Xcode project
-2. Select **CalAI** target
-3. Go to **Signing & Capabilities** tab
-4. Click **+ Capability** (top-left)
-5. Search for "WeatherKit"
-6. Add it (even though entitlements file already has it)
-7. This forces Xcode to update the profile
-8. Clean Build Folder (Cmd+Shift+K)
-9. Build and Run (Cmd+R)
+### Step 1: Open Project in Xcode
 
-## Verify Fix
+1. Launch **Xcode**
+2. Open `CalAI.xcodeproj` from:
+   ```
+   /Users/btessema/Desktop/CalAI/CalAI/CalAI.xcodeproj
+   ```
+3. Wait for Xcode to fully load the project
 
-After following one of the above options, run the app and check console:
-- ✅ Should see: `WeatherKit data received`
-- ❌ If still error 2: Try Option B (manual profile regeneration)
+---
 
-## If Still Not Working
+### Step 2: Navigate to Signing & Capabilities
 
-The issue might be that WeatherKit service is not activated for your account:
-1. Go to: https://developer.apple.com/account
-2. Click on your account name (top-right)
-3. Verify you have a **paid** Apple Developer Program membership
-4. WeatherKit requires an **active paid subscription** (not expired)
+1. In the **Project Navigator** (left sidebar), click on **CalAI** (blue icon at top)
+2. Select the **CalAI** target (under TARGETS section)
+3. Click the **Signing & Capabilities** tab at the top
+
+You should see:
+```
+✓ Signing (Automatically manage signing ✓)
+✓ Keychain Sharing
+```
+
+---
+
+### Step 3: Add WeatherKit Capability
+
+1. Click the **"+ Capability"** button (top-left of the Signing & Capabilities pane)
+2. In the search box, type: **WeatherKit**
+3. Double-click **"WeatherKit"** to add it
+
+**What happens automatically:**
+- ✅ Xcode contacts Apple Developer Portal
+- ✅ Updates App Identifier: `com.rasheuristics.calendarweaver`
+- ✅ Generates new provisioning profile with WeatherKit
+- ✅ Downloads and installs profile automatically
+- ✅ Updates entitlements file
+
+**Expected result:**
+You should now see:
+```
+✓ Signing (Automatically manage signing ✓)
+✓ Keychain Sharing
+✓ WeatherKit  ← NEW!
+```
+
+---
+
+### Step 4: Clean Build Folder
+
+1. In Xcode menu: **Product** → **Clean Build Folder** (⇧⌘K)
+2. Wait for "Clean Succeeded" message
+
+---
+
+### Step 5: Rebuild and Test
+
+1. Build the project: **Product** → **Build** (⌘B)
+2. Run on device: **Product** → **Run** (⌘R)
+3. Navigate to Morning Briefing
+4. Grant location permission when prompted
+5. Verify weather data displays
+
+---
+
+## Success Criteria
+
+✅ **Fix Complete When:**
+1. WeatherKit capability visible in Xcode
+2. Project builds successfully
+3. Weather data appears in Morning Briefing
+4. No "Error 2" in console logs
+
+---
+
+**Estimated Time:** 5 minutes
+**Difficulty:** ⭐ Easy
