@@ -277,7 +277,7 @@ class ConversationalAIService {
             "model": Config.openAIModel,
             "messages": messages,
             "temperature": 0.3,  // Lower = more deterministic
-            "max_tokens": 500
+            "max_tokens": 1500  // Increased to handle longer event lists and complete JSON responses
         ]
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
