@@ -3237,7 +3237,7 @@ struct TasksTabView: View {
     @State private var showingTaskEdit = false
     @State private var showingTaskPlanning = false
     @State private var selectedTask: (task: EventTask, eventId: String)?
-    @State private var selectedTaskId: String? = nil // Track which task shows action buttons
+    @State private var selectedTaskId: UUID? = nil // Track which task shows action buttons
 
     enum TaskFilter: String, CaseIterable {
         case all = "All"
@@ -3306,7 +3306,7 @@ struct TasksTabView: View {
                             set: { newTask in
                                 selected.task = newTask
                                 // Save the updated task
-                                taskManager.updateTask(newTask, in: selected.eventId)
+                                taskManager.updateTask(newTask, for: selected.eventId)
                             }
                         ),
                         fontManager: fontManager,
@@ -4066,15 +4066,14 @@ struct TaskPlanningView: View {
                         .fill(Color(.systemGray5))
                         .frame(width: 40, height: 40)
 
-                    if option == .today || option == .tomorrow {
-                        let formatter = DateFormatter()
-                        formatter.dateFormat = "d"
-                        let date = option == .today ? Date() : Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-                        Text(formatter.string(from: date))
-                            .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                    } else {
-                        Image(systemName: option.icon)
-                            .font(.system(size: 18))
+                    Group {
+                        if option == .today || option == .tomorrow {
+                            Text(getDayNumber(for: option))
+                                .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                        } else {
+                            Image(systemName: option.icon)
+                                .font(.system(size: 18))
+                        }
                     }
                 }
 
@@ -4146,6 +4145,13 @@ struct TaskPlanningView: View {
     }
 
     // MARK: - Helper Methods
+
+    private func getDayNumber(for option: QuickOption) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        let date = option == .today ? Date() : Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        return formatter.string(from: date)
+    }
 
     private func handleQuickOption(_ option: QuickOption) {
         if let date = option.getDate() {
