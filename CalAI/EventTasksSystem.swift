@@ -3233,11 +3233,9 @@ struct TasksTabView: View {
     @State private var showDatePicker: Bool = false
     @FocusState private var isTaskFieldFocused: Bool
 
-    // Task edit and planning sheets
-    @State private var showingTaskEdit = false
-    @State private var showingTaskPlanning = false
+    // Task detail sheet
+    @State private var showingTaskDetail = false
     @State private var selectedTask: (task: EventTask, eventId: String)?
-    @State private var selectedTaskId: UUID? = nil // Track which task shows action buttons
 
     enum TaskFilter: String, CaseIterable {
         case all = "All"
@@ -3289,18 +3287,9 @@ struct TasksTabView: View {
                     floatingPlusButton
                 }
             }
-            .sheet(isPresented: $showingTaskEdit) {
-                if let selected = selectedTask {
-                    TaskEditSheet(
-                        task: selected.task,
-                        fontManager: fontManager,
-                        eventId: selected.eventId
-                    )
-                }
-            }
-            .sheet(isPresented: $showingTaskPlanning) {
+            .sheet(isPresented: $showingTaskDetail) {
                 if var selected = selectedTask {
-                    TaskPlanningView(
+                    TaskDetailView(
                         task: Binding(
                             get: { selected.task },
                             set: { newTask in
@@ -3313,7 +3302,6 @@ struct TasksTabView: View {
                         eventId: selected.eventId,
                         onSave: {
                             // Task is already saved via binding
-                            showingTaskPlanning = false
                         }
                     )
                 }
@@ -3366,85 +3354,48 @@ struct TasksTabView: View {
         }
     }
 
-    // MARK: - Simplified Task Row with Plan Button
+    // MARK: - Simplified Task Row
 
     private func simplifiedTaskRow(task: EventTask, eventId: String) -> some View {
-        VStack(spacing: 0) {
-            // Main task row - just checkbox and title
-            HStack(alignment: .center, spacing: 12) {
-                // Checkbox
-                Button(action: {
-                    taskManager.toggleTaskCompletion(task.id, in: eventId)
-                }) {
-                    Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 24))
-                        .foregroundColor(task.isCompleted ? .green : .gray)
-                }
+        HStack(alignment: .center, spacing: 12) {
+            // Checkbox
+            Button(action: {
+                taskManager.toggleTaskCompletion(task.id, in: eventId)
+            }) {
+                Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 24))
+                    .foregroundColor(task.isCompleted ? .green : .gray)
+            }
 
-                // Task Title Only
-                Text(task.title)
-                    .dynamicFont(size: 16, fontManager: fontManager)
-                    .foregroundColor(task.isCompleted ? .secondary : .primary)
-                    .overlay(
-                        GeometryReader { geometry in
-                            if task.isCompleted {
-                                Rectangle()
-                                    .frame(height: 1)
-                                    .foregroundColor(.secondary)
-                                    .offset(y: geometry.size.height / 2)
-                            }
+            // Task Title Only
+            Text(task.title)
+                .dynamicFont(size: 16, fontManager: fontManager)
+                .foregroundColor(task.isCompleted ? .secondary : .primary)
+                .overlay(
+                    GeometryReader { geometry in
+                        if task.isCompleted {
+                            Rectangle()
+                                .frame(height: 1)
+                                .foregroundColor(.secondary)
+                                .offset(y: geometry.size.height / 2)
                         }
-                    )
-
-                Spacer()
-            }
-            .padding()
-            .background(Color(.systemBackground))
-            .contentShape(Rectangle())
-            .onTapGesture {
-                // Toggle action buttons for this task
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    if selectedTaskId == task.id {
-                        selectedTaskId = nil
-                    } else {
-                        selectedTaskId = task.id
                     }
-                }
-            }
+                )
 
-            // Action Buttons (Plan button on left)
-            if selectedTaskId == task.id {
-                HStack(spacing: 12) {
-                    Button(action: {
-                        selectedTask = (task, eventId)
-                        showingTaskPlanning = true
-                        selectedTaskId = nil
-                    }) {
-                        HStack {
-                            Image(systemName: "calendar.badge.clock")
-                            Text("Plan")
-                                .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Color.blue)
-                        .cornerRadius(8)
-                    }
-
-                    Spacer()
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
+            Spacer()
         }
+        .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(selectedTaskId == task.id ? Color.blue : Color(.systemGray4), lineWidth: selectedTaskId == task.id ? 2 : 1)
+                .stroke(Color(.systemGray4), lineWidth: 1)
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectedTask = (task, eventId)
+            showingTaskDetail = true
+        }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive, action: {
                 taskManager.deleteTask(task.id, from: eventId)
@@ -3785,6 +3736,348 @@ struct TaskFilterChip: View {
                     .stroke(isSelected ? Color.clear : Color(.systemGray4), lineWidth: 1)
             )
         }
+    }
+}
+
+// MARK: - Task Detail View
+
+struct TaskDetailView: View {
+    @Environment(\.dismiss) var dismiss
+    @Binding var task: EventTask
+    @ObservedObject var fontManager: FontManager
+    let eventId: String
+    let onSave: () -> Void
+
+    @State private var isEditingDescription: Bool = false
+    @State private var descriptionText: String = ""
+    @State private var showPriorityMenu: Bool = false
+    @State private var showDeadlineMenu: Bool = false
+    @State private var showPlanningView: Bool = false
+
+    enum PriorityOption: String, CaseIterable {
+        case goal = "Goal"
+        case high = "High"
+        case medium = "Medium"
+        case low = "Low"
+        case none = "No priority"
+
+        var icon: String {
+            switch self {
+            case .goal: return "flag.fill"
+            case .high: return "exclamationmark.3"
+            case .medium: return "exclamationmark.2"
+            case .low: return "exclamationmark"
+            case .none: return "minus.circle"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .goal: return .purple
+            case .high: return .red
+            case .medium: return .orange
+            case .low: return .blue
+            case .none: return .gray
+            }
+        }
+    }
+
+    enum DeadlineOption: String, CaseIterable {
+        case today = "Today"
+        case tomorrow = "Tomorrow"
+        case nextWeek = "Next Week"
+        case nextWeekend = "Next Weekend"
+        case remove = "Remove"
+
+        var icon: String {
+            switch self {
+            case .today: return "calendar.badge.clock"
+            case .tomorrow: return "calendar"
+            case .nextWeek: return "calendar.badge.plus"
+            case .nextWeekend: return "calendar.badge.exclamationmark"
+            case .remove: return "xmark.circle"
+            }
+        }
+    }
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Top Buttons: Plan and Duration
+                    HStack(spacing: 12) {
+                        Button(action: {
+                            showPlanningView = true
+                        }) {
+                            HStack {
+                                Image(systemName: "calendar.badge.clock")
+                                Text("Plan")
+                                    .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.blue)
+                            .cornerRadius(10)
+                        }
+
+                        Button(action: {
+                            // Duration action
+                        }) {
+                            HStack {
+                                Image(systemName: "timer")
+                                Text("Duration")
+                                    .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.blue)
+                            .cornerRadius(10)
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    // Task Title with Checkbox
+                    HStack(spacing: 12) {
+                        Button(action: {
+                            task.isCompleted.toggle()
+                            onSave()
+                        }) {
+                            Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 28))
+                                .foregroundColor(task.isCompleted ? .green : .gray)
+                        }
+
+                        Text(task.title)
+                            .dynamicFont(size: 20, weight: .semibold, fontManager: fontManager)
+                            .foregroundColor(task.isCompleted ? .secondary : .primary)
+
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+
+                    // Description Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        if isEditingDescription {
+                            VStack(spacing: 12) {
+                                TextEditor(text: $descriptionText)
+                                    .frame(minHeight: 100)
+                                    .padding(8)
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(8)
+
+                                HStack {
+                                    Button("Cancel") {
+                                        isEditingDescription = false
+                                        descriptionText = task.description ?? ""
+                                    }
+                                    .foregroundColor(.red)
+
+                                    Spacer()
+
+                                    Button("Save") {
+                                        task.description = descriptionText.isEmpty ? nil : descriptionText
+                                        isEditingDescription = false
+                                        onSave()
+                                    }
+                                    .foregroundColor(.blue)
+                                    .fontWeight(.semibold)
+                                }
+                            }
+                        } else {
+                            Button(action: {
+                                descriptionText = task.description ?? ""
+                                isEditingDescription = true
+                            }) {
+                                HStack {
+                                    Text(task.description ?? "Add description...")
+                                        .dynamicFont(size: 15, fontManager: fontManager)
+                                        .foregroundColor(task.description == nil ? .secondary : .primary)
+                                        .multilineTextAlignment(.leading)
+
+                                    Spacer()
+
+                                    Image(systemName: "pencil")
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    // Project and Tag Buttons
+                    HStack(spacing: 12) {
+                        Button(action: {
+                            // Project action
+                        }) {
+                            HStack {
+                                Image(systemName: "folder")
+                                Text("Project")
+                                    .dynamicFont(size: 15, fontManager: fontManager)
+                            }
+                            .foregroundColor(.primary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                        }
+
+                        Button(action: {
+                            // Tag action
+                        }) {
+                            HStack {
+                                Image(systemName: "tag")
+                                Text("Tag")
+                                    .dynamicFont(size: 15, fontManager: fontManager)
+                            }
+                            .foregroundColor(.primary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    // Bottom Icons: Priority, Flag, Link
+                    HStack(spacing: 24) {
+                        // Priority Icon
+                        Menu {
+                            ForEach(PriorityOption.allCases, id: \.self) { option in
+                                Button(action: {
+                                    setPriority(option)
+                                }) {
+                                    Label(option.rawValue, systemImage: option.icon)
+                                }
+                            }
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.circle")
+                                    .font(.system(size: 28))
+                                    .foregroundColor(priorityColor())
+                                Text("Priority")
+                                    .dynamicFont(size: 12, fontManager: fontManager)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Spacer()
+
+                        // Flag Icon (Deadline)
+                        Menu {
+                            ForEach(DeadlineOption.allCases, id: \.self) { option in
+                                Button(action: {
+                                    setDeadline(option)
+                                }) {
+                                    Label(option.rawValue, systemImage: option.icon)
+                                }
+                            }
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: task.dueDate != nil ? "flag.fill" : "flag")
+                                    .font(.system(size: 28))
+                                    .foregroundColor(task.dueDate != nil ? .orange : .gray)
+                                Text("Deadline")
+                                    .dynamicFont(size: 12, fontManager: fontManager)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Spacer()
+
+                        // Link Icon
+                        Button(action: {
+                            // Link action
+                        }) {
+                            VStack(spacing: 4) {
+                                Image(systemName: "link.circle")
+                                    .font(.system(size: 28))
+                                    .foregroundColor(.gray)
+                                Text("Link")
+                                    .dynamicFont(size: 12, fontManager: fontManager)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 40)
+                    .padding(.top, 20)
+
+                    Spacer(minLength: 40)
+                }
+                .padding(.vertical)
+            }
+            .navigationTitle("Task Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .foregroundColor(.blue)
+                }
+            }
+        }
+        .sheet(isPresented: $showPlanningView) {
+            TaskPlanningView(
+                task: $task,
+                fontManager: fontManager,
+                eventId: eventId,
+                onSave: onSave
+            )
+        }
+    }
+
+    // MARK: - Helper Methods
+
+    private func priorityColor() -> Color {
+        switch task.priority {
+        case .high: return .red
+        case .medium: return .orange
+        case .low: return .blue
+        }
+    }
+
+    private func setPriority(_ option: PriorityOption) {
+        switch option {
+        case .goal, .high:
+            task.priority = .high
+        case .medium:
+            task.priority = .medium
+        case .low, .none:
+            task.priority = .low
+        }
+        onSave()
+    }
+
+    private func setDeadline(_ option: DeadlineOption) {
+        let calendar = Calendar.current
+
+        switch option {
+        case .today:
+            task.dueDate = Date()
+        case .tomorrow:
+            task.dueDate = calendar.date(byAdding: .day, value: 1, to: Date())
+        case .nextWeek:
+            task.dueDate = calendar.date(byAdding: .weekOfYear, value: 1, to: Date())
+        case .nextWeekend:
+            // Find next Saturday
+            var dateComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
+            dateComponents.weekday = 7 // Saturday
+            if let nextSaturday = calendar.date(from: dateComponents),
+               nextSaturday <= Date() {
+                task.dueDate = calendar.date(byAdding: .weekOfYear, value: 1, to: nextSaturday)
+            } else {
+                task.dueDate = calendar.date(from: dateComponents)
+            }
+        case .remove:
+            task.dueDate = nil
+        }
+        onSave()
     }
 }
 
