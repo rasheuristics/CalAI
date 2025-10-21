@@ -64,7 +64,7 @@ struct ContentView: View {
                         Text("Tasks")
                     }
                     .tag(3)
-                    .badge(activeTaskCount > 0 ? activeTaskCount : nil)
+                    .badge(activeTaskCount)
 
                 // PHASE 12 DISABLED - Actions Tab
                 // ActionItemsView(postMeetingService: postMeetingService, fontManager: fontManager, calendarManager: calendarManager)
