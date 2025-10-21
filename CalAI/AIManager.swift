@@ -450,10 +450,41 @@ class AIManager: ObservableObject {
         }
 
         // FALLBACK: This returns the basic Anthropic message
-        print("⚠️ FALLBACK RETURN - Using action.message instead of rich narrative")
+        print("⚠️ FALLBACK RETURN")
         print("   Intent: \(action.intent)")
         print("   Message: \(action.message)")
         print("   This should only happen for non-query intents or failed date parsing")
+
+        // If this is a query intent that somehow got here, generate a proper response
+        if action.intent == "query" {
+            print("🔧 Query intent in fallback - generating proper response")
+            let (extractedStart, extractedEnd) = extractTimeRange(from: originalTranscript)
+            let relevantEvents = calendarEvents.filter { $0.startDate >= extractedStart && $0.startDate < extractedEnd }
+
+            let voiceResponse = voiceResponseGenerator.generateQueryResponse(
+                events: relevantEvents,
+                timeRange: (start: extractedStart, end: extractedEnd)
+            )
+
+            let eventResults = relevantEvents.map { event in
+                EventResult(
+                    id: event.id,
+                    title: event.title,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    location: event.location,
+                    source: event.source.rawValue,
+                    color: nil
+                )
+            }
+
+            return AICalendarResponse(
+                message: voiceResponse.fullMessage,
+                command: CalendarCommand(type: .queryEvents, queryStartDate: extractedStart, queryEndDate: extractedEnd),
+                eventResults: eventResults,
+                shouldContinueListening: voiceResponse.followUp != nil
+            )
+        }
 
         return AICalendarResponse(
             message: action.message,
