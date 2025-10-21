@@ -3222,7 +3222,7 @@ struct TasksTabView: View {
 
     @StateObject private var taskManager = EventTaskManager.shared
     @State private var showingAddTask = false
-    @State private var selectedFilter: TaskFilter = .all
+    @State private var selectedFilter: TaskFilter = .inbox
 
     // Task entry fields
     @State private var newTaskTitle: String = ""
@@ -3236,16 +3236,22 @@ struct TasksTabView: View {
     // Task detail sheet
     @State private var showingTaskDetail = false
     @State private var selectedTask: (task: EventTask, eventId: String)?
+    @State private var completingTaskId: UUID? = nil // Track task being completed for animation
+
+    // Today view collapsible sections
+    @State private var isTodayTodosExpanded: Bool = true
+    @State private var isTodayDoneExpanded: Bool = false
+    @State private var isTodayCalendarExpanded: Bool = false  // Start collapsed (1 week view)
 
     enum TaskFilter: String, CaseIterable {
-        case all = "All"
+        case inbox = "Inbox"
         case today = "Today"
         case upcoming = "Upcoming"
         case completed = "Completed"
 
         var icon: String {
             switch self {
-            case .all: return "tray.fill"
+            case .inbox: return "tray.fill"
             case .today: return "calendar.badge.clock"
             case .upcoming: return "calendar"
             case .completed: return "checkmark.circle.fill"
@@ -3267,7 +3273,11 @@ struct TasksTabView: View {
                             if filteredTasks.isEmpty {
                                 emptyStateSection
                             } else {
-                                allTasksSection
+                                if selectedFilter == .today {
+                                    todayTasksSection
+                                } else {
+                                    allTasksSection
+                                }
                             }
                         }
                         .padding()
@@ -3332,6 +3342,229 @@ struct TasksTabView: View {
         .background(Color(.systemGray6))
     }
 
+    // MARK: - Today Tasks Section with Collapsible Groups
+
+    private var todayTasksSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Today Calendar Header
+            VStack(alignment: .leading, spacing: 12) {
+                Button(action: {
+                    withAnimation {
+                        isTodayCalendarExpanded.toggle()
+                    }
+                }) {
+                    HStack {
+                        Text("Today")
+                            .dynamicFont(size: 24, weight: .bold, fontManager: fontManager)
+                            .foregroundColor(.primary)
+
+                        Image(systemName: isTodayCalendarExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+
+                // Calendar is always visible
+                miniWeekCalendar
+            }
+            .padding(.bottom, 8)
+
+            Divider()
+
+            // To-Dos Section (Incomplete tasks)
+            VStack(alignment: .leading, spacing: 8) {
+                Button(action: {
+                    withAnimation {
+                        isTodayTodosExpanded.toggle()
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: isTodayTodosExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        Text("To-Dos")
+                            .dynamicFont(size: 18, weight: .bold, fontManager: fontManager)
+                            .foregroundColor(.primary)
+
+                        Text("(\(countTasks(in: todayIncompleteTasks)))")
+                            .dynamicFont(size: 16, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+
+                if isTodayTodosExpanded {
+                    ForEach(todayIncompleteTasks.keys.sorted(), id: \.self) { eventId in
+                        if let tasks = todayIncompleteTasks[eventId],
+                           !tasks.isEmpty,
+                           let event = findEvent(byId: eventId) {
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                // Event Header
+                                EventHeaderView(event: event, fontManager: fontManager)
+
+                                // Tasks for this event
+                                ForEach(tasks) { task in
+                                    simplifiedTaskRow(task: task, eventId: eventId)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+                }
+            }
+
+            // Done Section (Completed tasks)
+            VStack(alignment: .leading, spacing: 8) {
+                Button(action: {
+                    withAnimation {
+                        isTodayDoneExpanded.toggle()
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: isTodayDoneExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        Text("Done")
+                            .dynamicFont(size: 18, weight: .bold, fontManager: fontManager)
+                            .foregroundColor(.primary)
+
+                        Text("(\(countTasks(in: todayCompletedTasks)))")
+                            .dynamicFont(size: 16, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+
+                if isTodayDoneExpanded {
+                    ForEach(todayCompletedTasks.keys.sorted(), id: \.self) { eventId in
+                        if let tasks = todayCompletedTasks[eventId],
+                           !tasks.isEmpty,
+                           let event = findEvent(byId: eventId) {
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                // Event Header
+                                EventHeaderView(event: event, fontManager: fontManager)
+
+                                // Tasks for this event
+                                ForEach(tasks) { task in
+                                    simplifiedTaskRow(task: task, eventId: eventId)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Mini Week Calendar
+
+    private var miniWeekCalendar: some View {
+        let calendar = Calendar.current
+        let today = Date()
+
+        if isTodayCalendarExpanded {
+            // 6 weeks view when expanded
+            return AnyView(sixWeeksCalendar(calendar: calendar, today: today))
+        } else {
+            // Current week view when collapsed
+            return AnyView(currentWeekCalendar(calendar: calendar, today: today))
+        }
+    }
+
+    private func currentWeekCalendar(calendar: Calendar, today: Date) -> some View {
+        let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)) ?? today
+
+        return HStack(spacing: 8) {
+            ForEach(0..<7) { dayOffset in
+                let date = calendar.date(byAdding: .day, value: dayOffset, to: weekStart) ?? today
+                let isToday = calendar.isDate(date, inSameDayAs: today)
+
+                VStack(spacing: 4) {
+                    // Weekday letter
+                    Text(getDayLetter(for: date))
+                        .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+
+                    // Day number - only this gets highlighted
+                    Text("\(calendar.component(.day, from: date))")
+                        .dynamicFont(size: 16, weight: isToday ? .bold : .regular, fontManager: fontManager)
+                        .foregroundColor(isToday ? .white : .primary)
+                        .frame(width: 32, height: 32)
+                        .background(isToday ? Color.blue : Color.clear)
+                        .cornerRadius(16)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func sixWeeksCalendar(calendar: Calendar, today: Date) -> some View {
+        // Get the first day of the month
+        let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: today)) ?? today
+
+        // Get the first day to display (might be from previous month)
+        let firstWeekday = calendar.component(.weekday, from: monthStart)
+        let daysFromPrevMonth = (firstWeekday - calendar.firstWeekday + 7) % 7
+        let calendarStart = calendar.date(byAdding: .day, value: -daysFromPrevMonth, to: monthStart) ?? monthStart
+
+        return VStack(spacing: 8) {
+            // Weekday headers
+            HStack(spacing: 8) {
+                ForEach(0..<7) { dayOffset in
+                    let date = calendar.date(byAdding: .day, value: dayOffset, to: calendarStart) ?? calendarStart
+                    Text(getDayLetter(for: date))
+                        .dynamicFont(size: 12, weight: .medium, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+
+            // 6 weeks of days
+            ForEach(0..<6) { weekIndex in
+                HStack(spacing: 8) {
+                    ForEach(0..<7) { dayIndex in
+                        let dayOffset = weekIndex * 7 + dayIndex
+                        let date = calendar.date(byAdding: .day, value: dayOffset, to: calendarStart) ?? calendarStart
+                        let isToday = calendar.isDate(date, inSameDayAs: today)
+                        let isCurrentMonth = calendar.component(.month, from: date) == calendar.component(.month, from: today)
+
+                        // Day number - only this gets highlighted
+                        Text("\(calendar.component(.day, from: date))")
+                            .dynamicFont(size: 16, weight: isToday ? .bold : .regular, fontManager: fontManager)
+                            .foregroundColor(isToday ? .white : (isCurrentMonth ? .primary : .secondary))
+                            .frame(width: 32, height: 32)
+                            .background(isToday ? Color.blue : Color.clear)
+                            .cornerRadius(16)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func getDayLetter(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "E"
+        let fullDay = formatter.string(from: date)
+        return String(fullDay.prefix(1))
+    }
+
     // MARK: - All Tasks Section
 
     private var allTasksSection: some View {
@@ -3360,7 +3593,7 @@ struct TasksTabView: View {
         HStack(alignment: .center, spacing: 12) {
             // Checkbox
             Button(action: {
-                taskManager.toggleTaskCompletion(task.id, in: eventId)
+                handleTaskToggle(task: task, eventId: eventId)
             }) {
                 Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 24))
@@ -3391,6 +3624,8 @@ struct TasksTabView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color(.systemGray4), lineWidth: 1)
         )
+        .opacity(completingTaskId == task.id ? 0 : 1)
+        .scaleEffect(completingTaskId == task.id ? 0.8 : 1.0)
         .contentShape(Rectangle())
         .onTapGesture {
             selectedTask = (task, eventId)
@@ -3402,6 +3637,24 @@ struct TasksTabView: View {
             }) {
                 Label("Delete", systemImage: "trash")
             }
+        }
+    }
+
+    private func handleTaskToggle(task: EventTask, eventId: String) {
+        // Mark as completing
+        completingTaskId = task.id
+
+        // Animate the task
+        withAnimation(.easeInOut(duration: 0.3)) {
+            // Just trigger the animation
+        }
+
+        // Toggle completion after a short delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            taskManager.toggleTaskCompletion(task.id, in: eventId)
+
+            // Reset the completing state
+            completingTaskId = nil
         }
     }
 
@@ -3428,8 +3681,8 @@ struct TasksTabView: View {
 
     private var emptyStateMessage: String {
         switch selectedFilter {
-        case .all:
-            return "Create tasks to stay organized"
+        case .inbox:
+            return "Your inbox is empty"
         case .today:
             return "No tasks due today"
         case .upcoming:
@@ -3562,14 +3815,46 @@ struct TasksTabView: View {
 
     // MARK: - Helpers
 
+    private var todayIncompleteTasks: [String: [EventTask]] {
+        var result: [String: [EventTask]] = [:]
+
+        for (eventId, eventTasks) in taskManager.eventTasks {
+            let filtered = eventTasks.tasks.filter { task in
+                isToday(task.dueDate) && !task.isCompleted
+            }
+
+            if !filtered.isEmpty {
+                result[eventId] = filtered
+            }
+        }
+
+        return result
+    }
+
+    private var todayCompletedTasks: [String: [EventTask]] {
+        var result: [String: [EventTask]] = [:]
+
+        for (eventId, eventTasks) in taskManager.eventTasks {
+            let filtered = eventTasks.tasks.filter { task in
+                isToday(task.dueDate) && task.isCompleted
+            }
+
+            if !filtered.isEmpty {
+                result[eventId] = filtered
+            }
+        }
+
+        return result
+    }
+
     private var filteredTasks: [String: [EventTask]] {
         var result: [String: [EventTask]] = [:]
 
         for (eventId, eventTasks) in taskManager.eventTasks {
             let filtered = eventTasks.tasks.filter { task in
                 switch selectedFilter {
-                case .all:
-                    return true
+                case .inbox:
+                    return !task.isCompleted
                 case .today:
                     return isToday(task.dueDate)
                 case .upcoming:
@@ -3593,8 +3878,8 @@ struct TasksTabView: View {
         for eventTasks in taskManager.eventTasks.values {
             count += eventTasks.tasks.filter { task in
                 switch filter {
-                case .all:
-                    return true
+                case .inbox:
+                    return !task.isCompleted
                 case .today:
                     return isToday(task.dueDate)
                 case .upcoming:
@@ -3611,6 +3896,10 @@ struct TasksTabView: View {
     private func isToday(_ date: Date?) -> Bool {
         guard let date = date else { return false }
         return Calendar.current.isDateInToday(date)
+    }
+
+    private func countTasks(in taskDict: [String: [EventTask]]) -> Int {
+        return taskDict.values.reduce(0) { $0 + $1.count }
     }
 
     private func findEvent(byId id: String) -> UnifiedEvent? {
@@ -3753,6 +4042,8 @@ struct TaskDetailView: View {
     @State private var showPriorityMenu: Bool = false
     @State private var showDeadlineMenu: Bool = false
     @State private var showPlanningView: Bool = false
+    @State private var showTaskInfo: Bool = false
+    @State private var showDeleteConfirmation: Bool = false
 
     enum PriorityOption: String, CaseIterable {
         case goal = "Goal"
@@ -4020,6 +4311,34 @@ struct TaskDetailView: View {
                     }
                     .foregroundColor(.blue)
                 }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button(action: {
+                            showTaskInfoAction()
+                        }) {
+                            Label("Info", systemImage: "info.circle")
+                        }
+
+                        Button(action: {
+                            duplicateTaskAction()
+                        }) {
+                            Label("Duplicate", systemImage: "doc.on.doc")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive, action: {
+                            deleteTaskAction()
+                        }) {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 20))
+                            .foregroundColor(.primary)
+                    }
+                }
             }
         }
         .sheet(isPresented: $showPlanningView) {
@@ -4030,9 +4349,71 @@ struct TaskDetailView: View {
                 onSave: onSave
             )
         }
+        .alert("Task Information", isPresented: $showTaskInfo) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(getTaskInfoMessage())
+        }
+        .alert("Delete Task", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                EventTaskManager.shared.deleteTask(task.id, from: eventId)
+                dismiss()
+            }
+        } message: {
+            Text("Are you sure you want to delete '\(task.title)'? This action cannot be undone.")
+        }
     }
 
     // MARK: - Helper Methods
+
+    private func getTaskInfoMessage() -> String {
+        var info = ""
+        info += "Created: \(formatDate(task.createdAt))\n"
+        if task.isCompleted, let completedDate = task.completedAt {
+            info += "Completed: \(formatDate(completedDate))\n"
+        }
+        if let dueDate = task.dueDate {
+            info += "Due: \(formatDate(dueDate))\n"
+        }
+        info += "Priority: \(task.priority.rawValue)\n"
+        info += "Category: \(task.category.rawValue)\n"
+        if let estimatedMinutes = task.estimatedMinutes {
+            info += "Estimated time: \(estimatedMinutes) minutes"
+        }
+        return info
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func showTaskInfoAction() {
+        showTaskInfo = true
+    }
+
+    private func duplicateTaskAction() {
+        let duplicatedTask = EventTask(
+            title: "\(task.title) (Copy)",
+            description: task.description,
+            isCompleted: false,
+            priority: task.priority,
+            category: task.category,
+            timing: task.timing,
+            estimatedMinutes: task.estimatedMinutes,
+            dueDate: task.dueDate,
+            subtasks: task.subtasks
+        )
+        EventTaskManager.shared.addTask(duplicatedTask, to: eventId)
+        dismiss()
+    }
+
+    private func deleteTaskAction() {
+        showDeleteConfirmation = true
+    }
 
     private func priorityColor() -> Color {
         switch task.priority {
