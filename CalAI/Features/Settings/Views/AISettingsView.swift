@@ -289,7 +289,7 @@ struct VoiceSelectionView: View {
     }
 
     private func testVoice(_ voice: AVSpeechSynthesisVoice) {
-        let utterance = AVSpeechUtterance(string: "Hello, this is \(voice.name).")
+        let utterance = AVSpeechUtterance(string: "Hi, this is \(voice.name)")
         utterance.voice = voice
         let synthesizer = AVSpeechSynthesizer()
         synthesizer.speak(utterance)
