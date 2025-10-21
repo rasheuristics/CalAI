@@ -3233,9 +3233,11 @@ struct TasksTabView: View {
     @State private var showDatePicker: Bool = false
     @FocusState private var isTaskFieldFocused: Bool
 
-    // Task edit sheet
+    // Task edit and planning sheets
     @State private var showingTaskEdit = false
+    @State private var showingTaskPlanning = false
     @State private var selectedTask: (task: EventTask, eventId: String)?
+    @State private var selectedTaskId: String? = nil // Track which task shows action buttons
 
     enum TaskFilter: String, CaseIterable {
         case all = "All"
@@ -3296,6 +3298,26 @@ struct TasksTabView: View {
                     )
                 }
             }
+            .sheet(isPresented: $showingTaskPlanning) {
+                if var selected = selectedTask {
+                    TaskPlanningView(
+                        task: Binding(
+                            get: { selected.task },
+                            set: { newTask in
+                                selected.task = newTask
+                                // Save the updated task
+                                taskManager.updateTask(newTask, in: selected.eventId)
+                            }
+                        ),
+                        fontManager: fontManager,
+                        eventId: selected.eventId,
+                        onSave: {
+                            // Task is already saved via binding
+                            showingTaskPlanning = false
+                        }
+                    )
+                }
+            }
         }
     }
 
@@ -3336,19 +3358,98 @@ struct TasksTabView: View {
 
                     // Tasks for this event
                     ForEach(tasks) { task in
-                        TaskRow(task: task, fontManager: fontManager) {
-                            taskManager.toggleTaskCompletion(task.id, in: eventId)
-                        } onDelete: {
-                            taskManager.deleteTask(task.id, from: eventId)
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selectedTask = (task, eventId)
-                            showingTaskEdit = true
-                        }
+                        simplifiedTaskRow(task: task, eventId: eventId)
                     }
                 }
                 .padding(.vertical, 8)
+            }
+        }
+    }
+
+    // MARK: - Simplified Task Row with Plan Button
+
+    private func simplifiedTaskRow(task: EventTask, eventId: String) -> some View {
+        VStack(spacing: 0) {
+            // Main task row - just checkbox and title
+            HStack(alignment: .center, spacing: 12) {
+                // Checkbox
+                Button(action: {
+                    taskManager.toggleTaskCompletion(task.id, in: eventId)
+                }) {
+                    Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 24))
+                        .foregroundColor(task.isCompleted ? .green : .gray)
+                }
+
+                // Task Title Only
+                Text(task.title)
+                    .dynamicFont(size: 16, fontManager: fontManager)
+                    .foregroundColor(task.isCompleted ? .secondary : .primary)
+                    .overlay(
+                        GeometryReader { geometry in
+                            if task.isCompleted {
+                                Rectangle()
+                                    .frame(height: 1)
+                                    .foregroundColor(.secondary)
+                                    .offset(y: geometry.size.height / 2)
+                            }
+                        }
+                    )
+
+                Spacer()
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .contentShape(Rectangle())
+            .onTapGesture {
+                // Toggle action buttons for this task
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if selectedTaskId == task.id {
+                        selectedTaskId = nil
+                    } else {
+                        selectedTaskId = task.id
+                    }
+                }
+            }
+
+            // Action Buttons (Plan button on left)
+            if selectedTaskId == task.id {
+                HStack(spacing: 12) {
+                    Button(action: {
+                        selectedTask = (task, eventId)
+                        showingTaskPlanning = true
+                        selectedTaskId = nil
+                    }) {
+                        HStack {
+                            Image(systemName: "calendar.badge.clock")
+                            Text("Plan")
+                                .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Color.blue)
+                        .cornerRadius(8)
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(selectedTaskId == task.id ? Color.blue : Color(.systemGray4), lineWidth: selectedTaskId == task.id ? 2 : 1)
+        )
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive, action: {
+                taskManager.deleteTask(task.id, from: eventId)
+            }) {
+                Label("Delete", systemImage: "trash")
             }
         }
     }
@@ -3683,6 +3784,432 @@ struct TaskFilterChip: View {
                 RoundedRectangle(cornerRadius: 20)
                     .stroke(isSelected ? Color.clear : Color(.systemGray4), lineWidth: 1)
             )
+        }
+    }
+}
+
+// MARK: - Task Planning View
+
+struct TaskPlanningView: View {
+    @Environment(\.dismiss) var dismiss
+    @Binding var task: EventTask
+    @ObservedObject var fontManager: FontManager
+    let eventId: String
+    let onSave: () -> Void
+
+    @State private var searchText: String = ""
+    @State private var selectedDate: Date = Date()
+    @State private var selectedTime: Date = Date()
+    @State private var hasTime: Bool = false
+    @State private var duration: TimeInterval = 1800 // 30 minutes default
+    @State private var hasDuration: Bool = false
+    @State private var showCalendarPicker: Bool = false
+    @State private var showTimePicker: Bool = false
+    @State private var showDurationPicker: Bool = false
+
+    enum QuickOption: String, CaseIterable {
+        case today = "Today"
+        case laterToday = "Later today"
+        case tomorrow = "Tomorrow"
+        case thisWeek = "This week"
+        case nextWeek = "Next week"
+        case thisMonth = "This month"
+        case nextMonth = "Next month"
+        case someday = "Someday"
+
+        var icon: String {
+            switch self {
+            case .today: return "calendar"
+            case .laterToday: return "clock"
+            case .tomorrow: return "calendar"
+            case .thisWeek: return "w.square"
+            case .nextWeek: return "arrow.right.square"
+            case .thisMonth: return "m.square"
+            case .nextMonth: return "arrow.right.square"
+            case .someday: return "infinity"
+            }
+        }
+
+        func displayDate() -> String {
+            let calendar = Calendar.current
+            let formatter = DateFormatter()
+
+            switch self {
+            case .today:
+                formatter.dateFormat = "d"
+                let day = formatter.string(from: Date())
+                formatter.dateFormat = "E"
+                let weekday = formatter.string(from: Date())
+                return "\(day) • \(weekday)"
+            case .laterToday:
+                formatter.dateFormat = "E - h:mm a"
+                let later = calendar.date(byAdding: .hour, value: 4, to: Date()) ?? Date()
+                return formatter.string(from: later)
+            case .tomorrow:
+                let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+                formatter.dateFormat = "d"
+                let day = formatter.string(from: tomorrow)
+                formatter.dateFormat = "E"
+                let weekday = formatter.string(from: tomorrow)
+                return "\(day) • \(weekday)"
+            case .thisWeek:
+                let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
+                let endOfWeek = calendar.date(byAdding: .day, value: 6, to: startOfWeek) ?? Date()
+                formatter.dateFormat = "d"
+                return "\(formatter.string(from: startOfWeek))-\(formatter.string(from: endOfWeek)) \(calendar.component(.month, from: Date()))"
+            case .nextWeek:
+                let nextWeekStart = calendar.date(byAdding: .weekOfYear, value: 1, to: Date()) ?? Date()
+                let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: nextWeekStart)?.start ?? Date()
+                let endOfWeek = calendar.date(byAdding: .day, value: 6, to: startOfWeek) ?? Date()
+                formatter.dateFormat = "d"
+                return "\(formatter.string(from: startOfWeek))-\(formatter.string(from: endOfWeek))"
+            case .thisMonth:
+                formatter.dateFormat = "MMMM"
+                return formatter.string(from: Date())
+            case .nextMonth:
+                let nextMonth = calendar.date(byAdding: .month, value: 1, to: Date()) ?? Date()
+                formatter.dateFormat = "MMMM"
+                return formatter.string(from: nextMonth)
+            case .someday:
+                return "No date"
+            }
+        }
+
+        func getDate() -> Date? {
+            let calendar = Calendar.current
+
+            switch self {
+            case .today:
+                return Date()
+            case .laterToday:
+                return calendar.date(byAdding: .hour, value: 4, to: Date())
+            case .tomorrow:
+                return calendar.date(byAdding: .day, value: 1, to: Date())
+            case .thisWeek:
+                let endOfWeek = calendar.dateInterval(of: .weekOfYear, for: Date())?.end ?? Date()
+                return endOfWeek
+            case .nextWeek:
+                return calendar.date(byAdding: .weekOfYear, value: 1, to: Date())
+            case .thisMonth:
+                let endOfMonth = calendar.dateInterval(of: .month, for: Date())?.end ?? Date()
+                return endOfMonth
+            case .nextMonth:
+                return calendar.date(byAdding: .month, value: 1, to: Date())
+            case .someday:
+                return nil
+            }
+        }
+    }
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Search/Input Field
+                    TextField("Type date and time or Time Slot", text: $searchText)
+                        .dynamicFont(size: 16, fontManager: fontManager)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                        .padding(.horizontal)
+
+                    // Quick Options
+                    VStack(spacing: 0) {
+                        ForEach(QuickOption.allCases, id: \.self) { option in
+                            quickOptionRow(option)
+                            if option != QuickOption.allCases.last {
+                                Divider()
+                                    .padding(.leading, 60)
+                            }
+                        }
+                    }
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+
+                    // Date and Time Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Date and Time")
+                            .dynamicFont(size: 18, weight: .semibold, fontManager: fontManager)
+                            .padding(.horizontal)
+
+                        HStack(spacing: 12) {
+                            Button(action: {
+                                showCalendarPicker.toggle()
+                            }) {
+                                HStack {
+                                    Image(systemName: "calendar")
+                                    Text(formatDate(selectedDate))
+                                        .dynamicFont(size: 15, fontManager: fontManager)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(10)
+                            }
+                            .foregroundColor(.primary)
+
+                            Button(action: {
+                                showTimePicker.toggle()
+                                hasTime.toggle()
+                            }) {
+                                HStack {
+                                    Image(systemName: "clock")
+                                    Text(hasTime ? formatTime(selectedTime) : "No time")
+                                        .dynamicFont(size: 15, fontManager: fontManager)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(10)
+                            }
+                            .foregroundColor(.primary)
+                        }
+                        .padding(.horizontal)
+
+                        // Calendar Picker
+                        if showCalendarPicker {
+                            DatePicker("", selection: $selectedDate, displayedComponents: .date)
+                                .datePickerStyle(.graphical)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(12)
+                                .padding(.horizontal)
+                        }
+
+                        // Time Picker
+                        if showTimePicker {
+                            DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
+                                .datePickerStyle(.wheel)
+                                .labelsHidden()
+                                .frame(height: 200)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(12)
+                                .padding(.horizontal)
+                        }
+                    }
+
+                    // Duration Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Duration")
+                            .dynamicFont(size: 18, weight: .semibold, fontManager: fontManager)
+                            .padding(.horizontal)
+
+                        Button(action: {
+                            showDurationPicker.toggle()
+                            if !hasDuration {
+                                hasDuration = true
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: "timer")
+                                Text(hasDuration ? formatDuration(duration) : "None")
+                                    .dynamicFont(size: 15, fontManager: fontManager)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                        }
+                        .foregroundColor(.primary)
+                        .padding(.horizontal)
+
+                        // Duration Picker
+                        if showDurationPicker {
+                            durationPicker
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(12)
+                                .padding(.horizontal)
+                        }
+                    }
+
+                    Spacer(minLength: 40)
+                }
+                .padding(.vertical)
+            }
+            .navigationTitle("Plan Task")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: {
+                        dismiss()
+                    }) {
+                        Image(systemName: "xmark")
+                            .foregroundColor(.primary)
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        saveTaskPlanning()
+                        dismiss()
+                    }
+                    .foregroundColor(.blue)
+                }
+            }
+        }
+    }
+
+    // MARK: - Quick Option Row
+
+    private func quickOptionRow(_ option: QuickOption) -> some View {
+        Button(action: {
+            handleQuickOption(option)
+        }) {
+            HStack(spacing: 12) {
+                // Icon
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color(.systemGray5))
+                        .frame(width: 40, height: 40)
+
+                    if option == .today || option == .tomorrow {
+                        let formatter = DateFormatter()
+                        formatter.dateFormat = "d"
+                        let date = option == .today ? Date() : Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+                        Text(formatter.string(from: date))
+                            .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                    } else {
+                        Image(systemName: option.icon)
+                            .font(.system(size: 18))
+                    }
+                }
+
+                // Title
+                Text(option.rawValue)
+                    .dynamicFont(size: 16, fontManager: fontManager)
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                // Date/Time Info
+                Text(option.displayDate())
+                    .dynamicFont(size: 14, fontManager: fontManager)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Duration Picker
+
+    private var durationPicker: some View {
+        HStack(spacing: 0) {
+            // Hours
+            Picker("Hours", selection: Binding(
+                get: { Int(duration / 3600) },
+                set: { hours in
+                    let minutes = Int(duration.truncatingRemainder(dividingBy: 3600) / 60)
+                    duration = Double(hours * 3600 + minutes * 60)
+                }
+            )) {
+                ForEach(0..<24) { hour in
+                    Text("\(hour)")
+                        .dynamicFont(size: 20, fontManager: fontManager)
+                        .tag(hour)
+                }
+            }
+            .pickerStyle(.wheel)
+            .frame(width: 80)
+
+            Text("h")
+                .dynamicFont(size: 20, fontManager: fontManager)
+                .padding(.horizontal, 8)
+
+            // Minutes
+            Picker("Minutes", selection: Binding(
+                get: { Int(duration.truncatingRemainder(dividingBy: 3600) / 60) },
+                set: { minutes in
+                    let hours = Int(duration / 3600)
+                    duration = Double(hours * 3600 + minutes * 60)
+                }
+            )) {
+                ForEach(0..<60) { minute in
+                    Text("\(minute)")
+                        .dynamicFont(size: 20, fontManager: fontManager)
+                        .tag(minute)
+                }
+            }
+            .pickerStyle(.wheel)
+            .frame(width: 80)
+
+            Text("m")
+                .dynamicFont(size: 20, fontManager: fontManager)
+                .padding(.horizontal, 8)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Helper Methods
+
+    private func handleQuickOption(_ option: QuickOption) {
+        if let date = option.getDate() {
+            selectedDate = date
+            task.dueDate = date
+
+            // Set time for "Later Today"
+            if option == .laterToday {
+                hasTime = true
+                selectedTime = date
+            }
+        } else {
+            // Someday - no date
+            task.dueDate = nil
+            hasTime = false
+        }
+    }
+
+    private func saveTaskPlanning() {
+        // Combine date and time if time is set
+        if hasTime {
+            let calendar = Calendar.current
+            let dateComponents = calendar.dateComponents([.year, .month, .day], from: selectedDate)
+            let timeComponents = calendar.dateComponents([.hour, .minute], from: selectedTime)
+
+            var combined = DateComponents()
+            combined.year = dateComponents.year
+            combined.month = dateComponents.month
+            combined.day = dateComponents.day
+            combined.hour = timeComponents.hour
+            combined.minute = timeComponents.minute
+
+            if let finalDate = calendar.date(from: combined) {
+                task.dueDate = finalDate
+            }
+        } else {
+            task.dueDate = selectedDate
+        }
+
+        onSave()
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+
+    private func formatTime(_ time: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: time)
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration / 3600)
+        let minutes = Int(duration.truncatingRemainder(dividingBy: 3600) / 60)
+
+        if hours > 0 && minutes > 0 {
+            return "\(hours)h \(minutes)m"
+        } else if hours > 0 {
+            return "\(hours)h"
+        } else {
+            return "\(minutes)m"
         }
     }
 }
