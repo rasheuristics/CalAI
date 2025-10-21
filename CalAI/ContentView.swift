@@ -48,6 +48,13 @@ struct ContentView: View {
                     }
                     .tag(2)
 
+                TasksTabView(fontManager: fontManager, calendarManager: calendarManager)
+                    .tabItem {
+                        Image(systemName: "tray.fill")
+                        Text("Tasks")
+                    }
+                    .tag(3)
+
                 // PHASE 12 DISABLED - Actions Tab
                 // ActionItemsView(postMeetingService: postMeetingService, fontManager: fontManager, calendarManager: calendarManager)
                 //     .tabItem {
@@ -62,7 +69,7 @@ struct ContentView: View {
                         Image(systemName: "gearshape")
                         Text("Settings")
                     }
-                    .tag(3)
+                    .tag(4)
             }
             .background(Color.clear)
         }

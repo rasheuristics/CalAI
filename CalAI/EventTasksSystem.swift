@@ -3211,3 +3211,487 @@ struct TaskEditView: View {
         dismiss()
     }
 }
+import SwiftUI
+
+// MARK: - Standalone Tasks Tab
+// Shows all tasks across all events, not linked to event cards
+
+struct TasksTabView: View {
+    @ObservedObject var fontManager: FontManager
+    @ObservedObject var calendarManager: CalendarManager
+
+    @StateObject private var taskManager = EventTaskManager.shared
+    @State private var showingAddTask = false
+    @State private var selectedFilter: TaskFilter = .all
+
+    // Task entry fields
+    @State private var newTaskTitle: String = ""
+    @State private var newTaskDescription: String = ""
+    @State private var newTaskDueDate: Date = Date()
+    @State private var newTaskPriority: TaskPriority = .medium
+    @State private var showTaskDetails: Bool = false
+    @State private var showDatePicker: Bool = false
+    @FocusState private var isTaskFieldFocused: Bool
+
+    // Task edit sheet
+    @State private var showingTaskEdit = false
+    @State private var selectedTask: (task: EventTask, eventId: String)?
+
+    enum TaskFilter: String, CaseIterable {
+        case all = "All"
+        case today = "Today"
+        case upcoming = "Upcoming"
+        case completed = "Completed"
+
+        var icon: String {
+            switch self {
+            case .all: return "tray.fill"
+            case .today: return "calendar.badge.clock"
+            case .upcoming: return "calendar"
+            case .completed: return "checkmark.circle.fill"
+            }
+        }
+    }
+
+    var body: some View {
+        NavigationView {
+            ZStack(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    // Filter Tabs
+                    filterTabs
+
+                    // Tasks List
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            // Tasks grouped by event
+                            if filteredTasks.isEmpty {
+                                emptyStateSection
+                            } else {
+                                allTasksSection
+                            }
+                        }
+                        .padding()
+                        .padding(.bottom, 80) // Space for floating button
+                    }
+
+                    // Inline Task Entry (appears when adding)
+                    if showingAddTask {
+                        taskEntryView
+                    }
+                }
+                .navigationTitle("Tasks")
+                .navigationBarTitleDisplayMode(.large)
+
+                // Floating Plus Button
+                if !showingAddTask {
+                    floatingPlusButton
+                }
+            }
+            .sheet(isPresented: $showingTaskEdit) {
+                if let selected = selectedTask {
+                    TaskEditSheet(
+                        task: selected.task,
+                        fontManager: fontManager,
+                        eventId: selected.eventId
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: - Filter Tabs
+
+    private var filterTabs: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(TaskFilter.allCases, id: \.self) { filter in
+                    TaskFilterChip(
+                        title: filter.rawValue,
+                        icon: filter.icon,
+                        isSelected: selectedFilter == filter,
+                        count: taskCount(for: filter),
+                        fontManager: fontManager
+                    ) {
+                        selectedFilter = filter
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .background(Color(.systemGray6))
+    }
+
+    // MARK: - All Tasks Section
+
+    private var allTasksSection: some View {
+        ForEach(filteredTasks.keys.sorted(), id: \.self) { eventId in
+            if let tasks = filteredTasks[eventId],
+               !tasks.isEmpty,
+               let event = findEvent(byId: eventId) {
+
+                VStack(alignment: .leading, spacing: 8) {
+                    // Event Header
+                    EventHeaderView(event: event, fontManager: fontManager)
+
+                    // Tasks for this event
+                    ForEach(tasks) { task in
+                        TaskRow(task: task, fontManager: fontManager) {
+                            taskManager.toggleTaskCompletion(task.id, in: eventId)
+                        } onDelete: {
+                            taskManager.deleteTask(task.id, from: eventId)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectedTask = (task, eventId)
+                            showingTaskEdit = true
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+        }
+    }
+
+    // MARK: - Empty State
+
+    private var emptyStateSection: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "tray")
+                .font(.system(size: 60))
+                .foregroundColor(.secondary)
+
+            Text("No Tasks")
+                .dynamicFont(size: 22, weight: .semibold, fontManager: fontManager)
+                .foregroundColor(.primary)
+
+            Text(emptyStateMessage)
+                .dynamicFont(size: 15, fontManager: fontManager)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
+        .padding(.vertical, 60)
+    }
+
+    private var emptyStateMessage: String {
+        switch selectedFilter {
+        case .all:
+            return "Create tasks to stay organized"
+        case .today:
+            return "No tasks due today"
+        case .upcoming:
+            return "No upcoming tasks"
+        case .completed:
+            return "No completed tasks yet"
+        }
+    }
+
+    // MARK: - Floating Plus Button
+
+    private var floatingPlusButton: some View {
+        Button(action: {
+            showingAddTask = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isTaskFieldFocused = true
+            }
+        }) {
+            Image(systemName: "plus")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 56, height: 56)
+                .background(Color.blue)
+                .clipShape(Circle())
+                .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+        }
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
+    }
+
+    // MARK: - Task Entry View
+
+    private var taskEntryView: some View {
+        VStack(spacing: 0) {
+            // Task Title Field
+            HStack(alignment: .top, spacing: 12) {
+                Button(action: {
+                    // Save task
+                    saveNewTask()
+                }) {
+                    Image(systemName: "circle")
+                        .font(.system(size: 22))
+                        .foregroundColor(.gray)
+                }
+                .padding(.top, 12)
+
+                TextField("New Task", text: $newTaskTitle)
+                    .dynamicFont(size: 16, fontManager: fontManager)
+                    .focused($isTaskFieldFocused)
+                    .padding(.top, 12)
+                    .onSubmit {
+                        saveNewTask()
+                    }
+
+                Button(action: {
+                    showTaskDetails.toggle()
+                }) {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 22))
+                        .foregroundColor(.gray)
+                }
+                .padding(.top, 12)
+            }
+            .padding(.horizontal, 16)
+
+            // Task Details (expandable)
+            if showTaskDetails {
+                VStack(alignment: .leading, spacing: 12) {
+                    Divider()
+
+                    TextEditor(text: $newTaskDescription)
+                        .dynamicFont(size: 14, fontManager: fontManager)
+                        .frame(minHeight: 60, maxHeight: 120)
+                        .padding(8)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+
+                    // Priority Picker
+                    Picker("Priority", selection: $newTaskPriority) {
+                        ForEach(TaskPriority.allCases, id: \.self) { priority in
+                            Text(priority.rawValue).tag(priority)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    // Due Date Toggle
+                    Toggle("Set Due Date", isOn: $showDatePicker)
+                        .dynamicFont(size: 14, fontManager: fontManager)
+                }
+                .padding(.horizontal, 16)
+            }
+
+            // Date Picker
+            if showDatePicker {
+                VStack(spacing: 0) {
+                    Divider()
+                    DatePicker("Due Date", selection: $newTaskDueDate, displayedComponents: [.date, .hourAndMinute])
+                        .dynamicFont(size: 14, fontManager: fontManager)
+                        .padding()
+                }
+            }
+
+            // Action Buttons
+            HStack(spacing: 12) {
+                Button("Cancel") {
+                    resetTaskEntry()
+                }
+                .dynamicFont(size: 15, fontManager: fontManager)
+                .foregroundColor(.secondary)
+
+                Spacer()
+
+                Button("Save") {
+                    saveNewTask()
+                }
+                .dynamicFont(size: 15, weight: .semibold, fontManager: fontManager)
+                .foregroundColor(.blue)
+                .disabled(newTaskTitle.isEmpty)
+            }
+            .padding()
+        }
+        .background(Color(.systemBackground))
+        .overlay(
+            Rectangle()
+                .fill(Color(.systemGray4))
+                .frame(height: 1),
+            alignment: .top
+        )
+    }
+
+    // MARK: - Helpers
+
+    private var filteredTasks: [String: [EventTask]] {
+        var result: [String: [EventTask]] = [:]
+
+        for (eventId, eventTasks) in taskManager.eventTasks {
+            let filtered = eventTasks.tasks.filter { task in
+                switch selectedFilter {
+                case .all:
+                    return true
+                case .today:
+                    return isToday(task.dueDate)
+                case .upcoming:
+                    return !task.isCompleted && (task.dueDate ?? Date()) > Date()
+                case .completed:
+                    return task.isCompleted
+                }
+            }
+
+            if !filtered.isEmpty {
+                result[eventId] = filtered
+            }
+        }
+
+        return result
+    }
+
+    private func taskCount(for filter: TaskFilter) -> Int {
+        var count = 0
+
+        for eventTasks in taskManager.eventTasks.values {
+            count += eventTasks.tasks.filter { task in
+                switch filter {
+                case .all:
+                    return true
+                case .today:
+                    return isToday(task.dueDate)
+                case .upcoming:
+                    return !task.isCompleted && (task.dueDate ?? Date()) > Date()
+                case .completed:
+                    return task.isCompleted
+                }
+            }.count
+        }
+
+        return count
+    }
+
+    private func isToday(_ date: Date?) -> Bool {
+        guard let date = date else { return false }
+        return Calendar.current.isDateInToday(date)
+    }
+
+    private func findEvent(byId id: String) -> UnifiedEvent? {
+        return calendarManager.unifiedEvents.first { $0.id == id }
+    }
+
+    private func saveNewTask() {
+        guard !newTaskTitle.isEmpty else { return }
+
+        // For standalone tasks, we need to associate with an event
+        // For now, create as a general task (you can enhance this later)
+        // We'll need to pick the nearest upcoming event or create a "General Tasks" category
+
+        // Find the next upcoming event to attach the task to
+        let upcomingEvents = calendarManager.unifiedEvents.filter { $0.startDate > Date() }
+        guard let targetEvent = upcomingEvents.first else {
+            print("⚠️ No upcoming events to attach task to")
+            resetTaskEntry()
+            return
+        }
+
+        let newTask = EventTask(
+            title: newTaskTitle,
+            description: newTaskDescription.isEmpty ? nil : newTaskDescription,
+            priority: newTaskPriority,
+            dueDate: showDatePicker ? newTaskDueDate : nil
+        )
+
+        taskManager.addTask(newTask, to: targetEvent.id)
+
+        resetTaskEntry()
+    }
+
+    private func resetTaskEntry() {
+        newTaskTitle = ""
+        newTaskDescription = ""
+        newTaskDueDate = Date()
+        newTaskPriority = .medium
+        showTaskDetails = false
+        showDatePicker = false
+        showingAddTask = false
+        isTaskFieldFocused = false
+    }
+}
+
+// MARK: - Event Header View
+
+struct EventHeaderView: View {
+    let event: UnifiedEvent
+    @ObservedObject var fontManager: FontManager
+
+    private var eventType: EventType {
+        EventType.detect(from: event.title, description: event.description)
+    }
+
+    var body: some View {
+        HStack {
+            Image(systemName: eventType.icon)
+                .font(.body)
+                .foregroundColor(.blue)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.title)
+                    .dynamicFont(size: 14, weight: .semibold, fontManager: fontManager)
+                    .lineLimit(1)
+
+                Text(formatEventTime())
+                    .dynamicFont(size: 11, fontManager: fontManager)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+    }
+
+    private func formatEventTime() -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: event.startDate)
+    }
+}
+
+// MARK: - Task Filter Chip
+
+struct TaskFilterChip: View {
+    let title: String
+    let icon: String
+    let isSelected: Bool
+    let count: Int
+    @ObservedObject var fontManager: FontManager
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+
+                Text(title)
+                    .dynamicFont(size: 14, weight: .medium, fontManager: fontManager)
+
+                if count > 0 {
+                    Text("\(count)")
+                        .dynamicFont(size: 12, weight: .semibold, fontManager: fontManager)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(isSelected ? Color.white.opacity(0.3) : Color(.systemGray4))
+                        .cornerRadius(10)
+                }
+            }
+            .foregroundColor(isSelected ? .white : .primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(isSelected ? Color.blue : Color(.systemBackground))
+            .cornerRadius(20)
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(isSelected ? Color.clear : Color(.systemGray4), lineWidth: 1)
+            )
+        }
+    }
+}
+
+// MARK: - Preview
+
+#Preview {
+    TasksTabView(
+        fontManager: FontManager(),
+        calendarManager: CalendarManager()
+    )
+}

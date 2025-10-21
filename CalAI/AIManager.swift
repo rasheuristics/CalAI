@@ -278,7 +278,7 @@ class AIManager: ObservableObject {
         print("✅ AI Action: intent=\(action.intent), needsClarification=\(action.needsClarification)")
 
         // Convert AI action to calendar response
-        let response = convertAIActionToResponse(action, calendarEvents: calendarEvents)
+        let response = convertAIActionToResponse(action, calendarEvents: calendarEvents, originalTranscript: transcript)
 
         await MainActor.run {
             self.isProcessing = false
@@ -288,7 +288,8 @@ class AIManager: ObservableObject {
 
     private func convertAIActionToResponse(
         _ action: ConversationalAIService.AIAction,
-        calendarEvents: [UnifiedEvent]
+        calendarEvents: [UnifiedEvent],
+        originalTranscript: String
     ) -> AICalendarResponse {
 
         // Handle clarification requests
@@ -304,12 +305,33 @@ class AIManager: ObservableObject {
 
         switch action.intent {
         case "query":
-            if let startDateStr = action.parameters["start_date"]?.stringValue,
-               let endDateStr = action.parameters["end_date"]?.stringValue,
+            print("🔍 Processing query intent...")
+
+            // Extract and parse dates
+            let startDateStr = action.parameters["start_date"]?.stringValue
+            let endDateStr = action.parameters["end_date"]?.stringValue
+
+            print("📅 Date parameters: start=\(startDateStr ?? "nil"), end=\(endDateStr ?? "nil")")
+
+            if let startDateStr = startDateStr,
+               let endDateStr = endDateStr,
                let startDate = ISO8601DateFormatter().date(from: startDateStr),
                let endDate = ISO8601DateFormatter().date(from: endDateStr) {
 
+                print("✅ Dates parsed successfully: \(startDate) to \(endDate)")
+
                 let relevantEvents = calendarEvents.filter { $0.startDate >= startDate && $0.startDate < endDate }
+
+                print("📋 Found \(relevantEvents.count) events in range")
+
+                // Use VoiceResponseGenerator for rich narrative responses
+                let voiceResponse = voiceResponseGenerator.generateQueryResponse(
+                    events: relevantEvents,
+                    timeRange: (start: startDate, end: endDate)
+                )
+
+                print("🗣️ Generated rich narrative: \(voiceResponse.fullMessage.prefix(100))...")
+
                 let eventResults = relevantEvents.map { event in
                     EventResult(
                         id: event.id,
@@ -325,10 +347,51 @@ class AIManager: ObservableObject {
                 command = CalendarCommand(type: .queryEvents, queryStartDate: startDate, queryEndDate: endDate)
 
                 return AICalendarResponse(
-                    message: action.message,
+                    message: voiceResponse.fullMessage,  // Use rich narrative instead of action.message
                     command: command,
                     eventResults: eventResults,
-                    shouldContinueListening: action.shouldContinueListening
+                    shouldContinueListening: voiceResponse.followUp != nil
+                )
+            } else {
+                print("⚠️ Query intent detected but date parsing failed")
+                print("   Attempting to extract dates ourselves from user query")
+
+                // Fallback: Try to extract time range ourselves
+                let (extractedStart, extractedEnd) = extractTimeRange(from: originalTranscript)
+
+                print("📅 Extracted dates: \(extractedStart) to \(extractedEnd)")
+
+                let relevantEvents = calendarEvents.filter { $0.startDate >= extractedStart && $0.startDate < extractedEnd }
+
+                print("📋 Found \(relevantEvents.count) events in extracted range")
+
+                // Use VoiceResponseGenerator even in fallback case
+                let voiceResponse = voiceResponseGenerator.generateQueryResponse(
+                    events: relevantEvents,
+                    timeRange: (start: extractedStart, end: extractedEnd)
+                )
+
+                print("🗣️ Generated rich narrative (fallback): \(voiceResponse.fullMessage.prefix(100))...")
+
+                let eventResults = relevantEvents.map { event in
+                    EventResult(
+                        id: event.id,
+                        title: event.title,
+                        startDate: event.startDate,
+                        endDate: event.endDate,
+                        location: event.location,
+                        source: event.source.rawValue,
+                        color: nil
+                    )
+                }
+
+                command = CalendarCommand(type: .queryEvents, queryStartDate: extractedStart, queryEndDate: extractedEnd)
+
+                return AICalendarResponse(
+                    message: voiceResponse.fullMessage,  // Use rich narrative in fallback too
+                    command: command,
+                    eventResults: eventResults,
+                    shouldContinueListening: voiceResponse.followUp != nil
                 )
             }
 
@@ -382,8 +445,15 @@ class AIManager: ObservableObject {
 
         default:
             // Conversation or unknown intent
+            print("ℹ️ Default case - intent: \(action.intent)")
             break
         }
+
+        // FALLBACK: This returns the basic Anthropic message
+        print("⚠️ FALLBACK RETURN - Using action.message instead of rich narrative")
+        print("   Intent: \(action.intent)")
+        print("   Message: \(action.message)")
+        print("   This should only happen for non-query intents or failed date parsing")
 
         return AICalendarResponse(
             message: action.message,
@@ -800,8 +870,9 @@ class AIManager: ObservableObject {
             let voiceResponse = voiceResponseGenerator.generateCreateResponse(
                 eventTitle: entities.title ?? "event",
                 eventDate: entities.time ?? Date(),
+                duration: entities.duration,
                 conflicts: conflicts,
-                duration: entities.duration
+                allEvents: calendarEvents
             )
 
             let requiresConfirmation = self.commandRequiresConfirmation(command)
@@ -1052,8 +1123,9 @@ class AIManager: ObservableObject {
                 let voiceResponse = voiceResponseGenerator.generateCreateResponse(
                     eventTitle: updatedEntities.title ?? "event",
                     eventDate: updatedEntities.time ?? Date(),
+                    duration: updatedEntities.duration,
                     conflicts: conflicts,
-                    duration: updatedEntities.duration
+                    allEvents: []
                 )
 
                 let response = AICalendarResponse(
@@ -1574,7 +1646,11 @@ class AIManager: ObservableObject {
             )
 
             // Use VoiceResponseGenerator to create response
-            let voiceResponse = voiceResponseGenerator.generateDeleteResponse(eventTitle: event.title)
+            let voiceResponse = voiceResponseGenerator.generateDeleteResponse(
+                eventTitle: event.title,
+                eventDate: event.startDate,
+                allEvents: calendarEvents
+            )
 
             let response = AICalendarResponse(
                 message: voiceResponse.fullMessage,

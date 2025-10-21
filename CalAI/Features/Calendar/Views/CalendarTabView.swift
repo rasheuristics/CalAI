@@ -2336,7 +2336,7 @@ struct DraggableEventView: View {
             // DRAGGING: Vertical drag - time change (live preview)
             let minutesPerPixel = 1.0 / pxPerMinute
             let totalMinutes = dragOffset / pxPerMinute
-            let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+            let snappedMinutes = floor((totalMinutes / 15.0) + 0.5) * 15.0
 
             let previewStart = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.start) ?? event.start
             let previewEnd = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.end) ?? event.end
@@ -2381,10 +2381,14 @@ struct DraggableEventView: View {
     var body: some View {
         let duration = event.end.timeIntervalSince(event.start)
         let height = max(CGFloat(duration / 60.0) * pxPerMinute, 40) // Minimum height of 40
-        let maxLanes = 3
-        let laneWidth = width / CGFloat(maxLanes)
+        let maxLanes = 5  // Now 5 lanes for more precise positioning
+        let laneWidth = width / CGFloat(maxLanes)  // Width per lane (for positioning)
         let offsetX = CGFloat(lane) * laneWidth
-        let cardWidth = min(laneWidth - 4, width - offsetX - 4)
+
+        // Keep card width constant (same as before with 3 lanes)
+        let originalMaxLanes: CGFloat = 3
+        let originalLaneWidth = width / originalMaxLanes
+        let cardWidth = min(originalLaneWidth - 4, width - offsetX - 4)
 
         HStack(spacing: 0) {
             // Lane offset
@@ -2532,8 +2536,17 @@ struct DraggableEventView: View {
                                     userInfo: ["dayChange": dayChange]
                                 )
                             } else {
-                                // Horizontal drag for swipe actions (day/list/month views)
-                                horizontalDragOffset = value.translation.width
+                                // Horizontal drag for LANE snapping (day view - 5 lanes)
+                                let maxLanes = 5
+                                let laneWidth = width / CGFloat(maxLanes)
+
+                                // Calculate which lane we're closest to based on drag translation
+                                let laneChange = floor((value.translation.width / laneWidth) + 0.5)
+
+                                // Snap to lane positions
+                                horizontalDragOffset = laneChange * laneWidth
+
+                                print("📍 Lateral drag: \(value.translation.width)px → Lane offset: \(laneChange) → Snapped: \(horizontalDragOffset)px")
                             }
 
                             // Reset vertical offset when in horizontal mode
@@ -2542,7 +2555,7 @@ struct DraggableEventView: View {
                             // Vertical drag for time change with snapping
                             let minutesPerPixel = 1.0 / pxPerMinute
                             let totalMinutes = value.translation.height * minutesPerPixel
-                            let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+                            let snappedMinutes = floor((totalMinutes / 15.0) + 0.5) * 15.0
 
                             // Show snapped position while dragging
                             dragOffset = snappedMinutes * pxPerMinute
@@ -2577,25 +2590,33 @@ struct DraggableEventView: View {
                                     }
                                 }
                             } else {
-                                // Handle horizontal swipe in day/list/month views
-                                let screenWidth = UIScreen.main.bounds.width
-                                let threshold = screenWidth / 3.0
+                                // Handle lane change in day view
+                                let maxLanes = 5
+                                let laneWidth = width / CGFloat(maxLanes)
+                                let laneChange = Int(floor((value.translation.width / laneWidth) + 0.5))
 
-                                if abs(value.translation.width) > threshold {
-                                    print("🎯 Horizontal swipe completed: \(value.translation.width > 0 ? "right" : "left")")
-                                    // Future: trigger swipe actions here
-                                }
+                                if laneChange != 0 {
+                                    // Calculate new lane (bounded to 0-4)
+                                    let newLane = max(0, min(4, lane + laneChange))
+                                    print("🎯 Lane change: \(lane) → \(newLane) (offset: \(laneChange))")
 
-                                // Always reset for swipe gestures
-                                withAnimation {
-                                    horizontalDragOffset = 0
+                                    // Save the lane change
+                                    handleLaneChange(newLane: newLane)
+                                    hasBeenMoved = true
+
+                                    // KEEP horizontalDragOffset - event stays at new lane
+                                } else {
+                                    print("🎯 No lane change, reverting")
+                                    withAnimation {
+                                        horizontalDragOffset = 0
+                                    }
                                 }
                             }
                         } else if dragDirection == .vertical {
                             // Handle vertical (time) dragging
                             let minutesPerPixel = 1.0 / pxPerMinute
                             let totalMinutes = value.translation.height * minutesPerPixel
-                            let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+                            let snappedMinutes = floor((totalMinutes / 15.0) + 0.5) * 15.0
 
                             if snappedMinutes != 0 {
                                 // Save the change to calendar and mark as moved
@@ -2704,6 +2725,25 @@ struct DraggableEventView: View {
                 "source": source
             ]
         )
+    }
+
+    private func handleLaneChange(newLane: Int) {
+        print("🎯 Event lane changed to: \(newLane)")
+
+        // Post notification to update the event's lane in the calendar system
+        // Note: Lane changes are visual only and don't affect the actual calendar event time
+        // The lane assignment will be recalculated when the view rebuilds
+        NotificationCenter.default.post(
+            name: NSNotification.Name("UpdateEventLane"),
+            object: nil,
+            userInfo: [
+                "eventId": event.id,
+                "newLane": newLane,
+                "source": event.source
+            ]
+        )
+
+        print("📤 Posted lane change notification for event: \(event.title ?? "Untitled")")
     }
 
     private func colorForCalendarSource(_ source: CalendarSource) -> Color {
@@ -2918,7 +2958,7 @@ struct DraggableEventView: View {
                 laneEndTimes.append(event.end)
             }
 
-            result.append((event: event, lane: min(assignedLane, 2))) // Max 3 lanes
+            result.append((event: event, lane: min(assignedLane, 4))) // Max 5 lanes (0-4)
         }
 
         return result
@@ -2964,15 +3004,15 @@ struct EventCardView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Lane indicator
-            HStack(spacing: 2) {
-                ForEach(0..<3) { index in
+            // Lane indicator (5 dots for 5 lanes)
+            HStack(spacing: 1) {
+                ForEach(0..<5) { index in
                     Rectangle()
                         .fill(index == lane ? eventColor : Color.clear)
-                        .frame(width: 3, height: 20)
+                        .frame(width: 2, height: 16)
                 }
             }
-            .frame(width: 24)
+            .frame(width: 14)
 
             // Event content
             VStack(alignment: .leading, spacing: 4) {
@@ -3061,8 +3101,8 @@ struct EventCardView: View {
                         let minutesPerPixel = 60.0 / hourHeight // Based on hourHeight
                         let totalMinutes = value.translation.height * minutesPerPixel
 
-                        // Snap to 15-minute increments
-                        let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+                        // Snap to 15-minute increments using proper rounding
+                        let snappedMinutes = floor((totalMinutes / 15.0) + 0.5) * 15.0
 
                         // Update dragged times
                         let calendar = Calendar.current
@@ -3142,31 +3182,58 @@ struct EventCardView: View {
     }
 
     private func handleDragEnd(translation: CGFloat) {
+        print("🎯 handleDragEnd called with translation: \(translation)")
+
         // Calculate minutes moved based on pixel translation
-        let minutesPerPixel = 1.0 // Assuming 1 pixel = 1 minute (adjust based on hourHeight)
+        // Use the same calculation as in onChanged for consistency
+        let minutesPerPixel = 60.0 / hourHeight // Based on hourHeight
         let totalMinutes = translation * minutesPerPixel
 
-        // Snap to 15-minute increments
-        let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+        print("📏 minutesPerPixel: \(minutesPerPixel), totalMinutes: \(totalMinutes)")
+
+        // Snap to 15-minute increments using proper rounding
+        // Adding 0.5 ensures we round to nearest, not "round half to even"
+        let snappedMinutes = floor((totalMinutes / 15.0) + 0.5) * 15.0
+
+        print("⏰ Snapped to: \(snappedMinutes) minutes (from totalMinutes: \(totalMinutes))")
 
         // Update event times
         let calendar = Calendar.current
         guard let newStartDate = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.startDate),
               let newEndDate = calendar.date(byAdding: .minute, value: Int(snappedMinutes), to: event.endDate) else {
+            print("❌ Failed to calculate new dates")
             return
         }
 
-        // Update the event
-        event.startDate = newStartDate
-        event.endDate = newEndDate
+        print("📅 New dates calculated - Start: \(newStartDate), End: \(newEndDate)")
 
-        // Save the event
-        do {
-            let eventStore = EKEventStore()
-            try eventStore.save(event, span: .thisEvent)
-            print("✅ Event '\(event.title)' moved to new time: \(newStartDate)")
-        } catch {
-            print("❌ Failed to save event: \(error)")
+        // Save the event to EventKit
+        Task { @MainActor in
+            do {
+                let eventStore = EKEventStore()
+
+                // Fetch the event from the store to ensure we have the latest version
+                guard let eventToUpdate = eventStore.event(withIdentifier: event.eventIdentifier) else {
+                    print("❌ Could not fetch event from store")
+                    return
+                }
+
+                // Update the event times
+                eventToUpdate.startDate = newStartDate
+                eventToUpdate.endDate = newEndDate
+
+                // Save with commit
+                try eventStore.save(eventToUpdate, span: .thisEvent, commit: true)
+
+                print("✅ Event '\(event.title ?? "Untitled")' successfully moved to new time: \(newStartDate)")
+
+                // Force UI refresh by updating the local event reference
+                event.startDate = newStartDate
+                event.endDate = newEndDate
+
+            } catch {
+                print("❌ Failed to save event: \(error.localizedDescription)")
+            }
         }
     }
 }
