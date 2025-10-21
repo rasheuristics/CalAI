@@ -10,11 +10,21 @@ struct ContentView: View {
     @StateObject private var fontManager = FontManager()
     @StateObject private var appearanceManager = AppearanceManager()
     @StateObject private var morningBriefingService = MorningBriefingService.shared
+    @StateObject private var taskManager = EventTaskManager.shared
     // PHASE 12 DISABLED
     // @StateObject private var postMeetingService = PostMeetingService.shared
     @State private var selectedTab: Int = 0
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showOnboarding = false
+
+    // Computed property for active task count
+    private var activeTaskCount: Int {
+        var count = 0
+        for eventTasks in taskManager.eventTasks.values {
+            count += eventTasks.tasks.filter { !$0.isCompleted }.count
+        }
+        return count
+    }
 
     var body: some View {
         ZStack {
@@ -54,6 +64,7 @@ struct ContentView: View {
                         Text("Tasks")
                     }
                     .tag(3)
+                    .badge(activeTaskCount > 0 ? activeTaskCount : nil)
 
                 // PHASE 12 DISABLED - Actions Tab
                 // ActionItemsView(postMeetingService: postMeetingService, fontManager: fontManager, calendarManager: calendarManager)
