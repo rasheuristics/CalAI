@@ -4155,53 +4155,53 @@ struct TaskDetailView: View {
 
                         // Description Section - 3x wider
                         VStack(alignment: .leading, spacing: 8) {
-                            if isEditingDescription {
-                                VStack(spacing: 12) {
-                                    TextEditor(text: $descriptionText)
-                                        .frame(minHeight: 200)
-                                        .padding(8)
-                                        .background(Color(.systemGray6))
-                                        .cornerRadius(8)
-
-                                    HStack {
-                                        Button("Cancel") {
-                                            isEditingDescription = false
-                                            descriptionText = task.description ?? ""
-                                        }
-                                        .foregroundColor(.red)
-
-                                        Spacer()
-
-                                        Button("Save") {
-                                            task.description = descriptionText.isEmpty ? nil : descriptionText
-                                            isEditingDescription = false
-                                            onSave()
-                                        }
-                                        .foregroundColor(.blue)
-                                        .fontWeight(.semibold)
+                            // Edit/Save buttons
+                            HStack {
+                                if isEditingDescription {
+                                    Button("Cancel") {
+                                        isEditingDescription = false
+                                        descriptionText = task.description ?? ""
                                     }
+                                    .foregroundColor(.red)
+                                } else {
+                                    Button("Edit") {
+                                        descriptionText = task.description ?? ""
+                                        isEditingDescription = true
+                                    }
+                                    .foregroundColor(.blue)
                                 }
-                            } else {
-                                Button(action: {
-                                    descriptionText = task.description ?? ""
-                                    isEditingDescription = true
-                                }) {
-                                    HStack {
-                                        Text(task.description ?? "Add description...")
-                                            .dynamicFont(size: 18, fontManager: fontManager)
-                                            .foregroundColor(task.description == nil ? .secondary : .primary)
-                                            .multilineTextAlignment(.leading)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                                        Image(systemName: "pencil")
-                                            .foregroundColor(.secondary)
+                                Spacer()
+
+                                if isEditingDescription {
+                                    Button("Save") {
+                                        task.description = descriptionText.isEmpty ? nil : descriptionText
+                                        isEditingDescription = false
+                                        onSave()
                                     }
-                                    .padding()
+                                    .foregroundColor(.blue)
+                                    .fontWeight(.semibold)
+                                }
+                            }
+
+                            if isEditingDescription {
+                                TextEditor(text: $descriptionText)
                                     .frame(minHeight: 200)
+                                    .padding(8)
                                     .background(Color(.systemGray6))
                                     .cornerRadius(8)
+                            } else {
+                                VStack(alignment: .leading) {
+                                    Text(task.description ?? "Add description...")
+                                        .dynamicFont(size: 18, fontManager: fontManager)
+                                        .foregroundColor(task.description == nil ? .secondary : .primary)
+                                        .multilineTextAlignment(.leading)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                .buttonStyle(.plain)
+                                .padding()
+                                .frame(minHeight: 200, maxWidth: .infinity, alignment: .topLeading)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
                             }
                         }
                         .padding(.horizontal, 20)
