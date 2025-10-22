@@ -4155,10 +4155,6 @@ struct TaskDetailView: View {
 
                         // Description Section - 3x wider
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Description")
-                                .dynamicFont(size: 13, weight: .medium, fontManager: fontManager)
-                                .foregroundColor(.secondary)
-
                             if isEditingDescription {
                                 VStack(spacing: 12) {
                                     TextEditor(text: $descriptionText)
@@ -4192,7 +4188,7 @@ struct TaskDetailView: View {
                                 }) {
                                     HStack {
                                         Text(task.description ?? "Add description...")
-                                            .dynamicFont(size: 15, fontManager: fontManager)
+                                            .dynamicFont(size: 18, fontManager: fontManager)
                                             .foregroundColor(task.description == nil ? .secondary : .primary)
                                             .multilineTextAlignment(.leading)
                                             .frame(maxWidth: .infinity, alignment: .leading)
