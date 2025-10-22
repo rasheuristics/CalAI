@@ -4186,7 +4186,7 @@ struct TaskDetailView: View {
 
                             if isEditingDescription {
                                 TextEditor(text: $descriptionText)
-                                    .frame(minHeight: 200)
+                                    .frame(minHeight: 133)
                                     .padding(8)
                                     .background(Color(.systemGray6))
                                     .cornerRadius(8)
@@ -4199,14 +4199,14 @@ struct TaskDetailView: View {
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                                 .padding()
-                                .frame(maxWidth: .infinity, minHeight: 200, alignment: .topLeading)
+                                .frame(maxWidth: .infinity, minHeight: 133, alignment: .topLeading)
                                 .background(Color(.systemGray6))
                                 .cornerRadius(8)
                             }
                         }
                         .padding(.horizontal, 20)
 
-                        // Project and Tag buttons - plain grey boxes, left-aligned text only
+                        // Project and Tag buttons - sized to fit text with rounded edges
                         HStack(spacing: 12) {
                             Button(action: {
                                 // Project action
@@ -4214,10 +4214,10 @@ struct TaskDetailView: View {
                                 Text("Project")
                                     .dynamicFont(size: 15, fontManager: fontManager)
                                     .foregroundColor(.primary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
+                                    .padding(.vertical, 8)
                                     .background(Color(.systemGray5))
+                                    .cornerRadius(8)
                             }
 
                             Button(action: {
@@ -4226,11 +4226,13 @@ struct TaskDetailView: View {
                                 Text("Tag")
                                     .dynamicFont(size: 15, fontManager: fontManager)
                                     .foregroundColor(.primary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
+                                    .padding(.vertical, 8)
                                     .background(Color(.systemGray5))
+                                    .cornerRadius(8)
                             }
+
+                            Spacer()
                         }
                         .padding(.horizontal, 20)
 
