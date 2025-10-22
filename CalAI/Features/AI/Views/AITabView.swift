@@ -506,6 +506,14 @@ struct AITabView: View {
             .padding(.bottom, 20) // Gap from tab bar
         }
         .background(Color(.systemBackground))
+        .onAppear {
+            print("👂 AI Tab appeared - starting always-on listening")
+            startAlwaysOnListening()
+        }
+        .onDisappear {
+            print("👋 AI Tab disappeared - stopping always-on listening")
+            stopAlwaysOnListening()
+        }
     }
 
     // MARK: - Button State
@@ -571,15 +579,12 @@ struct AITabView: View {
             handleTranscript(category.autoQuery)
 
         case .scheduleManagement:
-            // Speak the prompt and activate voice input
+            // Speak the prompt and activate voice input in continuous mode
             SpeechManager.shared.speak(text: category.autoQuery) {
-                // After speaking prompt, start listening
+                // After speaking prompt, start listening in continuous mode
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    self.voiceManager.startListening { finalTranscript in
-                        if !finalTranscript.isEmpty {
-                            self.handleTranscript(finalTranscript)
-                        }
-                    }
+                    self.isInAutoLoopMode = true
+                    self.startListeningWithAutoLoop()
                 }
             }
 
@@ -700,11 +705,13 @@ struct AITabView: View {
             conversationHistory.append(aiMessage)
         }
         if Config.aiOutputMode != .textOnly {
-            // Speak with completion handler to auto-restart listening in auto-loop mode
+            // Only speak if user is not currently speaking (in continuous mode)
+            // The continuous mode will automatically interrupt if user starts speaking mid-response
             SpeechManager.shared.speak(text: response.message) {
-                // If in auto-loop mode, automatically restart listening
-                if self.isInAutoLoopMode && !self.voiceManager.isListening {
-                    print("🔄 Auto-loop: Restarting listening after AI response")
+                // If in auto-loop mode and user hasn't started speaking, continue
+                // Note: In continuous mode, listening is already active and will handle interruptions
+                if self.isInAutoLoopMode && !self.voiceManager.isContinuousMode {
+                    print("🔄 Auto-loop: Continuous mode not active, restarting listening")
                     self.startListeningWithAutoLoop()
                 }
             }
@@ -736,14 +743,22 @@ struct AITabView: View {
             pulseAnimation = true
         }
 
-        // Start listening
-        voiceManager.startListening { finalTranscript in
-            if !finalTranscript.isEmpty {
-                // Reset inactivity timer when user speaks
-                self.inactivityTimer?.invalidate()
-                self.handleTranscript(finalTranscript)
+        // Start listening in CONTINUOUS mode with speech detection
+        voiceManager.startListening(
+            continuous: true,
+            onSpeechDetected: {
+                // User started speaking - interrupt AI if it's speaking
+                print("🛑 User started speaking - interrupting AI output")
+                SpeechManager.shared.stopSpeaking()
+            },
+            completion: { finalTranscript in
+                if !finalTranscript.isEmpty {
+                    // Reset inactivity timer when user speaks
+                    self.inactivityTimer?.invalidate()
+                    self.handleTranscript(finalTranscript)
+                }
             }
-        }
+        )
 
         // Start 5-second inactivity timer
         inactivityTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
@@ -764,6 +779,61 @@ struct AITabView: View {
             pulseAnimation = false
         }
         // Note: We keep conversation history as per requirements
+    }
+
+    // MARK: - Always-On Listening
+
+    private func startAlwaysOnListening() {
+        // Don't start if already listening or in auto-loop mode
+        if voiceManager.isListening || isInAutoLoopMode {
+            return
+        }
+
+        print("🎤 Starting always-on listening mode")
+
+        // Start continuous listening with speech detection
+        voiceManager.startListening(
+            continuous: true,
+            onSpeechDetected: {
+                // User started speaking - show conversation window and interrupt AI if needed
+                print("👂 Speech detected in always-on mode")
+                DispatchQueue.main.async {
+                    withAnimation {
+                        self.showConversationWindow = true
+                    }
+                }
+                if SpeechManager.shared.isSpeaking {
+                    SpeechManager.shared.stopSpeaking()
+                }
+            },
+            completion: { finalTranscript in
+                if !finalTranscript.isEmpty {
+                    print("📝 Always-on mode captured: \(finalTranscript)")
+                    self.handleTranscript(finalTranscript)
+
+                    // Restart always-on listening after processing
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        if !self.isInAutoLoopMode {
+                            self.startAlwaysOnListening()
+                        }
+                    }
+                } else {
+                    // No speech detected, restart listening
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        if !self.isInAutoLoopMode {
+                            self.startAlwaysOnListening()
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    private func stopAlwaysOnListening() {
+        print("🔇 Stopping always-on listening mode")
+        if voiceManager.isListening && !isInAutoLoopMode {
+            voiceManager.stopListening()
+        }
     }
 }
 
