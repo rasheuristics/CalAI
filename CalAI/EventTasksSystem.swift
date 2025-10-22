@@ -4104,6 +4104,36 @@ struct TaskDetailView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
+                        // Plan and Duration buttons - small rounded buttons above title
+                        HStack(spacing: 12) {
+                            Button(action: {
+                                showPlanningView = true
+                            }) {
+                                Text("Plan")
+                                    .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(Color.blue)
+                                    .cornerRadius(8)
+                            }
+
+                            Button(action: {
+                                // Duration action
+                            }) {
+                                Text("Duration")
+                                    .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(Color.blue)
+                                    .cornerRadius(8)
+                            }
+
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20)
+
                         // Task Title with Checkbox
                         HStack(spacing: 12) {
                             Button(action: {
@@ -4120,34 +4150,6 @@ struct TaskDetailView: View {
                                 .foregroundColor(task.isCompleted ? .secondary : .primary)
 
                             Spacer()
-                        }
-                        .padding(.horizontal, 20)
-
-                        // Plan and Duration buttons - plain blue rectangles, left-aligned text only
-                        HStack(spacing: 12) {
-                            Button(action: {
-                                showPlanningView = true
-                            }) {
-                                Text("Plan")
-                                    .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                    .background(Color.blue)
-                            }
-
-                            Button(action: {
-                                // Duration action
-                            }) {
-                                Text("Duration")
-                                    .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                    .background(Color.blue)
-                            }
                         }
                         .padding(.horizontal, 20)
 
@@ -4332,7 +4334,7 @@ struct TaskDetailView: View {
             .background(Color(.systemBackground))
             .cornerRadius(20, corners: [.topLeft, .topRight])
             .shadow(radius: 10)
-            .offset(y: dragOffset)
+            .offset(y: geometry.size.height / 2 + dragOffset)
             .gesture(
                 DragGesture()
                     .onChanged { value in
