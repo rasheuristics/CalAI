@@ -4199,7 +4199,7 @@ struct TaskDetailView: View {
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                                 .padding()
-                                .frame(minHeight: 200, maxWidth: .infinity, alignment: .topLeading)
+                                .frame(maxWidth: .infinity, minHeight: 200, alignment: .topLeading)
                                 .background(Color(.systemGray6))
                                 .cornerRadius(8)
                             }
