@@ -4044,6 +4044,7 @@ struct TaskDetailView: View {
     @State private var showPlanningView: Bool = false
     @State private var showTaskInfo: Bool = false
     @State private var showDeleteConfirmation: Bool = false
+    @State private var dragOffset: CGFloat = 0
 
     enum PriorityOption: String, CaseIterable {
         case goal = "Goal"
@@ -4092,151 +4093,158 @@ struct TaskDetailView: View {
     }
 
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Top Buttons: Plan and Duration
-                    HStack(spacing: 12) {
-                        Button(action: {
-                            showPlanningView = true
-                        }) {
-                            HStack {
-                                Image(systemName: "calendar.badge.clock")
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                // Drag handle
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.secondary.opacity(0.4))
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 8)
+                    .padding(.bottom, 16)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Task Title with Checkbox
+                        HStack(spacing: 12) {
+                            Button(action: {
+                                task.isCompleted.toggle()
+                                onSave()
+                            }) {
+                                Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 28))
+                                    .foregroundColor(task.isCompleted ? .green : .gray)
+                            }
+
+                            Text(task.title)
+                                .dynamicFont(size: 20, weight: .semibold, fontManager: fontManager)
+                                .foregroundColor(task.isCompleted ? .secondary : .primary)
+
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20)
+
+                        // Plan and Duration buttons - plain blue rectangles, left-aligned text only
+                        HStack(spacing: 12) {
+                            Button(action: {
+                                showPlanningView = true
+                            }) {
                                 Text("Plan")
                                     .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                    .background(Color.blue)
                             }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.blue)
-                            .cornerRadius(10)
-                        }
 
-                        Button(action: {
-                            // Duration action
-                        }) {
-                            HStack {
-                                Image(systemName: "timer")
+                            Button(action: {
+                                // Duration action
+                            }) {
                                 Text("Duration")
                                     .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                    .background(Color.blue)
                             }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.blue)
-                            .cornerRadius(10)
                         }
-                    }
-                    .padding(.horizontal)
+                        .padding(.horizontal, 20)
 
-                    // Task Title with Checkbox
-                    HStack(spacing: 12) {
-                        Button(action: {
-                            task.isCompleted.toggle()
-                            onSave()
-                        }) {
-                            Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 28))
-                                .foregroundColor(task.isCompleted ? .green : .gray)
-                        }
+                        // Description Section - 3x wider
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Description")
+                                .dynamicFont(size: 13, weight: .medium, fontManager: fontManager)
+                                .foregroundColor(.secondary)
 
-                        Text(task.title)
-                            .dynamicFont(size: 20, weight: .semibold, fontManager: fontManager)
-                            .foregroundColor(task.isCompleted ? .secondary : .primary)
+                            if isEditingDescription {
+                                VStack(spacing: 12) {
+                                    TextEditor(text: $descriptionText)
+                                        .frame(minHeight: 200)
+                                        .padding(8)
+                                        .background(Color(.systemGray6))
+                                        .cornerRadius(8)
 
-                        Spacer()
-                    }
-                    .padding(.horizontal)
+                                    HStack {
+                                        Button("Cancel") {
+                                            isEditingDescription = false
+                                            descriptionText = task.description ?? ""
+                                        }
+                                        .foregroundColor(.red)
 
-                    // Description Section
-                    VStack(alignment: .leading, spacing: 8) {
-                        if isEditingDescription {
-                            VStack(spacing: 12) {
-                                TextEditor(text: $descriptionText)
-                                    .frame(minHeight: 100)
-                                    .padding(8)
+                                        Spacer()
+
+                                        Button("Save") {
+                                            task.description = descriptionText.isEmpty ? nil : descriptionText
+                                            isEditingDescription = false
+                                            onSave()
+                                        }
+                                        .foregroundColor(.blue)
+                                        .fontWeight(.semibold)
+                                    }
+                                }
+                            } else {
+                                Button(action: {
+                                    descriptionText = task.description ?? ""
+                                    isEditingDescription = true
+                                }) {
+                                    HStack {
+                                        Text(task.description ?? "Add description...")
+                                            .dynamicFont(size: 15, fontManager: fontManager)
+                                            .foregroundColor(task.description == nil ? .secondary : .primary)
+                                            .multilineTextAlignment(.leading)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                                        Image(systemName: "pencil")
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding()
+                                    .frame(minHeight: 200)
                                     .background(Color(.systemGray6))
                                     .cornerRadius(8)
-
-                                HStack {
-                                    Button("Cancel") {
-                                        isEditingDescription = false
-                                        descriptionText = task.description ?? ""
-                                    }
-                                    .foregroundColor(.red)
-
-                                    Spacer()
-
-                                    Button("Save") {
-                                        task.description = descriptionText.isEmpty ? nil : descriptionText
-                                        isEditingDescription = false
-                                        onSave()
-                                    }
-                                    .foregroundColor(.blue)
-                                    .fontWeight(.semibold)
                                 }
+                                .buttonStyle(.plain)
                             }
-                        } else {
-                            Button(action: {
-                                descriptionText = task.description ?? ""
-                                isEditingDescription = true
-                            }) {
-                                HStack {
-                                    Text(task.description ?? "Add description...")
-                                        .dynamicFont(size: 15, fontManager: fontManager)
-                                        .foregroundColor(task.description == nil ? .secondary : .primary)
-                                        .multilineTextAlignment(.leading)
-
-                                    Spacer()
-
-                                    Image(systemName: "pencil")
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
-                            }
-                            .buttonStyle(.plain)
                         }
-                    }
-                    .padding(.horizontal)
+                        .padding(.horizontal, 20)
 
-                    // Project and Tag Buttons
-                    HStack(spacing: 12) {
-                        Button(action: {
-                            // Project action
-                        }) {
-                            HStack {
-                                Image(systemName: "folder")
+                        // Project and Tag buttons - plain grey boxes, left-aligned text only
+                        HStack(spacing: 12) {
+                            Button(action: {
+                                // Project action
+                            }) {
                                 Text("Project")
                                     .dynamicFont(size: 15, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                    .background(Color(.systemGray5))
                             }
-                            .foregroundColor(.primary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(10)
-                        }
 
-                        Button(action: {
-                            // Tag action
-                        }) {
-                            HStack {
-                                Image(systemName: "tag")
+                            Button(action: {
+                                // Tag action
+                            }) {
                                 Text("Tag")
                                     .dynamicFont(size: 15, fontManager: fontManager)
+                                    .foregroundColor(.primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                    .background(Color(.systemGray5))
                             }
-                            .foregroundColor(.primary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(10)
                         }
-                    }
-                    .padding(.horizontal)
+                        .padding(.horizontal, 20)
 
-                    // Bottom Icons: Priority, Flag, Link
-                    HStack(spacing: 24) {
+                        Spacer(minLength: 60)
+                    }
+                    .padding(.vertical, 8)
+                }
+
+                // Bottom bar with icons and menu
+                HStack {
+                    // Left side: Priority, Flag, Link icons - small squares, icon only
+                    HStack(spacing: 12) {
                         // Priority Icon
                         Menu {
                             ForEach(PriorityOption.allCases, id: \.self) { option in
@@ -4247,17 +4255,13 @@ struct TaskDetailView: View {
                                 }
                             }
                         } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.circle")
-                                    .font(.system(size: 28))
-                                    .foregroundColor(priorityColor())
-                                Text("Priority")
-                                    .dynamicFont(size: 12, fontManager: fontManager)
-                                    .foregroundColor(.secondary)
-                            }
+                            Image(systemName: "exclamationmark.circle")
+                                .font(.system(size: 22))
+                                .foregroundColor(priorityColor())
+                                .frame(width: 40, height: 40)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
                         }
-
-                        Spacer()
 
                         // Flag Icon (Deadline)
                         Menu {
@@ -4269,50 +4273,30 @@ struct TaskDetailView: View {
                                 }
                             }
                         } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: task.dueDate != nil ? "flag.fill" : "flag")
-                                    .font(.system(size: 28))
-                                    .foregroundColor(task.dueDate != nil ? .orange : .gray)
-                                Text("Deadline")
-                                    .dynamicFont(size: 12, fontManager: fontManager)
-                                    .foregroundColor(.secondary)
-                            }
+                            Image(systemName: task.dueDate != nil ? "flag.fill" : "flag")
+                                .font(.system(size: 22))
+                                .foregroundColor(task.dueDate != nil ? .orange : .gray)
+                                .frame(width: 40, height: 40)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
                         }
-
-                        Spacer()
 
                         // Link Icon
                         Button(action: {
                             // Link action
                         }) {
-                            VStack(spacing: 4) {
-                                Image(systemName: "link.circle")
-                                    .font(.system(size: 28))
-                                    .foregroundColor(.gray)
-                                Text("Link")
-                                    .dynamicFont(size: 12, fontManager: fontManager)
-                                    .foregroundColor(.secondary)
-                            }
+                            Image(systemName: "link")
+                                .font(.system(size: 22))
+                                .foregroundColor(.gray)
+                                .frame(width: 40, height: 40)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
                         }
                     }
-                    .padding(.horizontal, 40)
-                    .padding(.top, 20)
 
-                    Spacer(minLength: 40)
-                }
-                .padding(.vertical)
-            }
-            .navigationTitle("Task Details")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                    .foregroundColor(.blue)
-                }
+                    Spacer()
 
-                ToolbarItem(placement: .navigationBarTrailing) {
+                    // Right side: Three-dot menu
                     Menu {
                         Button(action: {
                             showTaskInfoAction()
@@ -4335,11 +4319,40 @@ struct TaskDetailView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 20))
+                            .font(.system(size: 22))
                             .foregroundColor(.primary)
+                            .frame(width: 40, height: 40)
                     }
                 }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(Color(.systemBackground))
             }
+            .frame(height: geometry.size.height / 2)
+            .background(Color(.systemBackground))
+            .cornerRadius(20, corners: [.topLeft, .topRight])
+            .shadow(radius: 10)
+            .offset(y: dragOffset)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        // Only allow downward drag
+                        if value.translation.height > 0 {
+                            dragOffset = value.translation.height
+                        }
+                    }
+                    .onEnded { value in
+                        // If dragged down more than 100 points, dismiss
+                        if value.translation.height > 100 {
+                            dismiss()
+                        } else {
+                            // Otherwise, snap back
+                            withAnimation(.spring()) {
+                                dragOffset = 0
+                            }
+                        }
+                    }
+            )
         }
         .sheet(isPresented: $showPlanningView) {
             TaskPlanningView(

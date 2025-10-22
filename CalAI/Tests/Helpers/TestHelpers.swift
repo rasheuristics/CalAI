@@ -1,5 +1,6 @@
 import XCTest
 import EventKit
+import SwiftUI
 @testable import CalAI
 
 // MARK: - Test Fixtures
@@ -71,10 +72,31 @@ enum TestFixtures {
         title: String = "Test Event",
         startDate: Date = Date(),
         endDate: Date? = nil,
-        source: CalendarSource = .ios
+        location: String? = nil,
+        description: String? = nil,
+        isAllDay: Bool = false,
+        source: CalendarSource = .ios,
+        organizer: String? = nil,
+        calendarId: String? = "test-calendar-id",
+        calendarName: String? = "Test Calendar",
+        calendarColor: Color? = .blue
     ) -> UnifiedEvent {
-        let ekEvent = createMockEvent(title: title, startDate: startDate, endDate: endDate)
-        return UnifiedEvent(from: ekEvent, source: source)
+        let ekEvent = createMockEvent(title: title, startDate: startDate, endDate: endDate, location: location)
+        return UnifiedEvent(
+            id: id,
+            title: title,
+            startDate: startDate,
+            endDate: endDate ?? Calendar.current.date(byAdding: .hour, value: 1, to: startDate)!,
+            location: location,
+            description: description,
+            isAllDay: isAllDay,
+            source: source,
+            organizer: organizer,
+            originalEvent: ekEvent,
+            calendarId: calendarId,
+            calendarName: calendarName,
+            calendarColor: calendarColor
+        )
     }
 }
 

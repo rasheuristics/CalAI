@@ -8,6 +8,9 @@ struct WeekCalendarView: View {
     @Binding var offset: CGSize
 
     @State private var scrollOffset: CGFloat = 0
+    @State private var draggedEvent: EKEvent?
+    @State private var dragOffset: CGSize = .zero
+    @State private var isDragging = false
     private let hourHeight: CGFloat = 60
 
     var body: some View {
@@ -94,11 +97,18 @@ struct WeekCalendarView: View {
                                     WeekEventView(
                                         event: event,
                                         hourHeight: hourHeight * zoomScale,
-                                        dayWidth: (geometry.size.width - 50) / 7
+                                        dayWidth: (geometry.size.width - 50) / 7,
+                                        isDragging: draggedEvent?.eventIdentifier == event.eventIdentifier,
+                                        onDragChanged: { value in
+                                            handleDragChanged(event: event, value: value, dayWidth: (geometry.size.width - 50) / 7)
+                                        },
+                                        onDragEnded: { value in
+                                            handleDragEnded(event: event, value: value, dayWidth: (geometry.size.width - 50) / 7, originalDayIndex: dayIndex)
+                                        }
                                     )
                                     .offset(
-                                        x: CGFloat(dayIndex) * ((geometry.size.width - 50) / 7),
-                                        y: eventOffset(for: event)
+                                        x: CGFloat(dayIndex) * ((geometry.size.width - 50) / 7) + (draggedEvent?.eventIdentifier == event.eventIdentifier ? dragOffset.width : 0),
+                                        y: eventOffset(for: event) + (draggedEvent?.eventIdentifier == event.eventIdentifier ? dragOffset.height : 0)
                                     )
                                 }
                             }
@@ -223,12 +233,119 @@ struct WeekCalendarView: View {
         }
     }
 
+    private func handleDragChanged(event: EKEvent, value: DragGesture.Value, dayWidth: CGFloat) {
+        if draggedEvent == nil {
+            draggedEvent = event
+        }
+
+        // Calculate raw offsets
+        let rawVerticalOffset = value.translation.height
+        let rawHorizontalOffset = value.translation.width
+
+        // Snap vertical (time) to 15-minute grid
+        let totalVerticalOffset = eventOffset(for: event) + rawVerticalOffset
+        let minutesPerPixel = 60.0 / (hourHeight * zoomScale)
+        let totalMinutes = totalVerticalOffset * minutesPerPixel
+        let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+        let snappedVerticalOffset = snappedMinutes / minutesPerPixel
+        let snappedHeight = snappedVerticalOffset - eventOffset(for: event)
+
+        // Snap horizontal (day) to full day columns
+        let dayShift = round(rawHorizontalOffset / dayWidth)
+        let snappedWidth = dayShift * dayWidth
+
+        dragOffset = CGSize(width: snappedWidth, height: snappedHeight)
+    }
+
+    private func handleDragEnded(event: EKEvent, value: DragGesture.Value, dayWidth: CGFloat, originalDayIndex: Int) {
+        guard let draggedEvent = draggedEvent else { return }
+
+        // Calculate day shift
+        let dayShift = Int(round(dragOffset.width / dayWidth))
+        let newDayIndex = max(0, min(6, originalDayIndex + dayShift))
+
+        // Calculate time shift (already snapped from dragOffset)
+        let totalOffset = eventOffset(for: event) + dragOffset.height
+        let minutesPerPixel = 60.0 / (hourHeight * zoomScale)
+        let totalMinutes = totalOffset * minutesPerPixel
+        let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+
+        let calendar = Calendar.current
+
+        // Get event dates with explicit unwrapping for Swift type safety
+        guard let eventStartDate = event.startDate as Date?,
+              let eventEndDate = (event.endDate ?? event.startDate) as Date? else {
+            // Reset drag state if dates are invalid
+            self.draggedEvent = nil
+            self.dragOffset = .zero
+            return
+        }
+
+        let originalHour = calendar.component(.hour, from: eventStartDate)
+        let originalMinute = calendar.component(.minute, from: eventStartDate)
+        let originalTotalMinutes = Double(originalHour * 60 + originalMinute)
+        let minuteShift = Int(snappedMinutes - originalTotalMinutes)
+
+        // Calculate new date (day + time shift)
+        var newStartDate = eventStartDate
+        var newEndDate = eventEndDate
+
+        // Apply day shift
+        if dayShift != 0 {
+            guard let shiftedStart = calendar.date(byAdding: .day, value: dayShift, to: newStartDate),
+                  let shiftedEnd = calendar.date(byAdding: .day, value: dayShift, to: newEndDate) else {
+                // Reset drag state if date calculation fails
+                self.draggedEvent = nil
+                self.dragOffset = .zero
+                return
+            }
+            newStartDate = shiftedStart
+            newEndDate = shiftedEnd
+        }
+
+        // Apply time shift
+        if minuteShift != 0 {
+            guard let shiftedStart = calendar.date(byAdding: .minute, value: minuteShift, to: newStartDate),
+                  let shiftedEnd = calendar.date(byAdding: .minute, value: minuteShift, to: newEndDate) else {
+                // Reset drag state if date calculation fails
+                self.draggedEvent = nil
+                self.dragOffset = .zero
+                return
+            }
+            newStartDate = shiftedStart
+            newEndDate = shiftedEnd
+        }
+
+        // Update the event
+        event.startDate = newStartDate
+        event.endDate = newEndDate
+
+        // Save the event
+        do {
+            let eventStore = EKEventStore()
+            try eventStore.save(event, span: .thisEvent)
+            print("✅ Event moved to new day/time: \(newStartDate)")
+        } catch {
+            print("❌ Failed to save event: \(error)")
+        }
+
+        // Reset drag state
+        self.draggedEvent = nil
+        self.dragOffset = .zero
+    }
+
 }
 
 struct WeekEventView: View {
     let event: EKEvent
     let hourHeight: CGFloat
     let dayWidth: CGFloat
+    let isDragging: Bool
+    let onDragChanged: (DragGesture.Value) -> Void
+    let onDragEnded: (DragGesture.Value) -> Void
+
+    @GestureState private var isDetectingLongPress = false
+    @State private var completedLongPress = false
 
     var body: some View {
         HStack {
@@ -254,9 +371,38 @@ struct WeekEventView: View {
         }
         .padding(.horizontal, 2)
         .padding(.vertical, 1)
-        .background(Color(event.calendar?.cgColor ?? CGColor(red: 0, green: 0, blue: 1, alpha: 1)).opacity(0.2))
+        .background(
+            Color(event.calendar?.cgColor ?? CGColor(red: 0, green: 0, blue: 1, alpha: 1))
+                .opacity(isDragging ? 0.4 : 0.2)
+        )
         .cornerRadius(2)
         .frame(width: dayWidth - 2, height: eventHeight)
+        .scaleEffect(isDragging ? 1.05 : 1.0)
+        .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
+        .animation(.easeInOut(duration: 0.2), value: isDragging)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .updating($isDetectingLongPress) { currentState, gestureState, transaction in
+                    gestureState = currentState
+                }
+                .onEnded { finished in
+                    self.completedLongPress = finished
+                }
+        )
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    if completedLongPress {
+                        onDragChanged(value)
+                    }
+                }
+                .onEnded { value in
+                    if completedLongPress {
+                        onDragEnded(value)
+                        completedLongPress = false
+                    }
+                }
+        )
     }
 
     private var eventHeight: CGFloat {

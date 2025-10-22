@@ -145,7 +145,21 @@ struct DayCalendarView: View {
         if draggedEvent == nil {
             draggedEvent = event
         }
-        dragOffset = value.translation.height
+
+        // Calculate the raw offset
+        let rawOffset = value.translation.height
+
+        // Snap to 15-minute grid during drag
+        let totalOffset = eventOffset(for: event) + rawOffset
+        let minutesPerPixel = 60.0 / (hourHeight * zoomScale)
+        let totalMinutes = totalOffset * minutesPerPixel
+
+        // Snap to 15-minute increments
+        let snappedMinutes = round(totalMinutes / 15.0) * 15.0
+
+        // Calculate snapped offset
+        let snappedOffset = snappedMinutes / minutesPerPixel
+        dragOffset = snappedOffset - eventOffset(for: event)
     }
 
     private func handleDragEnded(event: EKEvent, value: DragGesture.Value) {
@@ -288,7 +302,7 @@ struct DayEventView: View {
         .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
         .animation(.easeInOut(duration: 0.2), value: isDragging)
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 2.0)
+            LongPressGesture(minimumDuration: 0.5)
                 .updating($isDetectingLongPress) { currentState, gestureState, transaction in
                     gestureState = currentState
                 }

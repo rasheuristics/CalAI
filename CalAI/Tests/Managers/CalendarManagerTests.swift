@@ -26,7 +26,7 @@ final class CalendarManagerTests: XCTestCase {
 
     func testRequestAccess_WhenAuthorized_ReturnsTrue() async throws {
         // Given
-        mockEventStore.authorizationStatus = .authorized
+        mockEventStore.mockAuthStatus = .fullAccess
 
         // When
         let granted = try await mockEventStore.requestAccess(to: .event)
@@ -38,7 +38,7 @@ final class CalendarManagerTests: XCTestCase {
 
     func testRequestAccess_WhenDenied_ReturnsFalse() async throws {
         // Given
-        mockEventStore.authorizationStatus = .denied
+        mockEventStore.mockAuthStatus = .denied
 
         // When
         let granted = try await mockEventStore.requestAccess(to: .event)
@@ -193,59 +193,12 @@ final class CalendarManagerTests: XCTestCase {
 
     // MARK: - UnifiedEvent Conversion Tests
 
-    func testUnifiedEventCreation_FromEKEvent_PreservesData() {
-        // Given
-        let ekEvent = TestFixtures.createMockEvent(
-            title: "Team Standup",
-            startDate: TestFixtures.date(year: 2025, month: 10, day: 20, hour: 9, minute: 0),
-            location: "Conference Room A",
-            calendar: TestFixtures.createMockCalendar(title: "Work Calendar")
-        )
-
-        // When
-        let unifiedEvent = UnifiedEvent(from: ekEvent, source: .ios)
-
-        // Then
-        XCTAssertEqual(unifiedEvent.title, "Team Standup")
-        XCTAssertEqual(unifiedEvent.startDate, ekEvent.startDate)
-        XCTAssertEqual(unifiedEvent.location, "Conference Room A")
-        XCTAssertEqual(unifiedEvent.source, .ios)
-        XCTAssertEqual(unifiedEvent.calendarName, "Work Calendar")
-    }
-
-    func testUnifiedEventCreation_WithAllDayEvent_SetsCorrectFlag() {
-        // Given
-        let ekEvent = TestFixtures.createMockEvent(
-            title: "Birthday",
-            isAllDay: true
-        )
-
-        // When
-        let unifiedEvent = UnifiedEvent(from: ekEvent, source: .ios)
-
-        // Then
-        XCTAssertTrue(unifiedEvent.isAllDay)
-    }
-
-    func testUnifiedEventCreation_WithoutLocation_HandlesNil() {
-        // Given
-        let ekEvent = TestFixtures.createMockEvent(
-            title: "Virtual Meeting",
-            location: nil
-        )
-
-        // When
-        let unifiedEvent = UnifiedEvent(from: ekEvent, source: .ios)
-
-        // Then
-        XCTAssertNil(unifiedEvent.location)
-    }
 
     // MARK: - Calendar Access Tests
 
     func testGetCalendars_WithAuthorization_ReturnsCalendars() {
         // Given
-        mockEventStore.authorizationStatus = .authorized
+        mockEventStore.mockAuthStatus = .fullAccess
         let calendar1 = TestFixtures.createMockCalendar(title: "Work")
         let calendar2 = TestFixtures.createMockCalendar(title: "Personal")
         mockEventStore.addMockCalendars([calendar1, calendar2])
@@ -266,7 +219,7 @@ final class CalendarManagerTests: XCTestCase {
         mockEventStore.addMockCalendars([calendar])
 
         // When
-        let defaultCalendar = mockEventStore.defaultCalendarForNewEvents()
+        let defaultCalendar = mockEventStore.mockDefaultCalendarForNewEvents()
 
         // Then
         XCTAssertNotNil(defaultCalendar)

@@ -6,6 +6,7 @@ class VoiceManager: NSObject, ObservableObject {
     @Published var isListening = false
     @Published var hasRecordingPermission = false
     @Published var currentTranscript = "" // Real-time transcript updates
+    @Published var isSpeechDetected = false // True when user is actively speaking
 
     private var audioEngine = AVAudioEngine()
     private var speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -14,6 +15,7 @@ class VoiceManager: NSObject, ObservableObject {
 
     private var completionHandler: ((String) -> Void)?
     private var partialTranscriptHandler: ((String) -> Void)?
+    private var speechDetectedHandler: (() -> Void)? // Called immediately when speech starts
     private var latestTranscript = ""
     private var hasProcessedResult = false // Prevents duplicate processing
 
@@ -21,6 +23,11 @@ class VoiceManager: NSObject, ObservableObject {
     private var silenceTimer: Timer?
     private let silenceThreshold: TimeInterval = 2.5 // 2.5 seconds of silence
     private var autoStopEnabled = true // Can be toggled
+
+    // Continuous listening mode
+    @Published var isContinuousMode = false
+    private var continuousModeEnabled = false
+    private var lastTranscriptLength = 0
 
     override init() {
         super.init()
@@ -78,8 +85,8 @@ class VoiceManager: NSObject, ObservableObject {
         }
     }
 
-    func startListening(onPartialTranscript: ((String) -> Void)? = nil, completion: @escaping (String) -> Void) {
-        print("🎙️ Starting listening process...")
+    func startListening(continuous: Bool = false, onPartialTranscript: ((String) -> Void)? = nil, onSpeechDetected: (() -> Void)? = nil, completion: @escaping (String) -> Void) {
+        print("🎙️ Starting listening process... (continuous: \(continuous))")
         print("📋 Checking permissions - hasRecordingPermission: \(hasRecordingPermission)")
 
         guard hasRecordingPermission else {
@@ -98,13 +105,18 @@ class VoiceManager: NSObject, ObservableObject {
         }
 
         print("✅ All permissions and requirements met")
+        continuousModeEnabled = continuous
+        isContinuousMode = continuous
         completionHandler = completion
         partialTranscriptHandler = onPartialTranscript
+        speechDetectedHandler = onSpeechDetected
         hasProcessedResult = false // Reset for new session
+        lastTranscriptLength = 0
 
         // Clear previous transcript
         DispatchQueue.main.async {
             self.currentTranscript = ""
+            self.isSpeechDetected = false
         }
 
         // Cancel previous task
@@ -166,6 +178,20 @@ class VoiceManager: NSObject, ObservableObject {
                 let newTranscript = result.bestTranscription.formattedString
                 print("🎤 Transcript received: \(newTranscript)")
 
+                // Detect speech start (any new words)
+                let currentLength = newTranscript.count
+                if currentLength > (self?.lastTranscriptLength ?? 0) {
+                    // New speech detected!
+                    DispatchQueue.main.async {
+                        if !(self?.isSpeechDetected ?? false) {
+                            print("🗣️ SPEECH DETECTED - User started speaking!")
+                            self?.isSpeechDetected = true
+                            self?.speechDetectedHandler?()
+                        }
+                    }
+                    self?.lastTranscriptLength = currentLength
+                }
+
                 // Only update if we have a non-empty transcript or no previous transcript
                 if !newTranscript.isEmpty || (self?.latestTranscript.isEmpty ?? true) {
                     self?.latestTranscript = newTranscript
@@ -189,7 +215,14 @@ class VoiceManager: NSObject, ObservableObject {
                         if !transcript.isEmpty {
                             self.hasProcessedResult = true
                             self.completionHandler?(transcript)
-                            self.stopListening()
+
+                            // In continuous mode, restart listening after processing
+                            if self.continuousModeEnabled {
+                                print("🔄 Continuous mode: Restarting listening after transcript")
+                                self.restartListeningForContinuousMode()
+                            } else {
+                                self.stopListening()
+                            }
                         }
                     }
                     return
@@ -274,8 +307,54 @@ class VoiceManager: NSObject, ObservableObject {
                 print("✅ Auto-stop with transcript: \(transcript)")
                 self.hasProcessedResult = true
                 self.completionHandler?(transcript)
+
+                // In continuous mode, restart listening after processing
+                if self.continuousModeEnabled {
+                    print("🔄 Continuous mode: Restarting listening after silence")
+                    self.restartListeningForContinuousMode()
+                    return
+                }
             }
             self.stopListening()
+        }
+    }
+
+    private func restartListeningForContinuousMode() {
+        // Briefly stop and restart to process the current transcript
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self, self.continuousModeEnabled else { return }
+
+            print("🔄 Restarting listening in continuous mode...")
+
+            // Stop current session
+            self.audioEngine.stop()
+            self.audioEngine.inputNode.removeTap(onBus: 0)
+            self.recognitionRequest?.endAudio()
+            self.recognitionTask?.cancel()
+
+            // Reset state for new session
+            self.latestTranscript = ""
+            self.hasProcessedResult = false
+            self.lastTranscriptLength = 0
+
+            DispatchQueue.main.async {
+                self.currentTranscript = ""
+                self.isSpeechDetected = false
+            }
+
+            // Restart listening with same handlers
+            let savedCompletionHandler = self.completionHandler
+            let savedPartialHandler = self.partialTranscriptHandler
+            let savedSpeechDetectedHandler = self.speechDetectedHandler
+
+            if let completion = savedCompletionHandler {
+                self.startListening(
+                    continuous: true,
+                    onPartialTranscript: savedPartialHandler,
+                    onSpeechDetected: savedSpeechDetectedHandler,
+                    completion: completion
+                )
+            }
         }
     }
 
@@ -295,19 +374,32 @@ class VoiceManager: NSObject, ObservableObject {
         recognitionTask?.cancel()
 
         isListening = false
+        continuousModeEnabled = false // Stop continuous mode
         recognitionRequest = nil
         recognitionTask = nil
 
         // Clear published transcript immediately
         DispatchQueue.main.async {
             self.currentTranscript = ""
+            self.isContinuousMode = false
+            self.isSpeechDetected = false
         }
 
         // Don't clear latestTranscript immediately, let delayed processing use it
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.latestTranscript = ""
+            self.lastTranscriptLength = 0
         }
 
         print("✅ Listening stopped successfully")
+    }
+
+    // Enable/disable continuous listening mode
+    func setContinuousMode(_ enabled: Bool) {
+        continuousModeEnabled = enabled
+        DispatchQueue.main.async {
+            self.isContinuousMode = enabled
+        }
+        print("🔄 Continuous mode set to: \(enabled)")
     }
 }

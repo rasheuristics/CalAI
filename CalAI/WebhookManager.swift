@@ -431,15 +431,20 @@ class WebhookServer {
 
     func start() {
         do {
+            guard let port = NWEndpoint.Port(rawValue: port) else {
+                print("❌ Invalid port number: \(self.port)")
+                return
+            }
+
             let parameters = NWParameters.tcp
-            listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
+            listener = try NWListener(using: parameters, on: port)
 
             listener?.newConnectionHandler = { [weak self] connection in
                 self?.handleConnection(connection)
             }
 
             listener?.start(queue: .global(qos: .background))
-            print("🌐 Webhook server listening on port \(port)")
+            print("🌐 Webhook server listening on port \(self.port)")
 
         } catch {
             print("❌ Failed to start webhook server: \(error)")

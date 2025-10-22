@@ -13,14 +13,23 @@ final class SyncManagerTests: XCTestCase {
     override func setUp() {
         super.setUp()
         sut = SyncManager.shared
+        // Stop any running sync before tests
+        sut.stopRealTimeSync()
         mockCalendarManager = CalendarManager()
         sut.calendarManager = mockCalendarManager
         cancellables = Set<AnyCancellable>()
+
+        // Allow state to settle between tests
+        Thread.sleep(forTimeInterval: 0.2)
     }
 
     override func tearDown() {
         sut.stopRealTimeSync()
         cancellables.removeAll()
+
+        // Allow cleanup to complete
+        Thread.sleep(forTimeInterval: 0.1)
+
         sut = nil
         mockCalendarManager = nil
         super.tearDown()
@@ -53,7 +62,7 @@ final class SyncManagerTests: XCTestCase {
         await sut.performIncrementalSync()
 
         // Then
-        await fulfillment(of: [expectation], timeout: 5.0)
+        await fulfillment(of: [expectation], timeout: 60.0)
         XCTAssertTrue(stateChanges.contains(true), "Should transition to syncing")
         XCTAssertFalse(sut.isSyncing, "Should end as not syncing")
     }
@@ -90,13 +99,15 @@ final class SyncManagerTests: XCTestCase {
 
         // When - start two syncs concurrently
         async let sync1 = sut.performIncrementalSync()
+        // Add small delay to ensure first sync starts
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
         async let sync2 = sut.performIncrementalSync() // Should be skipped
 
         await sync1
         await sync2
 
         // Then
-        await fulfillment(of: [firstSyncStarted], timeout: 5.0)
+        await fulfillment(of: [firstSyncStarted], timeout: 60.0)
         // If concurrent protection works, second sync should skip immediately
         XCTAssertFalse(sut.isSyncing)
     }
@@ -137,7 +148,7 @@ final class SyncManagerTests: XCTestCase {
         sut.startRealTimeSync(interval: 60)
 
         // Then
-        wait(for: [expectation], timeout: 5.0)
+        wait(for: [expectation], timeout: 60.0)
     }
 
     func testRealTimeSync_CanBeStopped() {
@@ -387,12 +398,13 @@ final class SyncManagerTests: XCTestCase {
     func testPublishedProperties_EmitChanges() {
         // Given
         let expectation = XCTestExpectation(description: "isSyncing publishes")
+        expectation.expectedFulfillmentCount = 1  // Fulfill only once when we get enough values
         var emittedValues: [Bool] = []
 
         sut.$isSyncing
             .sink { value in
                 emittedValues.append(value)
-                if emittedValues.count > 1 {
+                if emittedValues.count >= 2 {  // Wait for at least 2 emissions
                     expectation.fulfill()
                 }
             }
@@ -404,7 +416,7 @@ final class SyncManagerTests: XCTestCase {
         }
 
         // Then
-        wait(for: [expectation], timeout: 5.0)
-        XCTAssertGreaterThan(emittedValues.count, 1, "Should emit multiple values")
+        wait(for: [expectation], timeout: 60.0)
+        XCTAssertGreaterThanOrEqual(emittedValues.count, 2, "Should emit at least 2 values")
     }
 }

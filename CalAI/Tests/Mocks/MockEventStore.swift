@@ -9,7 +9,7 @@ class MockEventStore: EKEventStore {
 
     var events: [EKEvent] = []
     var calendars: [EKCalendar] = []
-    var authorizationStatus: EKAuthorizationStatus = .authorized
+    var mockAuthStatus: EKAuthorizationStatus = .fullAccess
     var shouldFailSave: Bool = false
     var shouldFailRemove: Bool = false
     var shouldFailFetch: Bool = false
@@ -26,15 +26,15 @@ class MockEventStore: EKEventStore {
     var lastRemovedEvent: EKEvent?
     var lastFetchPredicate: NSPredicate?
 
-    // MARK: - Override Authorization
+    // MARK: - Authorization (Non-Override)
 
-    override func authorizationStatus(for entityType: EKEntityType) -> EKAuthorizationStatus {
-        return authorizationStatus
+    func mockAuthorizationStatus(for entityType: EKEntityType) -> EKAuthorizationStatus {
+        return mockAuthStatus
     }
 
     override func requestAccess(to entityType: EKEntityType) async throws -> Bool {
         requestAccessCalled = true
-        return authorizationStatus == .authorized
+        return mockAuthStatus == .fullAccess || mockAuthStatus == .writeOnly
     }
 
     // MARK: - Override Calendar Access
@@ -44,7 +44,7 @@ class MockEventStore: EKEventStore {
         return calendars
     }
 
-    override func defaultCalendarForNewEvents() -> EKCalendar? {
+    func mockDefaultCalendarForNewEvents() -> EKCalendar? {
         return calendars.first
     }
 
@@ -98,10 +98,12 @@ class MockEventStore: EKEventStore {
 
     // MARK: - Helper Methods
 
-    func reset() {
+    override func reset() {
+        super.reset()
+
         events.removeAll()
         calendars.removeAll()
-        authorizationStatus = .authorized
+        mockAuthStatus = .fullAccess
         shouldFailSave = false
         shouldFailRemove = false
         shouldFailFetch = false
