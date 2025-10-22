@@ -289,9 +289,23 @@ struct VoiceSelectionView: View {
     }
 
     private func testVoice(_ voice: AVSpeechSynthesisVoice) {
-        let utterance = AVSpeechUtterance(string: "Hi, this is \(voice.name)")
-        utterance.voice = voice
-        let synthesizer = AVSpeechSynthesizer()
-        synthesizer.speak(utterance)
+        // Stop any current speech
+        SpeechManager.shared.stopSpeaking()
+
+        // Create a preview synthesizer that won't be deallocated
+        // We'll use SpeechManager's speak method which handles everything properly
+        let text = "Hi, this is \(voice.name)"
+
+        // Temporarily save current voice
+        let currentVoiceId = UserDefaults.standard.string(forKey: UserDefaults.Keys.speechVoiceIdentifier) ?? ""
+
+        // Set the preview voice
+        UserDefaults.standard.set(voice.identifier, forKey: UserDefaults.Keys.speechVoiceIdentifier)
+
+        // Speak the preview
+        SpeechManager.shared.speak(text: text) {
+            // Restore original voice after preview
+            UserDefaults.standard.set(currentVoiceId, forKey: UserDefaults.Keys.speechVoiceIdentifier)
+        }
     }
 }
