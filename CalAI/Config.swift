@@ -3,9 +3,51 @@ import Foundation
 enum AIProvider: String, CaseIterable {
     case anthropic = "Anthropic"
     case openai = "OpenAI"
+    case onDevice = "On-Device"
 
     var displayName: String {
         return self.rawValue
+    }
+
+    var requiresAPIKey: Bool {
+        switch self {
+        case .anthropic, .openai:
+            return true
+        case .onDevice:
+            return false
+        }
+    }
+
+    var requiresNetwork: Bool {
+        switch self {
+        case .anthropic, .openai:
+            return true
+        case .onDevice:
+            return false
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .anthropic:
+            return "Claude by Anthropic - Advanced reasoning and long context"
+        case .openai:
+            return "GPT-4 by OpenAI - Versatile and powerful"
+        case .onDevice:
+            return "Apple Intelligence - Private, fast, and free (iOS 26+, A17 Pro or M-series required)"
+        }
+    }
+
+    @available(iOS 26.0, *)
+    var isAvailable: Bool {
+        switch self {
+        case .anthropic, .openai:
+            return true
+        case .onDevice:
+            // Check if Foundation Models framework is available (iOS 26+)
+            let version = ProcessInfo.processInfo.operatingSystemVersion
+            return version.majorVersion >= 26
+        }
     }
 }
 
@@ -167,6 +209,8 @@ struct Config {
             return hasAnthropicKey
         case .openai:
             return hasOpenAIKey
+        case .onDevice:
+            return true // On-device doesn't need API key
         }
     }
 
@@ -186,20 +230,25 @@ struct Config {
             return anthropicAPIKey
         case .openai:
             return openaiAPIKey
+        case .onDevice:
+            return "" // No API key needed
         }
     }
-    
+
     // MARK: - Model Selection
-    
+
     static let openAIModel = "gpt-4o"
     static let anthropicModel = "claude-3-5-sonnet-20240620"
-    
+    static let onDeviceModel = "apple-foundation-model" // Placeholder identifier
+
     static var selectedModel: String {
         switch aiProvider {
         case .anthropic:
             return anthropicModel
         case .openai:
             return openAIModel
+        case .onDevice:
+            return onDeviceModel
         }
     }
 }

@@ -246,6 +246,26 @@ class AIManager: ObservableObject {
                     // Handle batch operations
                     await handleBatch(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
 
+                case .weather:
+                    // Handle weather queries
+                    await handleWeather(transcript: cleanTranscript, completion: completion)
+
+                case .createTask:
+                    // Handle task creation
+                    await handleCreateTask(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+
+                case .listTasks:
+                    // Handle listing tasks
+                    await handleListTasks(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+
+                case .updateTask:
+                    // Handle task updates
+                    await handleUpdateTask(transcript: cleanTranscript, completion: completion)
+
+                case .completeTask:
+                    // Handle task completion
+                    await handleCompleteTask(transcript: cleanTranscript, completion: completion)
+
                 case .conversation:
                     // Handle general conversation
                     try await handleConversation(transcript: cleanTranscript, completion: completion)
@@ -270,15 +290,33 @@ class AIManager: ObservableObject {
         calendarEvents: [UnifiedEvent],
         completion: @escaping (AICalendarResponse) -> Void
     ) async throws {
-        print("🤖 Processing with Conversational AI...")
+        print("🤖 Processing with Conversational AI... (Provider: \(Config.aiProvider.displayName))")
 
-        // Call conversational AI service
-        let action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
+        // Route to appropriate AI service based on user's selection
+        let action: ConversationalAIService.AIAction
+
+        switch Config.aiProvider {
+        case .onDevice:
+            if #available(iOS 26.0, *) {
+                // Use on-device Foundation Models
+                print("📱 Using On-Device AI (Foundation Models)")
+                action = try await processWithOnDeviceAI(transcript: transcript, calendarEvents: calendarEvents)
+            } else {
+                // Fallback to cloud if on-device not available
+                print("⚠️ On-device AI not available, falling back to cloud provider")
+                action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
+            }
+
+        case .anthropic, .openai:
+            // Use cloud-based AI (OpenAI or Anthropic)
+            print("☁️ Using Cloud AI (\(Config.aiProvider.displayName))")
+            action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
+        }
 
         print("✅ AI Action: intent=\(action.intent), needsClarification=\(action.needsClarification)")
 
         // Convert AI action to calendar response
-        let response = convertAIActionToResponse(action, calendarEvents: calendarEvents, originalTranscript: transcript)
+        let response = await convertAIActionToResponse(action, calendarEvents: calendarEvents, originalTranscript: transcript)
 
         await MainActor.run {
             self.isProcessing = false
@@ -286,11 +324,48 @@ class AIManager: ObservableObject {
         }
     }
 
+    // MARK: - On-Device AI Processing (iOS 26+)
+
+    @available(iOS 26.0, *)
+    private func processWithOnDeviceAI(
+        transcript: String,
+        calendarEvents: [UnifiedEvent]
+    ) async throws -> ConversationalAIService.AIAction {
+        let onDeviceAction = try await OnDeviceAIService.shared.processCommand(transcript, calendarEvents: calendarEvents)
+
+        // Convert OnDeviceAIService.AIAction to ConversationalAIService.AIAction
+        // Build parameters dictionary from individual fields
+        var parameters: [String: ConversationalAIService.AnyCodableValue] = [:]
+
+        if let startDate = onDeviceAction.startDate {
+            parameters["startDate"] = .string(startDate)
+        }
+        if let endDate = onDeviceAction.endDate {
+            parameters["endDate"] = .string(endDate)
+        }
+        if let title = onDeviceAction.title {
+            parameters["title"] = .string(title)
+        }
+        if let location = onDeviceAction.location {
+            parameters["location"] = .string(location)
+        }
+
+        return ConversationalAIService.AIAction(
+            intent: onDeviceAction.intent,
+            parameters: parameters,
+            message: onDeviceAction.message,
+            needsClarification: onDeviceAction.needsClarification,
+            clarificationQuestion: onDeviceAction.clarificationQuestion,
+            shouldContinueListening: onDeviceAction.shouldContinueListening,
+            referencedEventIds: onDeviceAction.referencedEventIds
+        )
+    }
+
     private func convertAIActionToResponse(
         _ action: ConversationalAIService.AIAction,
         calendarEvents: [UnifiedEvent],
         originalTranscript: String
-    ) -> AICalendarResponse {
+    ) async -> AICalendarResponse {
 
         // Handle clarification requests
         if action.needsClarification {
@@ -443,6 +518,166 @@ class AIManager: ObservableObject {
                 )
             }
 
+        case "weather":
+            print("🌦️ Processing weather intent...")
+
+            // Check if there's a date parameter for forecast
+            let weatherDate: Date?
+            if let dateStr = action.parameters["date"]?.stringValue {
+                weatherDate = ISO8601DateFormatter().date(from: dateStr)
+                print("📅 Weather date parameter: \(dateStr) -> \(weatherDate?.description ?? "nil")")
+            } else {
+                weatherDate = nil
+                print("📅 No date parameter - fetching current weather")
+            }
+
+            // Fetch weather and return response
+            return await withCheckedContinuation { continuation in
+                let fetchCompletion: (Result<WeatherData, Error>) -> Void = { result in
+                    switch result {
+                    case .success(let weatherData):
+                        print("✅ Weather fetched successfully: \(weatherData.temperatureFormatted)")
+
+                        // Build a natural weather response with date context
+                        var weatherMessage: String
+                        if let date = weatherDate {
+                            let calendar = Calendar.current
+                            let formatter = DateFormatter()
+
+                            if calendar.isDateInToday(date) {
+                                weatherMessage = "Today's weather: "
+                            } else if calendar.isDateInTomorrow(date) {
+                                weatherMessage = "Tomorrow's forecast: "
+                            } else {
+                                formatter.dateStyle = .full
+                                formatter.timeStyle = .none
+                                weatherMessage = "Weather for \(formatter.string(from: date)): "
+                            }
+                        } else {
+                            weatherMessage = "It's currently "
+                        }
+
+                        weatherMessage += weatherData.temperatureFormatted
+
+                        if !weatherData.condition.isEmpty {
+                            weatherMessage += " and \(weatherData.condition.lowercased())"
+                        }
+
+                        if weatherData.high != weatherData.temperature || weatherData.low != weatherData.temperature {
+                            let highTemp = String(format: "%.0f°", weatherData.high)
+                            let lowTemp = String(format: "%.0f°", weatherData.low)
+                            weatherMessage += ", with a high of \(highTemp) and a low of \(lowTemp)"
+                        }
+
+                        if weatherData.precipitationChance > 0 {
+                            weatherMessage += ". There's a \(weatherData.precipitationChance)% chance of precipitation"
+                        }
+
+                        weatherMessage += "."
+
+                        let response = AICalendarResponse(
+                            message: weatherMessage,
+                            shouldContinueListening: false
+                        )
+                        continuation.resume(returning: response)
+
+                    case .failure(let error):
+                        print("❌ Weather fetch failed: \(error.localizedDescription)")
+
+                        // Provide helpful error message
+                        var errorMessage = "I couldn't fetch the weather right now. "
+                        let nsError = error as NSError
+
+                        if nsError.code == 3 {
+                            errorMessage += "Please enable location access in Settings to get weather information."
+                        } else if nsError.code == 8 {
+                            errorMessage += "I can only provide forecasts up to 10 days in the future."
+                        } else {
+                            errorMessage += error.localizedDescription
+                        }
+
+                        let response = AICalendarResponse(
+                            message: errorMessage,
+                            shouldContinueListening: false
+                        )
+                        continuation.resume(returning: response)
+                    }
+                }
+
+                // Call appropriate weather service method
+                if let date = weatherDate {
+                    WeatherService.shared.fetchWeatherForDate(date, completion: fetchCompletion)
+                } else {
+                    WeatherService.shared.fetchCurrentWeather(completion: fetchCompletion)
+                }
+            }
+
+        case "create_task":
+            print("✅ Processing create_task intent...")
+
+            guard let title = action.parameters["title"]?.stringValue else {
+                return AICalendarResponse(
+                    message: "I need a title for the task. What should the task be called?",
+                    shouldContinueListening: true
+                )
+            }
+
+            // Extract task parameters
+            let description = action.parameters["description"]?.stringValue
+            let priorityStr = action.parameters["priority"]?.stringValue ?? "medium"
+            let priority = TaskPriority(rawValue: priorityStr.capitalized) ?? .medium
+            let project = action.parameters["project"]?.stringValue
+            let durationMinutes = action.parameters["duration_minutes"]?.intValue
+
+            // Extract tags
+            var tags: [String] = []
+            if case .array(let tagsArray) = action.parameters["tags"] {
+                tags = tagsArray.compactMap { $0.stringValue }
+            }
+
+            // Extract due date
+            var dueDate: Date?
+            if let dueDateStr = action.parameters["due_date"]?.stringValue {
+                dueDate = ISO8601DateFormatter().date(from: dueDateStr)
+            }
+
+            // Extract event ID if this is an event-related task
+            let eventId = action.parameters["event_id"]?.stringValue
+
+            // Create the task
+            let task = EventTask(
+                title: title,
+                description: description,
+                priority: priority,
+                estimatedMinutes: durationMinutes,
+                dueDate: dueDate,
+                project: project,
+                tags: tags
+            )
+
+            // Add task to appropriate location
+            if let eventId = eventId {
+                EventTaskManager.shared.addTask(task, to: eventId)
+                print("✅ Task added to event \(eventId)")
+            } else {
+                // For standalone tasks, use a special "standalone" event ID
+                EventTaskManager.shared.addTask(task, to: "standalone_tasks")
+                print("✅ Standalone task created")
+            }
+
+            return AICalendarResponse(
+                message: action.message,
+                shouldContinueListening: false
+            )
+
+        case "list_tasks", "update_task", "complete_task":
+            // These intents are handled - return the AI's message
+            print("✅ Processing \(action.intent) intent...")
+            return AICalendarResponse(
+                message: action.message,
+                shouldContinueListening: action.shouldContinueListening
+            )
+
         default:
             // Conversation or unknown intent
             print("ℹ️ Default case - intent: \(action.intent)")
@@ -546,6 +781,11 @@ class AIManager: ObservableObject {
             return aiError.userFriendlyMessage
         }
 
+        // Check for OnDeviceAI errors
+        if let nsError = error as NSError?, nsError.domain == "OnDeviceAI" {
+            return nsError.localizedDescription
+        }
+
         // Check for network errors
         if let urlError = error as? URLError {
             switch urlError.code {
@@ -560,8 +800,10 @@ class AIManager: ObservableObject {
             }
         }
 
-        // Generic fallback
-        return "Sorry, I had trouble understanding that. Please try again."
+        // Generic fallback - include error details for debugging
+        let errorMessage = error.localizedDescription
+        print("⚠️ Unhandled error in AIManager: \(errorMessage)")
+        return "Sorry, I had trouble processing that: \(errorMessage)"
     }
 
     private func retryWithBackoff<T>(
@@ -605,6 +847,11 @@ class AIManager: ObservableObject {
         case focusTime    // Smart blocking ("Block focus time tomorrow")
         case conflicts    // Conflict detection ("Show me conflicts today")
         case batch        // Batch operations ("Move all Monday meetings")
+        case weather      // Weather queries ("What's the weather?")
+        case createTask   // Create a new task ("Add a task to buy groceries")
+        case listTasks    // List tasks ("What are my tasks?")
+        case updateTask   // Update task ("Set the grocery task to high priority")
+        case completeTask // Complete task ("Mark the grocery task as done")
         case conversation // General chat
     }
 
@@ -639,7 +886,48 @@ class AIManager: ObservableObject {
             }
         }
 
-        // PRIORITY 3: Analytics patterns (counting, statistics)
+        // PRIORITY 3: Task patterns (very specific - check early)
+        let taskPatterns = [
+            ("create.*task", 10), ("add.*task", 10), ("new task", 10),
+            ("make.*task", 8), ("task.*called", 8), ("task.*named", 8),
+            ("complete.*task", 10), ("finish.*task", 10), ("mark.*done", 10),
+            ("mark.*complete", 10), ("list.*task", 10), ("show.*task", 10),
+            ("my tasks", 10), ("what.*tasks", 10), ("update.*task", 8),
+            ("change.*task", 8), ("set.*priority", 10)
+        ]
+        for (keyword, weight) in taskPatterns {
+            if lowercased.range(of: keyword, options: .regularExpression) != nil {
+                print("✅ Task keyword found: '\(keyword)'")
+
+                // Determine specific task intent
+                if lowercased.contains("complete") || lowercased.contains("finish") || lowercased.contains("done") {
+                    return .completeTask
+                } else if lowercased.contains("list") || lowercased.contains("show") || lowercased.contains("what") {
+                    return .listTasks
+                } else if lowercased.contains("update") || lowercased.contains("change") || lowercased.contains("set") {
+                    return .updateTask
+                } else {
+                    return .createTask
+                }
+            }
+        }
+
+        // PRIORITY 4: Weather patterns (very specific - check early)
+        let weatherPatterns = [
+            ("weather", 10), ("temperature", 10), ("forecast", 10),
+            ("how.*hot", 8), ("how.*cold", 8), ("raining", 8),
+            ("sunny", 7), ("cloudy", 7), ("what.*temp", 8)
+        ]
+        var weatherScore = 0
+        for (keyword, weight) in weatherPatterns {
+            if lowercased.range(of: keyword, options: .regularExpression) != nil {
+                weatherScore += weight
+                print("🌦️ Weather keyword found: '\(keyword)'")
+                return .weather // Immediate return for weather commands
+            }
+        }
+
+        // PRIORITY 5: Analytics patterns (counting, statistics)
         let analyticsPatterns = [
             ("how many", 10), ("how much", 10), ("what's my busiest", 10),
             ("compare", 8), ("what percentage", 10), ("show me.*trends", 8),
@@ -2205,6 +2493,251 @@ class AIManager: ObservableObject {
         let message = "Batch operations require manual confirmation. You have \(eventsInRange.count) event\(eventsInRange.count == 1 ? "" : "s") matching your criteria. Please use the calendar interface to \(operation) them individually."
 
         let response = AICalendarResponse(message: message)
+        await MainActor.run {
+            self.isProcessing = false
+            completion(response)
+        }
+    }
+
+    private func handleWeather(transcript: String, completion: @escaping (AICalendarResponse) -> Void) async {
+        print("🌦️ Handling weather query: \(transcript)")
+
+        // Extract date from transcript if present
+        let weatherDate = extractWeatherDate(from: transcript)
+        if let date = weatherDate {
+            print("📅 Extracted weather date: \(date)")
+        } else {
+            print("📅 No date found - fetching current weather")
+        }
+
+        // Fetch weather using WeatherService
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let fetchCompletion: (Result<WeatherData, Error>) -> Void = { [weak self] result in
+                guard let self = self else {
+                    continuation.resume()
+                    return
+                }
+
+                switch result {
+                case .success(let weatherData):
+                    print("✅ Weather fetched successfully: \(weatherData.temperatureFormatted)")
+
+                    // Build a natural weather response with date context
+                    var weatherMessage: String
+                    if let date = weatherDate {
+                        let calendar = Calendar.current
+                        let formatter = DateFormatter()
+
+                        if calendar.isDateInToday(date) {
+                            weatherMessage = "Today's weather: "
+                        } else if calendar.isDateInTomorrow(date) {
+                            weatherMessage = "Tomorrow's forecast: "
+                        } else {
+                            formatter.dateStyle = .full
+                            formatter.timeStyle = .none
+                            weatherMessage = "Weather for \(formatter.string(from: date)): "
+                        }
+                    } else {
+                        weatherMessage = "It's currently "
+                    }
+
+                    weatherMessage += weatherData.temperatureFormatted
+
+                    if !weatherData.condition.isEmpty {
+                        weatherMessage += " and \(weatherData.condition.lowercased())"
+                    }
+
+                    if weatherData.high != weatherData.temperature || weatherData.low != weatherData.temperature {
+                        let highTemp = String(format: "%.0f°", weatherData.high)
+                        let lowTemp = String(format: "%.0f°", weatherData.low)
+                        weatherMessage += ", with a high of \(highTemp) and a low of \(lowTemp)"
+                    }
+
+                    if weatherData.precipitationChance > 0 {
+                        weatherMessage += ". There's a \(weatherData.precipitationChance)% chance of precipitation"
+                    }
+
+                    weatherMessage += "."
+
+                    let response = AICalendarResponse(message: weatherMessage, shouldContinueListening: false)
+                    Task { @MainActor in
+                        self.isProcessing = false
+                        completion(response)
+                        continuation.resume()
+                    }
+
+                case .failure(let error):
+                    print("❌ Weather fetch failed: \(error.localizedDescription)")
+
+                    // Provide helpful error message
+                    var errorMessage = "I couldn't fetch the weather right now. "
+                    let nsError = error as NSError
+
+                    if nsError.code == 3 {
+                        errorMessage += "Please enable location access in Settings to get weather information."
+                    } else if nsError.code == 8 {
+                        errorMessage += "I can only provide forecasts up to 10 days in the future."
+                    } else {
+                        errorMessage += error.localizedDescription
+                    }
+
+                    let response = AICalendarResponse(message: errorMessage, shouldContinueListening: false)
+                    Task { @MainActor in
+                        self.isProcessing = false
+                        completion(response)
+                        continuation.resume()
+                    }
+                }
+            }
+
+            // Call appropriate weather service method
+            if let date = weatherDate {
+                WeatherService.shared.fetchWeatherForDate(date, completion: fetchCompletion)
+            } else {
+                WeatherService.shared.fetchCurrentWeather(completion: fetchCompletion)
+            }
+        }
+    }
+
+    // Extract date from weather query transcript
+    private func extractWeatherDate(from text: String) -> Date? {
+        let lowercased = text.lowercased()
+        let calendar = Calendar.current
+        let now = Date()
+
+        // Tomorrow
+        if lowercased.contains("tomorrow") {
+            return calendar.date(byAdding: .day, value: 1, to: now)
+        }
+
+        // Days of the week
+        let weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+        for (index, weekday) in weekdays.enumerated() {
+            if lowercased.contains(weekday) {
+                // Find the next occurrence of this weekday
+                let currentWeekday = calendar.component(.weekday, from: now)
+                var daysToAdd = (index + 1) - currentWeekday
+                if daysToAdd <= 0 {
+                    daysToAdd += 7 // Next week
+                }
+                return calendar.date(byAdding: .day, value: daysToAdd, to: now)
+            }
+        }
+
+        // "next [weekday]"
+        if lowercased.contains("next") {
+            for (index, weekday) in weekdays.enumerated() {
+                if lowercased.contains(weekday) {
+                    let currentWeekday = calendar.component(.weekday, from: now)
+                    var daysToAdd = (index + 1) - currentWeekday
+                    if daysToAdd <= 0 {
+                        daysToAdd += 7
+                    }
+                    daysToAdd += 7 // Add another week for "next"
+                    return calendar.date(byAdding: .day, value: daysToAdd, to: now)
+                }
+            }
+        }
+
+        return nil
+    }
+
+    // MARK: - Task Handling
+
+    private func handleCreateTask(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        print("✅ Handling create task: \(transcript)")
+
+        // Extract task details from transcript
+        let lowercased = transcript.lowercased()
+
+        // Extract title (simple extraction - remove common task keywords)
+        var title = transcript
+        let prefixes = ["create task", "add task", "new task", "create a task", "add a task", "make a task"]
+        for prefix in prefixes {
+            if let range = lowercased.range(of: prefix) {
+                title = String(transcript[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                break
+            }
+        }
+
+        // Extract priority
+        var priority: TaskPriority = .medium
+        if lowercased.contains("high priority") || lowercased.contains("urgent") || lowercased.contains("important") {
+            priority = .high
+        } else if lowercased.contains("low priority") {
+            priority = .low
+        }
+
+        // Create the task
+        let task = EventTask(
+            title: title,
+            priority: priority
+        )
+
+        // Add to standalone tasks
+        EventTaskManager.shared.addTask(task, to: "standalone_tasks")
+
+        let message = "I've created a \(priority.rawValue.lowercased()) priority task: \(title)"
+        let response = AICalendarResponse(message: message, shouldContinueListening: false)
+
+        await MainActor.run {
+            self.isProcessing = false
+            completion(response)
+        }
+    }
+
+    private func handleListTasks(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        print("✅ Handling list tasks: \(transcript)")
+
+        // Get all standalone tasks
+        let standaloneTasks = EventTaskManager.shared.getTasks(for: "standalone_tasks")?.tasks ?? []
+
+        var message: String
+        if standaloneTasks.isEmpty {
+            message = "You don't have any tasks yet."
+        } else {
+            let pendingTasks = standaloneTasks.filter { !$0.isCompleted }
+            let completedTasks = standaloneTasks.filter { $0.isCompleted }
+
+            if pendingTasks.isEmpty {
+                message = "All \(standaloneTasks.count) task\(standaloneTasks.count == 1 ? "" : "s") completed! Great work!"
+            } else {
+                message = "You have \(pendingTasks.count) pending task\(pendingTasks.count == 1 ? "" : "s"):\n\n"
+                for (index, task) in pendingTasks.enumerated() {
+                    message += "\(index + 1). \(task.title) (\(task.priority.rawValue) priority)\n"
+                }
+
+                if !completedTasks.isEmpty {
+                    message += "\nAnd \(completedTasks.count) completed task\(completedTasks.count == 1 ? "" : "s")."
+                }
+            }
+        }
+
+        let response = AICalendarResponse(message: message, shouldContinueListening: false)
+        await MainActor.run {
+            self.isProcessing = false
+            completion(response)
+        }
+    }
+
+    private func handleUpdateTask(transcript: String, completion: @escaping (AICalendarResponse) -> Void) async {
+        print("✅ Handling update task: \(transcript)")
+
+        let message = "Task updating through voice is coming soon. For now, please use the task interface to update task properties."
+        let response = AICalendarResponse(message: message, shouldContinueListening: false)
+
+        await MainActor.run {
+            self.isProcessing = false
+            completion(response)
+        }
+    }
+
+    private func handleCompleteTask(transcript: String, completion: @escaping (AICalendarResponse) -> Void) async {
+        print("✅ Handling complete task: \(transcript)")
+
+        let message = "Task completion through voice is coming soon. For now, please use the task interface to mark tasks as complete."
+        let response = AICalendarResponse(message: message, shouldContinueListening: false)
+
         await MainActor.run {
             self.isProcessing = false
             completion(response)

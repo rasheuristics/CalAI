@@ -74,6 +74,45 @@ class WeatherService: NSObject, ObservableObject {
         }
     }
 
+    /// Fetch weather for a specific date (up to 10 days in the future)
+    func fetchWeatherForDate(_ date: Date, completion: @escaping (Result<WeatherData, Error>) -> Void) {
+        // Check location authorization
+        let status = locationManager.authorizationStatus
+        print("========================================")
+        print("🔴🔴🔴 WEATHER FORECAST FETCH STARTED 🔴🔴🔴")
+        print("========================================")
+        print("🌦️ WeatherService: Checking location authorization - status: \(status.rawValue)")
+        print("🌦️ WeatherService: Requested date: \(date)")
+
+        switch status {
+        case .notDetermined:
+            print("⚠️ WeatherService: Location permission not determined, requesting and storing completion...")
+            self.weatherCompletion = completion
+            self.requestedForecastDate = date
+            locationManager.requestWhenInUseAuthorization()
+
+        case .restricted, .denied:
+            print("❌ WeatherService: Location permission denied or restricted")
+            let error = NSError(domain: "WeatherService", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "Location permission denied. Enable in Settings."
+            ])
+            completion(.failure(error))
+
+        case .authorizedWhenInUse, .authorizedAlways:
+            print("✅ WeatherService: Location authorized, requesting location...")
+            self.requestedForecastDate = date
+            locationManager.requestLocation()
+            self.weatherCompletion = completion
+
+        @unknown default:
+            print("❌ WeatherService: Unknown location authorization status")
+            let error = NSError(domain: "WeatherService", code: 4, userInfo: [
+                NSLocalizedDescriptionKey: "Unknown location authorization status"
+            ])
+            completion(.failure(error))
+        }
+    }
+
     /// Fetch current weather for device location
     func fetchCurrentWeather(completion: @escaping (Result<WeatherData, Error>) -> Void) {
         // Check location authorization
@@ -136,8 +175,17 @@ class WeatherService: NSObject, ObservableObject {
     // MARK: - Private Methods
 
     private var weatherCompletion: ((Result<WeatherData, Error>) -> Void)?
+    private var requestedForecastDate: Date?
 
     private func fetchWeather(for location: CLLocation) {
+        // Check if we have a requested forecast date
+        if let forecastDate = requestedForecastDate {
+            fetchWeatherForDate(location: location, date: forecastDate)
+            requestedForecastDate = nil // Reset after use
+            return
+        }
+
+        // Otherwise fetch current weather
         print("🌦️ WeatherService: Fetching weather for location: \(location.coordinate.latitude), \(location.coordinate.longitude)")
         print("🌦️ WeatherService: iOS Version: \(ProcessInfo.processInfo.operatingSystemVersion)")
         isLoading = true
@@ -152,6 +200,29 @@ class WeatherService: NSObject, ObservableObject {
             print("⚠️ WeatherService: iOS 15 detected - Using OpenWeatherMap fallback")
             // Fallback to OpenWeatherMap for iOS 15
             fetchOpenWeatherMapData(for: location)
+        }
+    }
+
+    // Fetch weather for a specific future date
+    private func fetchWeatherForDate(location: CLLocation, date: Date) {
+        print("🌦️ WeatherService: Fetching forecast for date: \(date)")
+        isLoading = true
+        error = nil
+
+        // Try WeatherKit first (iOS 16+)
+        if #available(iOS 16.0, *) {
+            print("✅ WeatherService: iOS 16+ detected - Attempting WeatherKit forecast...")
+            fetchWeatherKitForecast(for: location, date: date)
+        } else {
+            print("⚠️ WeatherService: iOS 15 - Forecast not supported with OpenWeatherMap free tier")
+            let error = NSError(domain: "WeatherService", code: 7, userInfo: [
+                NSLocalizedDescriptionKey: "Weather forecast requires iOS 16 or later"
+            ])
+            DispatchQueue.main.async {
+                self.isLoading = false
+                self.weatherCompletion?(.failure(error))
+                self.weatherCompletion = nil
+            }
         }
     }
 
@@ -217,6 +288,60 @@ class WeatherService: NSObject, ObservableObject {
                 print("   🔄 Attempting OpenWeatherMap fallback...")
                 DispatchQueue.main.async {
                     self.fetchOpenWeatherMapData(for: location)
+                }
+            }
+        }
+    }
+
+    @available(iOS 16.0, *)
+    private func fetchWeatherKitForecast(for location: CLLocation, date: Date) {
+        print("🔵 WeatherService: fetchWeatherKitForecast() called for date: \(date)")
+        Task {
+            do {
+                print("🌦️ WeatherService: Requesting forecast from WeatherKit API...")
+                print("🌦️ WeatherService: Location: \(location.coordinate.latitude), \(location.coordinate.longitude)")
+
+                let weather = try await WeatherKit.WeatherService.shared.weather(for: location)
+                let calendar = Calendar.current
+
+                // Find the matching day in the forecast
+                guard let forecastDay = weather.dailyForecast.first(where: { dayWeather in
+                    calendar.isDate(dayWeather.date, inSameDayAs: date)
+                }) else {
+                    throw NSError(domain: "WeatherService", code: 8, userInfo: [
+                        NSLocalizedDescriptionKey: "Forecast not available for the requested date. WeatherKit provides up to 10 days of forecast."
+                    ])
+                }
+
+                print("✅ WeatherService: Forecast data found for \(date)")
+
+                // Create WeatherData from forecast
+                let weatherData = WeatherData(
+                    temperature: convertTemperature((forecastDay.highTemperature.value + forecastDay.lowTemperature.value) / 2),
+                    feelsLike: convertTemperature((forecastDay.highTemperature.value + forecastDay.lowTemperature.value) / 2),
+                    condition: forecastDay.condition.description,
+                    conditionDescription: forecastDay.condition.description,
+                    high: convertTemperature(forecastDay.highTemperature.value),
+                    low: convertTemperature(forecastDay.lowTemperature.value),
+                    precipitationChance: Int(forecastDay.precipitationChance * 100),
+                    humidity: 0, // Not available in daily forecast
+                    windSpeed: convertWindSpeed(forecastDay.wind.speed.value),
+                    icon: weatherConditionToIcon(forecastDay.condition)
+                )
+
+                DispatchQueue.main.async {
+                    print("✅ WeatherService: Forecast data converted and ready")
+                    self.currentWeather = weatherData
+                    self.isLoading = false
+                    self.weatherCompletion?(.success(weatherData))
+                    self.weatherCompletion = nil
+                }
+            } catch {
+                print("❌ WeatherService: WeatherKit forecast error - \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    self.weatherCompletion?(.failure(error))
+                    self.weatherCompletion = nil
                 }
             }
         }

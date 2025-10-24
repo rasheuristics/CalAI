@@ -34,6 +34,8 @@ struct EventTask: Identifiable, Codable, Hashable {
     var completedAt: Date?
     var dueDate: Date?
     var subtasks: [EventSubtask]
+    var project: String?
+    var tags: [String]
 
     init(
         id: UUID = UUID(),
@@ -47,7 +49,9 @@ struct EventTask: Identifiable, Codable, Hashable {
         createdAt: Date = Date(),
         completedAt: Date? = nil,
         dueDate: Date? = nil,
-        subtasks: [EventSubtask] = []
+        subtasks: [EventSubtask] = [],
+        project: String? = nil,
+        tags: [String] = []
     ) {
         self.id = id
         self.title = title
@@ -61,6 +65,8 @@ struct EventTask: Identifiable, Codable, Hashable {
         self.completedAt = completedAt
         self.dueDate = dueDate
         self.subtasks = subtasks
+        self.project = project
+        self.tags = tags
     }
 }
 
@@ -3402,15 +3408,25 @@ struct TasksTabView: View {
 
                 if isTodayTodosExpanded {
                     ForEach(todayIncompleteTasks.keys.sorted(), id: \.self) { eventId in
-                        if let tasks = todayIncompleteTasks[eventId],
-                           !tasks.isEmpty,
-                           let event = findEvent(byId: eventId) {
-
+                        if let tasks = todayIncompleteTasks[eventId], !tasks.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
-                                // Event Header
-                                EventHeaderView(event: event, fontManager: fontManager)
+                                // Header - different for standalone vs event tasks
+                                if eventId == "standalone_tasks" {
+                                    // Standalone tasks header
+                                    HStack {
+                                        Image(systemName: "tray.fill")
+                                            .foregroundColor(.blue)
+                                        Text("Inbox")
+                                            .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal)
+                                } else if let event = findEvent(byId: eventId) {
+                                    // Event Header
+                                    EventHeaderView(event: event, fontManager: fontManager)
+                                }
 
-                                // Tasks for this event
+                                // Tasks for this event or standalone
                                 ForEach(tasks) { task in
                                     simplifiedTaskRow(task: task, eventId: eventId)
                                 }
@@ -3449,15 +3465,25 @@ struct TasksTabView: View {
 
                 if isTodayDoneExpanded {
                     ForEach(todayCompletedTasks.keys.sorted(), id: \.self) { eventId in
-                        if let tasks = todayCompletedTasks[eventId],
-                           !tasks.isEmpty,
-                           let event = findEvent(byId: eventId) {
-
+                        if let tasks = todayCompletedTasks[eventId], !tasks.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
-                                // Event Header
-                                EventHeaderView(event: event, fontManager: fontManager)
+                                // Header - different for standalone vs event tasks
+                                if eventId == "standalone_tasks" {
+                                    // Standalone tasks header
+                                    HStack {
+                                        Image(systemName: "tray.fill")
+                                            .foregroundColor(.blue)
+                                        Text("Inbox")
+                                            .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal)
+                                } else if let event = findEvent(byId: eventId) {
+                                    // Event Header
+                                    EventHeaderView(event: event, fontManager: fontManager)
+                                }
 
-                                // Tasks for this event
+                                // Tasks for this event or standalone
                                 ForEach(tasks) { task in
                                     simplifiedTaskRow(task: task, eventId: eventId)
                                 }
@@ -3569,15 +3595,25 @@ struct TasksTabView: View {
 
     private var allTasksSection: some View {
         ForEach(filteredTasks.keys.sorted(), id: \.self) { eventId in
-            if let tasks = filteredTasks[eventId],
-               !tasks.isEmpty,
-               let event = findEvent(byId: eventId) {
-
+            if let tasks = filteredTasks[eventId], !tasks.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    // Event Header
-                    EventHeaderView(event: event, fontManager: fontManager)
+                    // Header - different for standalone vs event tasks
+                    if eventId == "standalone_tasks" {
+                        // Standalone tasks header
+                        HStack {
+                            Image(systemName: "tray.fill")
+                                .foregroundColor(.blue)
+                            Text("Inbox")
+                                .dynamicFont(size: 18, weight: .semibold, fontManager: fontManager)
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                    } else if let event = findEvent(byId: eventId) {
+                        // Event Header
+                        EventHeaderView(event: event, fontManager: fontManager)
+                    }
 
-                    // Tasks for this event
+                    // Tasks for this event or standalone
                     ForEach(tasks) { task in
                         simplifiedTaskRow(task: task, eventId: eventId)
                     }
@@ -4045,6 +4081,19 @@ struct TaskDetailView: View {
     @State private var showTaskInfo: Bool = false
     @State private var showDeleteConfirmation: Bool = false
     @State private var dragOffset: CGFloat = 0
+    @State private var selectedPlan: String = "Plan"
+    @State private var selectedTime: String? = nil
+    @State private var durationHours: Int = 0
+    @State private var durationMinutes: Int = 0
+    @State private var showDurationPicker: Bool = false
+
+    enum PlanOption: String, CaseIterable {
+        case today = "Today"
+        case laterToday = "Later today"
+        case tomorrow = "Tomorrow"
+        case thisWeek = "This week"
+        case nextWeek = "Next week"
+    }
 
     enum PriorityOption: String, CaseIterable {
         case goal = "Goal"
@@ -4053,23 +4102,100 @@ struct TaskDetailView: View {
         case low = "Low"
         case none = "No priority"
 
-        var icon: String {
-            switch self {
-            case .goal: return "flag.fill"
-            case .high: return "exclamationmark.3"
-            case .medium: return "exclamationmark.2"
-            case .low: return "exclamationmark"
-            case .none: return "minus.circle"
-            }
-        }
-
         var color: Color {
             switch self {
             case .goal: return .purple
             case .high: return .red
-            case .medium: return .orange
-            case .low: return .blue
-            case .none: return .gray
+            case .medium: return .yellow
+            case .low: return .green
+            case .none: return .black
+            }
+        }
+
+        // SF Symbol for menu - using actual symbols that exist
+        var menuIcon: String {
+            switch self {
+            case .goal: return "square.stack.fill"
+            case .high: return "exclamationmark.3"
+            case .medium: return "exclamationmark.2"
+            case .low: return "exclamationmark"
+            case .none: return "nosign"
+            }
+        }
+
+        // Custom view for priority icon (used in detail view)
+        @ViewBuilder
+        func iconView(size: CGFloat = 22) -> some View {
+            switch self {
+            case .goal:
+                // Nested squares
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(color, lineWidth: 2)
+                        .frame(width: size, height: size)
+                    RoundedRectangle(cornerRadius: 3)
+                        .strokeBorder(color, lineWidth: 2)
+                        .frame(width: size * 0.6, height: size * 0.6)
+                }
+                .foregroundColor(color)
+            case .high:
+                // Rounded square with 3 exclamation marks
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(color, lineWidth: 2)
+                        .frame(width: size, height: size)
+                    HStack(spacing: 1) {
+                        Text("!")
+                            .font(.system(size: size * 0.5, weight: .bold))
+                        Text("!")
+                            .font(.system(size: size * 0.5, weight: .bold))
+                        Text("!")
+                            .font(.system(size: size * 0.5, weight: .bold))
+                    }
+                }
+                .foregroundColor(color)
+            case .medium:
+                // Rounded square with 2 exclamation marks
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(color, lineWidth: 2)
+                        .frame(width: size, height: size)
+                    HStack(spacing: 2) {
+                        Text("!")
+                            .font(.system(size: size * 0.55, weight: .bold))
+                        Text("!")
+                            .font(.system(size: size * 0.55, weight: .bold))
+                    }
+                }
+                .foregroundColor(color)
+            case .low:
+                // Rounded square with 1 exclamation mark
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(color, lineWidth: 2)
+                        .frame(width: size, height: size)
+                    Text("!")
+                        .font(.system(size: size * 0.6, weight: .bold))
+                }
+                .foregroundColor(color)
+            case .none:
+                // Circle with diagonal line (3/4 diameter)
+                ZStack {
+                    Circle()
+                        .strokeBorder(color, lineWidth: 2)
+                        .frame(width: size, height: size)
+                    Path { path in
+                        let lineLength = size * 0.75 / sqrt(2)
+                        let centerX = size / 2
+                        let centerY = size / 2
+                        let offset = lineLength / 2
+                        path.move(to: CGPoint(x: centerX - offset, y: centerY + offset))
+                        path.addLine(to: CGPoint(x: centerX + offset, y: centerY - offset))
+                    }
+                    .stroke(color, lineWidth: 2)
+                    .frame(width: size, height: size)
+                }
+                .foregroundColor(color)
             }
         }
     }
@@ -4106,28 +4232,77 @@ struct TaskDetailView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         // Plan and Duration buttons - small rounded buttons above title
                         HStack(spacing: 12) {
-                            Button(action: {
-                                showPlanningView = true
-                            }) {
-                                Text("Plan")
-                                    .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(Color.blue)
-                                    .cornerRadius(8)
+                            // Plan button with menu
+                            Menu {
+                                ForEach(PlanOption.allCases, id: \.self) { option in
+                                    Button(action: {
+                                        handlePlanSelection(option)
+                                    }) {
+                                        Text(option.rawValue)
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(selectedPlan)
+                                        .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
+                                    if let time = selectedTime {
+                                        Text("(\(time))")
+                                            .dynamicFont(size: 13, weight: .regular, fontManager: fontManager)
+                                    }
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.blue)
+                                .cornerRadius(8)
                             }
 
-                            Button(action: {
-                                // Duration action
-                            }) {
-                                Text("Duration")
-                                    .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(Color.blue)
+                            // Duration button with inline picker
+                            VStack(alignment: .leading, spacing: 0) {
+                                Button(action: {
+                                    withAnimation {
+                                        showDurationPicker.toggle()
+                                    }
+                                }) {
+                                    Text(durationText)
+                                        .dynamicFont(size: 15, weight: .medium, fontManager: fontManager)
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(Color.blue)
+                                        .cornerRadius(8)
+                                }
+
+                                if showDurationPicker {
+                                    HStack(spacing: 5) {
+                                        // Hours picker
+                                        Picker("Hours", selection: $durationHours) {
+                                            ForEach(0..<24) { hour in
+                                                Text(String(format: "%02d", hour)).tag(hour)
+                                            }
+                                        }
+                                        .pickerStyle(.wheel)
+                                        .frame(width: 60, height: 120)
+                                        .clipped()
+
+                                        Text(":")
+                                            .dynamicFont(size: 20, weight: .bold, fontManager: fontManager)
+
+                                        // Minutes picker (5-minute increments)
+                                        Picker("Minutes", selection: $durationMinutes) {
+                                            ForEach(Array(stride(from: 0, through: 55, by: 5)), id: \.self) { minute in
+                                                Text(String(format: "%02d", minute)).tag(minute)
+                                            }
+                                        }
+                                        .pickerStyle(.wheel)
+                                        .frame(width: 60, height: 120)
+                                        .clipped()
+                                    }
+                                    .padding(8)
+                                    .background(Color(.systemGray6))
                                     .cornerRadius(8)
+                                    .shadow(radius: 5)
+                                }
                             }
 
                             Spacer()
@@ -4246,21 +4421,18 @@ struct TaskDetailView: View {
                     // Left side: Priority, Flag, Link icons - small squares, icon only
                     HStack(spacing: 12) {
                         // Priority Icon
-                        Menu {
-                            ForEach(PriorityOption.allCases, id: \.self) { option in
-                                Button(action: {
-                                    setPriority(option)
-                                }) {
-                                    Label(option.rawValue, systemImage: option.icon)
-                                }
+                        Button(action: {
+                            showPriorityMenu.toggle()
+                        }) {
+                            ZStack {
+                                // Background square
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(.systemGray6))
+                                    .frame(width: 40, height: 40)
+
+                                // Custom icon view
+                                priorityIconView()
                             }
-                        } label: {
-                            Image(systemName: "exclamationmark.circle")
-                                .font(.system(size: 22))
-                                .foregroundColor(priorityColor())
-                                .frame(width: 40, height: 40)
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
                         }
 
                         // Flag Icon (Deadline)
@@ -4376,6 +4548,51 @@ struct TaskDetailView: View {
         } message: {
             Text("Are you sure you want to delete '\(task.title)'? This action cannot be undone.")
         }
+        .overlay(
+            Group {
+                if showPriorityMenu {
+                    ZStack {
+                        // Dimmed background
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                showPriorityMenu = false
+                            }
+
+                        // Priority menu popup
+                        VStack(spacing: 0) {
+                            ForEach(PriorityOption.allCases, id: \.self) { option in
+                                Button(action: {
+                                    setPriority(option)
+                                    showPriorityMenu = false
+                                }) {
+                                    HStack(spacing: 12) {
+                                        option.iconView(size: 24)
+                                        Text(option.rawValue)
+                                            .dynamicFont(size: 16, fontManager: fontManager)
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                    .background(Color(.systemBackground))
+                                }
+
+                                if option != PriorityOption.allCases.last {
+                                    Divider()
+                                }
+                            }
+                        }
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                        .shadow(radius: 20)
+                        .padding(.horizontal, 40)
+                    }
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.2), value: showPriorityMenu)
+                }
+            }
+        )
     }
 
     // MARK: - Helper Methods
@@ -4428,12 +4645,11 @@ struct TaskDetailView: View {
         showDeleteConfirmation = true
     }
 
-    private func priorityColor() -> Color {
-        switch task.priority {
-        case .high: return .red
-        case .medium: return .orange
-        case .low: return .blue
-        }
+    @ViewBuilder
+    private func priorityIconView() -> some View {
+        // Show a default icon with rounded square and exclamation mark
+        // This will be displayed before user selects a priority
+        PriorityOption.low.iconView(size: 22)
     }
 
     private func setPriority(_ option: PriorityOption) {
@@ -4470,6 +4686,69 @@ struct TaskDetailView: View {
             }
         case .remove:
             task.dueDate = nil
+        }
+        onSave()
+    }
+
+    private var durationText: String {
+        if durationHours == 0 && durationMinutes == 0 {
+            return "Duration"
+        }
+        if durationHours == 0 {
+            return "\(durationMinutes)m"
+        }
+        if durationMinutes == 0 {
+            return "\(durationHours)h"
+        }
+        return "\(durationHours)h \(durationMinutes)m"
+    }
+
+    private func handlePlanSelection(_ option: PlanOption) {
+        let calendar = Calendar.current
+        let now = Date()
+
+        switch option {
+        case .today:
+            selectedPlan = "Today"
+            selectedTime = nil
+            // Set task due date to today
+            task.dueDate = calendar.startOfDay(for: now)
+
+        case .laterToday:
+            selectedPlan = "Today"
+            // Set time to 4 hours from now
+            let laterDate = calendar.date(byAdding: .hour, value: 4, to: now) ?? now
+            let formatter = DateFormatter()
+            formatter.dateFormat = "h:mm a"
+            selectedTime = formatter.string(from: laterDate)
+            // Set task due date to the later time today
+            task.dueDate = laterDate
+            // Also set duration button to the time
+            let components = calendar.dateComponents([.hour, .minute], from: laterDate)
+            if let hour = components.hour, let minute = components.minute {
+                durationHours = hour
+                durationMinutes = minute
+            }
+
+        case .tomorrow:
+            selectedPlan = "Tomorrow"
+            selectedTime = nil
+            // Set task due date to tomorrow
+            task.dueDate = calendar.date(byAdding: .day, value: 1, to: now)
+
+        case .thisWeek:
+            selectedPlan = "This week"
+            selectedTime = nil
+            // Set task due date to end of this week (Sunday)
+            if let weekInterval = calendar.dateInterval(of: .weekOfYear, for: now) {
+                task.dueDate = weekInterval.end
+            }
+
+        case .nextWeek:
+            selectedPlan = "Next week"
+            selectedTime = nil
+            // Set task due date to next week (7 days from now)
+            task.dueDate = calendar.date(byAdding: .weekOfYear, value: 1, to: now)
         }
         onSave()
     }

@@ -2,6 +2,90 @@ import SwiftUI
 import EventKit
 import AVFoundation
 
+// MARK: - Animated Components
+
+/// Animated waveform icon that shows audio activity
+struct AnimatedWaveformIcon: View {
+    let isAnimating: Bool
+    let color: Color
+    let size: CGFloat
+
+    @State private var waveOffsets: [CGFloat] = [0.3, 0.3, 0.3, 0.3, 0.3]
+
+    var body: some View {
+        HStack(spacing: size * 0.1) {
+            ForEach(0..<5, id: \.self) { index in
+                RoundedRectangle(cornerRadius: size * 0.1)
+                    .fill(color)
+                    .frame(width: size * 0.12, height: barHeight(for: index))
+            }
+        }
+        .frame(width: size, height: size)
+        .onAppear {
+            if isAnimating {
+                startAnimating()
+            }
+        }
+        .onChange(of: isAnimating) { newValue in
+            if newValue {
+                startAnimating()
+            } else {
+                stopAnimating()
+            }
+        }
+    }
+
+    private func barHeight(for index: Int) -> CGFloat {
+        let baseHeight = size * 0.3
+        let maxHeight = size * 0.9
+        return baseHeight + (maxHeight - baseHeight) * waveOffsets[index]
+    }
+
+    private func startAnimating() {
+        for i in 0..<5 {
+            animateBar(index: i)
+        }
+    }
+
+    private func stopAnimating() {
+        waveOffsets = [0.3, 0.3, 0.3, 0.3, 0.3]
+    }
+
+    private func animateBar(index: Int) {
+        let durations: [Double] = [0.4, 0.5, 0.35, 0.45, 0.4]
+        let delays: [Double] = [0, 0.1, 0.05, 0.15, 0.08]
+
+        withAnimation(
+            Animation.easeInOut(duration: durations[index])
+                .repeatForever(autoreverses: true)
+                .delay(delays[index])
+        ) {
+            waveOffsets[index] = CGFloat.random(in: 0.6...1.0)
+        }
+    }
+}
+
+/// Processing indicator - rotating circle spinner
+struct ProcessingIndicator: View {
+    let color: Color
+    let size: CGFloat
+
+    @State private var isRotating = false
+
+    var body: some View {
+        Circle()
+            .trim(from: 0, to: 0.7)
+            .stroke(color, style: StrokeStyle(lineWidth: size * 0.15, lineCap: .round))
+            .frame(width: size, height: size)
+            .rotationEffect(.degrees(isRotating ? 360 : 0))
+            .onAppear {
+                withAnimation(Animation.linear(duration: 1.0).repeatForever(autoreverses: false)) {
+                    isRotating = true
+                }
+            }
+    }
+}
+
 // MARK: - Supporting Definitions
 
 // MARK: - Query Display Mode
@@ -41,6 +125,10 @@ class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     // Speaking state
     @Published var isSpeaking: Bool = false
     @Published var isPaused: Bool = false
+
+    // Sentence queue for multi-sentence speaking
+    private var sentenceQueue: [String] = []
+    private var currentSentenceIndex: Int = 0
 
     @AppStorage(UserDefaults.Keys.speechVoiceIdentifier) private var voiceIdentifier: String = ""
     @AppStorage(UserDefaults.Keys.speechRate) private var speechRate: Double = Double(AVSpeechUtteranceDefaultSpeechRate)
@@ -128,50 +216,57 @@ class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
-        var currentIndex = 0
+        print("📝 Split text into \(sentences.count) sentences")
 
-        func speakNextSentence() {
-            guard currentIndex < sentences.count else {
-                // All sentences spoken
-                DispatchQueue.main.async {
-                    self.completionHandler?()
-                    self.completionHandler = nil
-                }
-                return
-            }
+        // Track the sentences and current index
+        self.sentenceQueue = sentences
+        self.currentSentenceIndex = 0
 
-            let sentence = sentences[currentIndex]
-            currentIndex += 1
-
-            let utterance = createUtterance(from: sentence)
-
-            // Add pause after utterance if not the last sentence
-            if currentIndex < sentences.count {
-                utterance.postUtteranceDelay = sentencePause
-            }
-
-            // Update speaking state for first sentence
-            if currentIndex == 1 {
-                DispatchQueue.main.async {
-                    self.isSpeaking = true
-                    self.isPaused = false
-                }
-            }
-
-            synthesizer.speak(utterance)
-        }
-
-        // Override completion to speak next sentence
+        // Store the original completion handler
         let originalCompletion = completionHandler
-        completionHandler = {
-            if currentIndex < sentences.count {
-                speakNextSentence()
+
+        // Set a new completion handler that continues through sentences
+        completionHandler = { [weak self] in
+            guard let self = self else { return }
+
+            self.currentSentenceIndex += 1
+
+            if self.currentSentenceIndex < self.sentenceQueue.count {
+                // More sentences to speak
+                print("📢 Speaking sentence \(self.currentSentenceIndex + 1)/\(self.sentenceQueue.count)")
+                let sentence = self.sentenceQueue[self.currentSentenceIndex]
+                let utterance = self.createUtterance(from: sentence)
+
+                // Add pause after utterance if not the last sentence
+                if self.currentSentenceIndex < self.sentenceQueue.count - 1 {
+                    utterance.postUtteranceDelay = self.sentencePause
+                }
+
+                self.synthesizer.speak(utterance)
             } else {
+                // All sentences spoken, call original completion
+                print("✅ All \(self.sentenceQueue.count) sentences completed")
+                self.sentenceQueue = []
+                self.currentSentenceIndex = 0
                 originalCompletion?()
             }
         }
 
-        speakNextSentence()
+        // Speak the first sentence
+        if !sentences.isEmpty {
+            print("📢 Speaking sentence 1/\(sentences.count)")
+            let utterance = createUtterance(from: sentences[0])
+            if sentences.count > 1 {
+                utterance.postUtteranceDelay = sentencePause
+            }
+
+            DispatchQueue.main.async {
+                self.isSpeaking = true
+                self.isPaused = false
+            }
+
+            synthesizer.speak(utterance)
+        }
     }
 
     private func createUtterance(from text: String) -> AVSpeechUtterance {
@@ -233,6 +328,8 @@ class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
             self.isPaused = false
         }
         completionHandler = nil
+        sentenceQueue = []
+        currentSentenceIndex = 0
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
@@ -260,19 +357,33 @@ class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         print("✅ Speech finished.")
 
-        // Deactivate audio session
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            print("🔇 Audio session deactivated")
-        } catch {
-            print("⚠️ Failed to deactivate audio session: \(error)")
+        // Check if we're in multi-sentence mode
+        let isLastSentence = currentSentenceIndex >= sentenceQueue.count - 1 || sentenceQueue.isEmpty
+
+        // Only deactivate audio session after the last sentence
+        if isLastSentence {
+            do {
+                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                print("🔇 Audio session deactivated")
+            } catch {
+                print("⚠️ Failed to deactivate audio session: \(error)")
+            }
+
+            DispatchQueue.main.async {
+                self.isSpeaking = false
+                self.isPaused = false
+            }
+        } else {
+            print("⏭️ More sentences to speak, keeping audio session active")
         }
 
+        // Call completion handler (which will trigger next sentence if needed)
         DispatchQueue.main.async {
-            self.isSpeaking = false
-            self.isPaused = false
             self.completionHandler?()
-            self.completionHandler = nil
+            // Only clear completion handler if this was the last sentence
+            if isLastSentence {
+                self.completionHandler = nil
+            }
         }
     }
 
@@ -478,12 +589,29 @@ struct AITabView: View {
                                         .fill(Color.black)
                                 )
                         } else {
-                            // Show regular speak button
-                            HStack(spacing: 4) {
-                                if let icon = buttonIcon {
-                                    Image(systemName: icon)
+                            // Show speak button with animated states
+                            HStack(spacing: 6) {
+                                // Icon changes based on state
+                                if aiManager.isProcessing {
+                                    // Show processing spinner
+                                    ProcessingIndicator(color: .white, size: 14)
+                                } else if voiceManager.isListening && !isInAutoLoopMode {
+                                    // Show send icon when actively listening (not in auto-loop)
+                                    Image(systemName: "paperplane.fill")
                                         .font(.system(size: 14))
+                                } else if speechManager.isSpeaking {
+                                    // Show pause/play for speech playback
+                                    Image(systemName: speechManager.isPaused ? "play.fill" : "pause.fill")
+                                        .font(.system(size: 14))
+                                } else {
+                                    // Show animated waveform when listening, static when idle
+                                    AnimatedWaveformIcon(
+                                        isAnimating: voiceManager.isListening || isInAutoLoopMode,
+                                        color: .white,
+                                        size: 14
+                                    )
                                 }
+
                                 Text(buttonText)
                                     .font(.system(size: 13))
                                     .fontWeight(.medium)
@@ -495,8 +623,6 @@ struct AITabView: View {
                                 Capsule()
                                     .fill(buttonColor)
                             )
-                            .scaleEffect(isInAutoLoopMode ? (pulseAnimation ? 1.05 : 1.0) : 1.0)
-                            .animation(isInAutoLoopMode ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : .default, value: pulseAnimation)
                         }
                     }
                     .padding(.trailing, 8)
@@ -532,28 +658,22 @@ struct AITabView: View {
         return voiceManager.isListening ? "Send" : "Speak"
     }
 
-    private var buttonIcon: String? {
-        if speechManager.isSpeaking {
-            return speechManager.isPaused ? "play.fill" : "pause.fill"
-        }
-        // In auto-loop mode, always show waveform icon
-        if isInAutoLoopMode {
-            return "waveform"
-        }
-        if voiceManager.isListening {
-            return "paperplane.fill"
-        }
-        return "waveform"
-    }
+    // Note: Icon logic is now handled inline in the button view with AnimatedWaveformIcon and ProcessingIndicator
 
     private var buttonColor: Color {
-        // In auto-loop mode, keep black color even when listening
+        // Processing state - show blue
+        if aiManager.isProcessing {
+            return Color.blue
+        }
+        // In auto-loop mode, keep black color
         if isInAutoLoopMode {
             return Color.black
         }
+        // Listening and receiving speech - show red
         if voiceManager.isListening {
             return Color.red
         }
+        // Default idle state - black
         return Color.black
     }
 

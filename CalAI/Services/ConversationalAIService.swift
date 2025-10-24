@@ -191,6 +191,11 @@ class ConversationalAIService {
         - delete: Remove events
         - search: Find specific events
         - availability: Check free time
+        - weather: Get current weather information
+        - create_task: Create a new task (standalone or for an event)
+        - list_tasks: List tasks (all, for an event, or by filter)
+        - update_task: Update task properties (priority, description, etc.)
+        - complete_task: Mark a task as complete
         - conversation: General chat
 
         CONTEXT AWARENESS RULES:
@@ -205,13 +210,18 @@ class ConversationalAIService {
         RESPONSE FORMAT:
         Respond with JSON in this exact format:
         {
-          "intent": "query|create|modify|delete|search|availability|conversation",
+          "intent": "query|create|modify|delete|search|availability|weather|create_task|list_tasks|update_task|complete_task|conversation",
           "parameters": {
             // Intent-specific parameters
             // For query: {"start_date": "ISO8601", "end_date": "ISO8601"}
             // For create: {"title": "string", "start_time": "ISO8601", "duration_minutes": number}
             // For modify: {"event_id": "string", "new_start_time": "ISO8601"}
             // For delete: {"event_id": "string"}
+            // For weather: {"date": "ISO8601"} (optional - omit for current weather, include for forecast like "tomorrow", "Saturday", "next Tuesday")
+            // For create_task: {"title": "string", "description": "string", "priority": "high|medium|low", "due_date": "ISO8601", "duration_minutes": number, "project": "string", "tags": ["tag1", "tag2"], "event_id": "string" (optional - for event-related tasks)}
+            // For list_tasks: {"filter": "all|pending|completed|today|this_week", "event_id": "string" (optional)}
+            // For update_task: {"task_id": "string", "priority": "high|medium|low", "description": "string", etc.}
+            // For complete_task: {"task_id": "string" or "task_title": "string"}
           },
           "message": "Natural language response to user",
           "needsClarification": true/false,

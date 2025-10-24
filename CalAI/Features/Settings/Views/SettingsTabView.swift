@@ -665,6 +665,8 @@ struct SettingsTabView: View {
                         url = "https://console.anthropic.com/settings/keys"
                     case .openai:
                         url = "https://platform.openai.com/api-keys"
+                    case .onDevice:
+                        url = "https://www.apple.com/ios/apple-intelligence/"
                     }
                     if let consoleURL = URL(string: url) {
                         UIApplication.shared.open(consoleURL)
@@ -677,6 +679,8 @@ struct SettingsTabView: View {
                     Text("1. Go to console.anthropic.com\n2. Sign up or log in\n3. Navigate to 'API Keys'\n4. Create a new API key\n5. Copy and paste it here")
                 case .openai:
                     Text("1. Go to platform.openai.com\n2. Sign up or log in\n3. Navigate to 'API Keys'\n4. Create a new API key\n5. Copy and paste it here")
+                case .onDevice:
+                    Text("On-Device AI uses Apple Intelligence Foundation Models and doesn't require an API key.\n\nRequirements:\n• iOS 26.0 or later\n• Apple Intelligence enabled\n• A17 Pro or M-series chip")
                 }
             }
             .sheet(isPresented: $outlookCalendarManager.showCalendarSelection) {
