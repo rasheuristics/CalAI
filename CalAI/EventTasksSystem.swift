@@ -3343,7 +3343,6 @@ struct TasksTabView: View {
                         )
                         .presentationDetents([.medium, .large])
                         .presentationDragIndicator(.hidden)
-                        .presentationBackground(.clear)
                     } else {
                         TaskDetailView(
                             task: Binding(
