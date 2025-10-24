@@ -11,9 +11,10 @@ struct ContentView: View {
     @StateObject private var appearanceManager = AppearanceManager()
     @StateObject private var morningBriefingService = MorningBriefingService.shared
     @StateObject private var taskManager = EventTaskManager.shared
+    @StateObject private var tabBarManager = TabBarManager()
     // PHASE 12 DISABLED
     // @StateObject private var postMeetingService = PostMeetingService.shared
-    @State private var selectedTab: Int = 0
+    @State private var selectedTab: String = "ai" // Changed from Int to String
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showOnboarding = false
 
@@ -36,53 +37,30 @@ struct ContentView: View {
             )
             .ignoresSafeArea()
 
-            TabView(selection: $selectedTab) {
-                AITabView(voiceManager: voiceManager, aiManager: aiManager, calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
-                    .tabItem {
-                        Image(systemName: "brain.head.profile")
-                        Text("AI")
+            VStack(spacing: 0) {
+                // Content area - show the appropriate view based on selected tab
+                ZStack {
+                    if selectedTab == "ai" {
+                        AITabView(voiceManager: voiceManager, aiManager: aiManager, calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
+                    } else if selectedTab == "calendar" {
+                        CalendarTabView(calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
+                    } else if selectedTab == "events" {
+                        EventsTabView(calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
+                    } else if selectedTab == "tasks" {
+                        TasksTabView(fontManager: fontManager, calendarManager: calendarManager)
+                    } else if selectedTab == "settings" {
+                        SettingsTabView(calendarManager: calendarManager, voiceManager: voiceManager, fontManager: fontManager, googleCalendarManager: googleCalendarManager, outlookCalendarManager: outlookCalendarManager, appearanceManager: appearanceManager)
                     }
-                    .tag(0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                CalendarTabView(calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
-                    .tabItem {
-                        Image(systemName: "calendar")
-                        Text("Calendar")
-                    }
-                    .tag(1)
-
-                EventsTabView(calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
-                    .tabItem {
-                        Image(systemName: "list.bullet")
-                        Text("Events")
-                    }
-                    .tag(2)
-
-                TasksTabView(fontManager: fontManager, calendarManager: calendarManager)
-                    .tabItem {
-                        Image(systemName: "tray.fill")
-                        Text("Tasks")
-                    }
-                    .tag(3)
-                    .badge(activeTaskCount)
-
-                // PHASE 12 DISABLED - Actions Tab
-                // ActionItemsView(postMeetingService: postMeetingService, fontManager: fontManager, calendarManager: calendarManager)
-                //     .tabItem {
-                //         Image(systemName: "checkmark.circle")
-                //         Text("Actions")
-                //     }
-                //     .tag(3)
-                //     .badge(postMeetingService.pendingActionItems.filter { !$0.isCompleted }.count)
-
-                SettingsTabView(calendarManager: calendarManager, voiceManager: voiceManager, fontManager: fontManager, googleCalendarManager: googleCalendarManager, outlookCalendarManager: outlookCalendarManager, appearanceManager: appearanceManager)
-                    .tabItem {
-                        Image(systemName: "gearshape")
-                        Text("Settings")
-                    }
-                    .tag(4)
+                // Custom draggable tab bar
+                CustomTabBar(
+                    tabBarManager: tabBarManager,
+                    selectedTab: $selectedTab,
+                    activeTaskCount: activeTaskCount
+                )
             }
-            .background(Color.clear)
         }
         .preferredColorScheme(appearanceManager.currentMode.colorScheme)
         .fullScreenCover(isPresented: $showOnboarding) {
