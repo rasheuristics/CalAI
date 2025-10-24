@@ -4113,6 +4113,7 @@ struct TaskDetailView: View {
     let eventId: String
     let onSave: () -> Void
 
+    @State private var titleText: String = ""
     @State private var isEditingDescription: Bool = false
     @State private var descriptionText: String = ""
     @State private var showPriorityMenu: Bool = false
@@ -4349,7 +4350,7 @@ struct TaskDetailView: View {
                         }
                         .padding(.horizontal, 20)
 
-                        // Task Title with Checkbox
+                        // Task Title with Checkbox - Card Style
                         HStack(spacing: 12) {
                             Button(action: {
                                 task.isCompleted.toggle()
@@ -4360,35 +4361,46 @@ struct TaskDetailView: View {
                                     .foregroundColor(task.isCompleted ? .green : .gray)
                             }
 
-                            Text(task.title)
-                                .dynamicFont(size: 20, weight: .semibold, fontManager: fontManager)
-                                .foregroundColor(task.isCompleted ? .secondary : .primary)
+                            TextField("Task title", text: $titleText, onEditingChanged: { _ in }, onCommit: {
+                                task.title = titleText
+                                onSave()
+                            })
+                            .dynamicFont(size: 20, weight: .semibold, fontManager: fontManager)
+                            .foregroundColor(task.isCompleted ? .secondary : .primary)
 
                             Spacer()
                         }
+                        .padding(16)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .cornerRadius(12)
                         .padding(.horizontal, 20)
 
-                        // Description Section - 3x wider
-                        VStack(alignment: .leading, spacing: 8) {
-                            // Edit/Save buttons
-                            HStack {
-                                if isEditingDescription {
+                        // Description Section - Card Style
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Description")
+                                .dynamicFont(size: 14, weight: .semibold, fontManager: fontManager)
+                                .foregroundColor(.secondary)
+
+                            if isEditingDescription {
+                                TextEditor(text: $descriptionText)
+                                    .frame(minHeight: 120)
+                                    .padding(8)
+                                    .background(Color(.systemBackground))
+                                    .cornerRadius(8)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(Color(.separator), lineWidth: 1)
+                                    )
+
+                                HStack {
                                     Button("Cancel") {
                                         isEditingDescription = false
                                         descriptionText = task.description ?? ""
                                     }
                                     .foregroundColor(.red)
-                                } else {
-                                    Button("Edit") {
-                                        descriptionText = task.description ?? ""
-                                        isEditingDescription = true
-                                    }
-                                    .foregroundColor(.blue)
-                                }
 
-                                Spacer()
+                                    Spacer()
 
-                                if isEditingDescription {
                                     Button("Save") {
                                         task.description = descriptionText.isEmpty ? nil : descriptionText
                                         isEditingDescription = false
@@ -4397,28 +4409,23 @@ struct TaskDetailView: View {
                                     .foregroundColor(.blue)
                                     .fontWeight(.semibold)
                                 }
-                            }
-
-                            if isEditingDescription {
-                                TextEditor(text: $descriptionText)
-                                    .frame(minHeight: 133)
-                                    .padding(8)
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(8)
                             } else {
-                                VStack(alignment: .leading) {
+                                Button(action: {
+                                    descriptionText = task.description ?? ""
+                                    isEditingDescription = true
+                                }) {
                                     Text(task.description ?? "Add description...")
-                                        .dynamicFont(size: 18, fontManager: fontManager)
+                                        .dynamicFont(size: 16, fontManager: fontManager)
                                         .foregroundColor(task.description == nil ? .secondary : .primary)
                                         .multilineTextAlignment(.leading)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
                                 }
-                                .padding()
-                                .frame(maxWidth: .infinity, minHeight: 133, alignment: .topLeading)
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
+                                .buttonStyle(PlainButtonStyle())
                             }
                         }
+                        .padding(16)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .cornerRadius(12)
                         .padding(.horizontal, 20)
 
                         // Project and Tag buttons - sized to fit text with rounded edges
@@ -4632,6 +4639,10 @@ struct TaskDetailView: View {
                 }
             }
         )
+        .onAppear {
+            titleText = task.title
+            descriptionText = task.description ?? ""
+        }
     }
 
     // MARK: - Helper Methods
