@@ -356,7 +356,8 @@ struct iOS26TabBubble: View {
                                 endPoint: .bottom
                             )
                         )
-                        .symbolEffect(.bounce, value: isSelected)
+                        .scaleEffect(isSelected ? 1.05 : 1.0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
 
                     // Badge
                     if let count = badge, count > 0 {
