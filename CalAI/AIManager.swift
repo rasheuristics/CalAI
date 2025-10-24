@@ -97,6 +97,7 @@ class AIManager: ObservableObject {
     private let smartEventParser: SmartEventParser
     private let voiceResponseGenerator: VoiceResponseGenerator
     private let conversationalAI: ConversationalAIService
+    private var enhancedConversationalAI: EnhancedConversationalAI?
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -109,6 +110,116 @@ class AIManager: ObservableObject {
         self.smartEventParser = SmartEventParser()
         self.voiceResponseGenerator = VoiceResponseGenerator()
         self.conversationalAI = ConversationalAIService()
+
+        // Initialize enhanced conversational AI if iOS 26+ is available
+        if #available(iOS 26.0, *) {
+            self.enhancedConversationalAI = EnhancedConversationalAI()
+            print("✅ Enhanced Conversational AI with memory enabled")
+        }
+    }
+
+    // MARK: - Enhanced Conversational Processing
+
+    @available(iOS 26.0, *)
+    func processConversationalCommand(
+        _ transcript: String,
+        calendarEvents: [UnifiedEvent],
+        completion: @escaping (AICalendarResponse) -> Void
+    ) {
+        guard let enhancedAI = enhancedConversationalAI else {
+            // Fall back to standard processing
+            processVoiceCommand(transcript, calendarEvents: calendarEvents, completion: completion)
+            return
+        }
+
+        print("💬 Using Enhanced Conversational AI with memory")
+        isProcessing = true
+
+        Task {
+            do {
+                // Get all tasks for context
+                let allTasks = EventTaskManager.shared.getAllTasks()
+
+                // Process with conversation memory
+                let response = try await enhancedAI.chat(
+                    message: transcript,
+                    calendarEvents: calendarEvents,
+                    tasks: allTasks
+                )
+
+                print("✅ Enhanced AI Response:")
+                print("   Intent: \(response.intent)")
+                print("   Confidence: \(response.confidence)")
+                print("   Requires clarification: \(response.requiresClarification)")
+
+                // Convert to AICalendarResponse
+                let calendarResponse = AICalendarResponse(
+                    message: response.message,
+                    shouldContinueListening: response.requiresClarification || response.suggestedFollowUps != nil
+                )
+
+                // Execute actions if provided
+                if let actionType = response.actionType,
+                   let parameters = response.actionParameters {
+                    await executeEnhancedAction(
+                        type: actionType,
+                        parameters: parameters,
+                        response: calendarResponse
+                    )
+                }
+
+                await MainActor.run {
+                    self.isProcessing = false
+                    completion(calendarResponse)
+                }
+
+            } catch {
+                print("❌ Enhanced AI processing error: \(error)")
+                await MainActor.run {
+                    self.isProcessing = false
+                    completion(AICalendarResponse(
+                        message: "I had trouble understanding that. Could you rephrase?",
+                        shouldContinueListening: true
+                    ))
+                }
+            }
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func executeEnhancedAction(
+        type: String,
+        parameters: [String: String],
+        response: AICalendarResponse
+    ) async {
+        print("🎬 Executing action: \(type)")
+        print("📋 Parameters: \(parameters)")
+
+        switch type {
+        case "createEvent":
+            // Handle event creation
+            if let title = parameters["title"],
+               let startDateStr = parameters["startDate"] {
+                print("📅 Creating event: \(title) at \(startDateStr)")
+                // Implementation will come from existing event creation logic
+            }
+
+        case "createTask":
+            // Handle task creation
+            if let title = parameters["title"] {
+                let priority = TaskPriority(rawValue: parameters["priority"] ?? "None") ?? .none
+                let task = EventTask(title: title, priority: priority)
+                EventTaskManager.shared.addTask(task, to: "standalone_tasks")
+                print("✅ Task created: \(title)")
+            }
+
+        case "querySchedule":
+            // Schedule query already handled in message
+            print("📊 Schedule query completed")
+
+        default:
+            print("⚠️ Unknown action type: \(type)")
+        }
     }
 
     // MARK: - Context Management

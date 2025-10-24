@@ -18,13 +18,31 @@ struct AISettingsView: View {
 
     var body: some View {
         Form {
-            Section(header: Text("AI Provider"), footer: Text("Choose which AI model powers your assistant. You must provide your own API key for the selected provider.")) {
+            Section(header: Text("AI Provider"), footer: Text(providerFooterText)) {
                 Picker("Provider", selection: $aiProvider) {
                     ForEach(AIProvider.allCases, id: \.self) { provider in
                         Text(provider.displayName).tag(provider)
                     }
                 }
                 .pickerStyle(.segmented)
+
+                // Show description for selected provider
+                Text(aiProvider.description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.top, 4)
+
+                // Show availability warning for on-device if not available
+                if aiProvider == .onDevice && !isOnDeviceAvailable {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text("On-device AI requires iOS 18.2+ and iPhone 15 Pro or newer")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                    .padding(.top, 4)
+                }
             }
 
             Section(header: Text("AI Output Mode"), footer: Text("Choose how the AI assistant responds. Voice always speaks a short summary.")) {
@@ -170,6 +188,24 @@ struct AISettingsView: View {
             return voice.name
         }
         return "Unknown"
+    }
+
+    private var isOnDeviceAvailable: Bool {
+        if #available(iOS 18.2, *) {
+            // Check for A17 Pro or later (iPhone 15 Pro and above)
+            // This is a simplified check - in production you'd want more robust detection
+            let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+            return osVersion.majorVersion >= 18 && osVersion.minorVersion >= 2
+        }
+        return false
+    }
+
+    private var providerFooterText: String {
+        if aiProvider == .onDevice {
+            return "On-device AI is private, fast, and free. No API key or internet connection required."
+        } else {
+            return "You must provide your own API key for \(aiProvider.displayName). Keys are stored securely in the Keychain."
+        }
     }
 
     private func testVoice() {

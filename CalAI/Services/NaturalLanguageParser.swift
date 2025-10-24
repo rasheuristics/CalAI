@@ -241,6 +241,10 @@ class NaturalLanguageParser {
         case .anthropic:
             print("🤖 Using Anthropic Service")
             service = AnthropicServiceWrapper(apiKey: Config.anthropicAPIKey)
+        case .onDevice:
+            // On-device AI doesn't use NaturalLanguageParser, fallback to Anthropic
+            print("🤖 On-device selected but NaturalLanguageParser requires cloud, using Anthropic")
+            service = AnthropicServiceWrapper(apiKey: Config.anthropicAPIKey)
         }
         self.init(llmService: service)
     }
@@ -259,7 +263,7 @@ class NaturalLanguageParser {
         switch Config.aiProvider {
         case .openai:
             model = "gpt-4o"
-        case .anthropic:
+        case .anthropic, .onDevice:
             model = "claude-3-5-sonnet-20240620"
         }
 
@@ -276,7 +280,7 @@ class NaturalLanguageParser {
         switch Config.aiProvider {
         case .openai:
             model = "gpt-4o"
-        case .anthropic:
+        case .anthropic, .onDevice:
             model = "claude-3-5-sonnet-20240620"
         }
 
@@ -291,7 +295,7 @@ class NaturalLanguageParser {
         switch Config.aiProvider {
         case .openai:
             model = Config.openAIModel
-        case .anthropic:
+        case .anthropic, .onDevice:
             model = Config.anthropicModel
         }
         

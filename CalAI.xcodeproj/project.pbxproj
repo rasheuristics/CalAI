@@ -7,9 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		F74164089D334010AFF919A5 /* Tests/Managers/GoogleCalendarManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B11C7F6FA04E5897AB5FDB /* Tests/Managers/GoogleCalendarManagerTests.swift */; };
-		8391751F0C75414183F54178 /* Tests/Managers/OutlookCalendarManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47FEE83E05974903AEC73AA3 /* Tests/Managers/OutlookCalendarManagerTests.swift */; };
-				0B4318950F3D26CF74B88743 /* Services/SmartNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83CFAD08A20B4CCE575C9CE /* Services/SmartNotificationManager.swift */; };
+		0B4318950F3D26CF74B88743 /* Services/SmartNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83CFAD08A20B4CCE575C9CE /* Services/SmartNotificationManager.swift */; };
 		1E7EB73033867405B7E0B1E7 /* Services/MeetingAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0F1CE4910EF893F2C790B2 /* Services/MeetingAnalyzer.swift */; };
 		3BED07C18D3A4F60BDEA4CE8 /* EventICSExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51D383FDCAED4DE48824B5E1 /* EventICSExporter.swift */; };
 		4B175B2F44E94617A718D88C /* CachedEvent+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B46C131EC34468921A482E /* CachedEvent+CoreDataClass.swift */; };
@@ -102,6 +100,7 @@
 		50C1FECD2EA6BC800037FA07 /* Tests/Mocks/MockEventStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1FEAE2EA6AA480037FA07 /* Tests/Mocks/MockEventStore.swift */; };
 		50C1FECE2EA6BC860037FA07 /* Tests/Managers/SyncManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1FEAF2EA6AA480037FA07 /* Tests/Managers/SyncManagerTests.swift */; };
 		50C1FECF2EA6BC8C0037FA07 /* Tests/Helpers/TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1FEB02EA6AA480037FA07 /* Tests/Helpers/TestHelpers.swift */; };
+		50C1FED32EAA691A0037FA07 /* OnDeviceAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1FED22EAA691A0037FA07 /* OnDeviceAIService.swift */; };
 		50D8A94F2E99EF81001391E6 /* EventTasksSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50D8A94E2E99EF81001391E6 /* EventTasksSystem.swift */; };
 		550F415622911D2CC80A4805 /* Models/NotificationPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2341A263909C0934BEFEB75 /* Models/NotificationPreferences.swift */; };
 		550F415622911D2CC80A4806 /* Models/AppError.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2341A263909C0934BEFEB76 /* Models/AppError.swift */; };
@@ -110,6 +109,7 @@
 		77691F15886B476DAAFD8343 /* CachedEvent+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F2FB17F466422F96CDA475 /* CachedEvent+CoreDataProperties.swift */; };
 		786DAF93584B4A7F8C255A31 /* SmartEventParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55FA556EC1894B9B98A3F14E /* SmartEventParser.swift */; };
 		82E1EC0082914E87A8ED4417 /* SyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA8078A8310749E599624E07 /* SyncManager.swift */; };
+		8391751F0C75414183F54178 /* Tests/Managers/OutlookCalendarManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47FEE83E05974903AEC73AA3 /* Tests/Managers/OutlookCalendarManagerTests.swift */; };
 		8E73C3AB6BD8432F8A259719 /* CalendarSyncStatus+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020CC79B628E4F26B759D524 /* CalendarSyncStatus+CoreDataProperties.swift */; };
 		8O32HN70D8DYBVFO6TDFLD1V /* WebhookManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = GZ9DW96JLV4Z5DHWH7OEH0T7 /* WebhookManager.swift */; };
 		91YRDNOBZDFUM2DBEKPW1GGB /* DeltaSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ZJM2FRZV7X4W9VD4C4B3OGE7 /* DeltaSyncManager.swift */; };
@@ -126,6 +126,7 @@
 		E19B7AB0C1854764084F7BC1CDE1E0F40 /* GestureHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF423B70491E4DA49A127ADF0748A681 /* GestureHandler.swift */; };
 		EC53F5003F3842A6BE0E1AA3 /* CalendarSyncStatus+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D51096E4254421FB0650F02 /* CalendarSyncStatus+CoreDataClass.swift */; };
 		F31451D773724911825C05A0 /* AISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262DF1FE48464FC2A213E7D8 /* AISettingsView.swift */; };
+		F74164089D334010AFF919A5 /* Tests/Managers/GoogleCalendarManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B11C7F6FA04E5897AB5FDB /* Tests/Managers/GoogleCalendarManagerTests.swift */; };
 		F87B6A14A4AE408FB9DE870E /* QRCodeGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5422BA7219D24BB9A5A3E4C9 /* QRCodeGenerator.swift */; };
 		PYTO2L0DI6L5VO0LRWLD62LI /* CrossDeviceSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B9DY4NXHUMP8VJQ7UPL2TLQ /* CrossDeviceSyncManager.swift */; };
 /* End PBXBuildFile section */
@@ -141,13 +142,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		D0B11C7F6FA04E5897AB5FDB /* Tests/Managers/GoogleCalendarManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Managers/GoogleCalendarManagerTests.swift; sourceTree = "<group>"; };
-		47FEE83E05974903AEC73AA3 /* Tests/Managers/OutlookCalendarManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Managers/OutlookCalendarManagerTests.swift; sourceTree = "<group>"; };
-				00C6A137E4A14FFAA83844FD /* CalAI/Services/EventColorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalAI/Services/EventColorManager.swift; sourceTree = "<group>"; };
+		00C6A137E4A14FFAA83844FD /* CalAI/Services/EventColorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalAI/Services/EventColorManager.swift; sourceTree = "<group>"; };
 		020CC79B628E4F26B759D524 /* CalendarSyncStatus+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CalendarSyncStatus+CoreDataProperties.swift"; sourceTree = "<group>"; };
 		03B56C0D32C845768A4C4ED9 /* PostMeetingSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostMeetingSummaryView.swift; sourceTree = "<group>"; };
 		15B6F6C536014C07B84B54BD /* CoreDataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreDataManager.swift; sourceTree = "<group>"; };
 		262DF1FE48464FC2A213E7D8 /* AISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsView.swift; sourceTree = "<group>"; };
+		47FEE83E05974903AEC73AA3 /* Tests/Managers/OutlookCalendarManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Managers/OutlookCalendarManagerTests.swift; sourceTree = "<group>"; };
 		4B797E3AF83D4D13A0A655E6 /* EventShareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventShareView.swift; sourceTree = "<group>"; };
 		4D51096E4254421FB0650F02 /* CalendarSyncStatus+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CalendarSyncStatus+CoreDataClass.swift"; sourceTree = "<group>"; };
 		4F51E622EA144E34B877ACAD /* ActionItemsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionItemsView.swift; sourceTree = "<group>"; };
@@ -237,6 +237,7 @@
 		50C1FEAF2EA6AA480037FA07 /* Tests/Managers/SyncManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Managers/SyncManagerTests.swift; sourceTree = "<group>"; };
 		50C1FEB02EA6AA480037FA07 /* Tests/Helpers/TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Helpers/TestHelpers.swift; sourceTree = "<group>"; };
 		50C1FEBA2EA6AD1A0037FA07 /* CalAITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CalAITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		50C1FED22EAA691A0037FA07 /* OnDeviceAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceAIService.swift; sourceTree = "<group>"; };
 		50D8A94E2E99EF81001391E6 /* EventTasksSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventTasksSystem.swift; sourceTree = "<group>"; };
 		51D383FDCAED4DE48824B5E1 /* EventICSExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventICSExporter.swift; sourceTree = "<group>"; };
 		5422BA7219D24BB9A5A3E4C9 /* QRCodeGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeGenerator.swift; sourceTree = "<group>"; };
@@ -260,6 +261,7 @@
 		BF423B70491E4DA49A127ADF0748A681 /* GestureHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureHandler.swift; sourceTree = "<group>"; };
 		C83CFAD08A20B4CCE575C9CE /* Services/SmartNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/SmartNotificationManager.swift; sourceTree = "<group>"; };
 		CD0F1CE4910EF893F2C790B2 /* Services/MeetingAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MeetingAnalyzer.swift; sourceTree = "<group>"; };
+		D0B11C7F6FA04E5897AB5FDB /* Tests/Managers/GoogleCalendarManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Managers/GoogleCalendarManagerTests.swift; sourceTree = "<group>"; };
 		D83DAE93130B4923AE799767 /* ConflictResolutionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConflictResolutionManager.swift; sourceTree = "<group>"; };
 		DB609767A28C4E60B78053C5BCDB8AD6 /* EventShareTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventShareTabView.swift; sourceTree = "<group>"; };
 		E10BD161D6CF45B0BA0CCDD94BE4C7A1 /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
@@ -556,6 +558,7 @@
 		506831E42E9AF7F4007A48F5 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				50C1FED22EAA691A0037FA07 /* OnDeviceAIService.swift */,
 				506831D12E9AF7F4007A48F5 /* AnalyticsService.swift */,
 				506831D22E9AF7F4007A48F5 /* AppLaunchOptimizer.swift */,
 				506831D32E9AF7F4007A48F5 /* AssetOptimizer.swift */,
@@ -958,6 +961,7 @@
 				550F415622911D2CC80A4806 /* Models/AppError.swift in Sources */,
 				1E7EB73033867405B7E0B1E7 /* Services/MeetingAnalyzer.swift in Sources */,
 				58DB234D746C2F1244A1F9F7 /* Services/TravelTimeManager.swift in Sources */,
+				50C1FED32EAA691A0037FA07 /* OnDeviceAIService.swift in Sources */,
 				0B4318950F3D26CF74B88743 /* Services/SmartNotificationManager.swift in Sources */,
 				F87B6A14A4AE408FB9DE870E /* QRCodeGenerator.swift in Sources */,
 				3BED07C18D3A4F60BDEA4CE8 /* EventICSExporter.swift in Sources */,

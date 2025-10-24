@@ -1,0 +1,381 @@
+import Foundation
+import Translation
+
+/// Enhanced conversational AI service with multi-turn conversation memory using Apple Intelligence
+@available(iOS 26.0, *)
+class EnhancedConversationalAI {
+
+    // MARK: - Types
+
+    struct ConversationTurn: Codable {
+        let id: UUID
+        let timestamp: Date
+        let userMessage: String
+        let assistantResponse: String
+        let intent: String?
+        let entities: [Entity]
+
+        init(id: UUID = UUID(), timestamp: Date = Date(), userMessage: String, assistantResponse: String, intent: String? = nil, entities: [Entity] = []) {
+            self.id = id
+            self.timestamp = timestamp
+            self.userMessage = userMessage
+            self.assistantResponse = assistantResponse
+            self.intent = intent
+            self.entities = entities
+        }
+    }
+
+    struct Entity: Codable {
+        enum EntityType: String, Codable {
+            case person
+            case date
+            case time
+            case location
+            case event
+            case task
+            case duration
+            case priority
+        }
+
+        let type: EntityType
+        let value: String
+        let confidence: Float
+
+        init(type: EntityType, value: String, confidence: Float = 1.0) {
+            self.type = type
+            self.value = value
+            self.confidence = confidence
+        }
+    }
+
+    @Generable
+    struct ConversationalResponse: Codable {
+        enum Intent: String, Codable {
+            case createEvent
+            case modifyEvent
+            case deleteEvent
+            case createTask
+            case modifyTask
+            case deleteTask
+            case completeTask
+            case querySchedule
+            case requestAdvice
+            case smallTalk
+            case clarification
+            case multiStepPlanning
+            case scheduleOptimization
+            case unknown
+        }
+
+        let message: String
+        let intent: String
+        let confidence: Float
+        let requiresClarification: Bool
+        let clarificationQuestions: [String]?
+        let actionType: String?
+        let actionParameters: [String: String]?
+        let contextToRemember: [String: String]?
+        let suggestedFollowUps: [String]?
+
+        init(
+            message: String,
+            intent: String = "unknown",
+            confidence: Float = 0.5,
+            requiresClarification: Bool = false,
+            clarificationQuestions: [String]? = nil,
+            actionType: String? = nil,
+            actionParameters: [String: String]? = nil,
+            contextToRemember: [String: String]? = nil,
+            suggestedFollowUps: [String]? = nil
+        ) {
+            self.message = message
+            self.intent = intent
+            self.confidence = confidence
+            self.requiresClarification = requiresClarification
+            self.clarificationQuestions = clarificationQuestions
+            self.actionType = actionType
+            self.actionParameters = actionParameters
+            self.contextToRemember = contextToRemember
+            self.suggestedFollowUps = suggestedFollowUps
+        }
+    }
+
+    // MARK: - Properties
+
+    private var conversationHistory: [ConversationTurn] = []
+    private var session: LanguageModelSession?
+    private let maxHistoryLength = 10  // Keep last 10 turns
+    private var currentContext: [String: String] = [:]
+
+    // MARK: - Initialization
+
+    init() {
+        Task {
+            await initializeSession()
+        }
+    }
+
+    private func initializeSession() async {
+        do {
+            self.session = try await LanguageModelSession()
+            print("✅ Enhanced Conversational AI session initialized")
+        } catch {
+            print("❌ Failed to initialize session: \(error)")
+        }
+    }
+
+    // MARK: - Main Conversation Interface
+
+    func chat(
+        message: String,
+        calendarEvents: [UnifiedEvent],
+        tasks: [EventTask]
+    ) async throws -> ConversationalResponse {
+
+        guard let session = session else {
+            throw NSError(domain: "EnhancedConversationalAI", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Language model session not initialized"
+            ])
+        }
+
+        print("💬 Processing message: \(message)")
+        print("📚 Conversation history: \(conversationHistory.count) turns")
+
+        // Build comprehensive context
+        let contextPrompt = buildContextPrompt(
+            message: message,
+            events: calendarEvents,
+            tasks: tasks
+        )
+
+        print("📝 Context prompt built")
+
+        // Generate response using Apple Intelligence
+        let response = try await session.generate(contextPrompt, as: ConversationalResponse.self)
+
+        print("✅ Response generated: \(response.intent)")
+
+        // Extract entities from the conversation
+        let entities = extractEntities(from: message, response: response)
+
+        // Store conversation turn
+        let turn = ConversationTurn(
+            userMessage: message,
+            assistantResponse: response.message,
+            intent: response.intent,
+            entities: entities
+        )
+        conversationHistory.append(turn)
+
+        // Update current context if provided
+        if let contextToRemember = response.contextToRemember {
+            currentContext.merge(contextToRemember) { _, new in new }
+        }
+
+        // Trim history if needed
+        trimConversationHistory()
+
+        return response
+    }
+
+    // MARK: - Context Building
+
+    private func buildContextPrompt(
+        message: String,
+        events: [UnifiedEvent],
+        tasks: [EventTask]
+    ) -> String {
+
+        let now = Date()
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+
+        // Build conversation history summary
+        let historyContext = buildConversationHistoryContext()
+
+        // Build current context summary
+        let contextSummary = currentContext.isEmpty ? "No active context" :
+            currentContext.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
+
+        // Build calendar context
+        let upcomingEvents = events
+            .filter { $0.startDate > now }
+            .sorted { $0.startDate < $1.startDate }
+            .prefix(10)
+
+        let eventsContext = upcomingEvents.isEmpty ? "No upcoming events" :
+            upcomingEvents.map { event in
+                "\(event.title) - \(formatter.string(from: event.startDate))"
+            }.joined(separator: "\n")
+
+        // Build task context
+        let activeTasks = tasks
+            .filter { !$0.isCompleted }
+            .prefix(10)
+
+        let tasksContext = activeTasks.isEmpty ? "No active tasks" :
+            activeTasks.map { task in
+                "\(task.title) - Priority: \(task.priority.rawValue)"
+            }.joined(separator: "\n")
+
+        return """
+        SYSTEM: You are an intelligent calendar and task assistant with conversational memory. You help users manage their schedule, tasks, and provide insights.
+
+        CURRENT TIME: \(formatter.string(from: now))
+        DAY: \(calendar.weekdaySymbols[calendar.component(.weekday, from: now) - 1])
+
+        CONVERSATION MEMORY:
+        \(historyContext)
+
+        ACTIVE CONTEXT:
+        \(contextSummary)
+
+        UPCOMING EVENTS:
+        \(eventsContext)
+
+        ACTIVE TASKS:
+        \(tasksContext)
+
+        CAPABILITIES:
+        - Create, modify, delete events and tasks
+        - Answer questions about schedule and availability
+        - Provide scheduling advice and optimization suggestions
+        - Handle multi-turn conversations with memory of previous context
+        - Ask clarifying questions when needed
+        - Suggest follow-up actions
+
+        INSTRUCTIONS:
+        1. Consider the entire conversation history when responding
+        2. Reference previous messages when relevant (e.g., "As we discussed earlier...")
+        3. If the user refers to something from earlier in the conversation, use that context
+        4. If you need more information, ask clarifying questions
+        5. Be conversational and natural
+        6. When executing actions, provide clear confirmation
+        7. Suggest follow-up actions when appropriate
+        8. Remember important context across turns using contextToRemember field
+
+        RESPONSE FORMAT:
+        - message: Natural language response to the user
+        - intent: The primary intent (createEvent, modifyEvent, createTask, querySchedule, etc.)
+        - confidence: Float 0-1 indicating confidence in understanding
+        - requiresClarification: true if you need more information
+        - clarificationQuestions: Array of specific questions to ask
+        - actionType: Type of action to execute (if any)
+        - actionParameters: Parameters needed to execute the action
+        - contextToRemember: Key-value pairs of important context for future turns
+        - suggestedFollowUps: Array of suggested next actions
+
+        USER MESSAGE: "\(message)"
+
+        Respond with structured data that maintains conversation continuity.
+        """
+    }
+
+    private func buildConversationHistoryContext() -> String {
+        guard !conversationHistory.isEmpty else {
+            return "No previous conversation"
+        }
+
+        return conversationHistory.suffix(5).enumerated().map { index, turn in
+            let turnNumber = conversationHistory.count - 5 + index + 1
+            let entities = turn.entities.isEmpty ? "" :
+                " [Entities: \(turn.entities.map { "\($0.type.rawValue):\($0.value)" }.joined(separator: ", "))]"
+            return """
+            Turn \(turnNumber):
+            User: \(turn.userMessage)
+            Assistant: \(turn.assistantResponse)\(entities)
+            """
+        }.joined(separator: "\n\n")
+    }
+
+    // MARK: - Entity Extraction
+
+    private func extractEntities(from message: String, response: ConversationalResponse) -> [Entity] {
+        var entities: [Entity] = []
+
+        // Extract from action parameters if available
+        if let params = response.actionParameters {
+            for (key, value) in params {
+                let entityType: Entity.EntityType
+                switch key.lowercased() {
+                case "title", "name": entityType = .event
+                case "date", "startdate", "enddate": entityType = .date
+                case "time", "starttime", "endtime": entityType = .time
+                case "location": entityType = .location
+                case "priority": entityType = .priority
+                case "duration": entityType = .duration
+                case "task": entityType = .task
+                default: continue
+                }
+
+                entities.append(Entity(type: entityType, value: value, confidence: response.confidence))
+            }
+        }
+
+        // Could add more sophisticated entity extraction here using NLP
+
+        return entities
+    }
+
+    // MARK: - History Management
+
+    private func trimConversationHistory() {
+        if conversationHistory.count > maxHistoryLength {
+            conversationHistory = Array(conversationHistory.suffix(maxHistoryLength))
+            print("📚 Trimmed conversation history to \(maxHistoryLength) turns")
+        }
+    }
+
+    func clearConversationHistory() {
+        conversationHistory.removeAll()
+        currentContext.removeAll()
+        print("🗑️ Conversation history cleared")
+    }
+
+    func getConversationSummary() -> String {
+        guard !conversationHistory.isEmpty else {
+            return "No conversation history"
+        }
+
+        return """
+        Conversation with \(conversationHistory.count) turns
+        Recent topics: \(getRecentTopics())
+        Active context: \(currentContext.keys.joined(separator: ", "))
+        """
+    }
+
+    private func getRecentTopics() -> String {
+        let recentIntents = conversationHistory
+            .suffix(5)
+            .compactMap { $0.intent }
+
+        return recentIntents.isEmpty ? "None" : recentIntents.joined(separator: ", ")
+    }
+
+    // MARK: - Context Helpers
+
+    func addContext(key: String, value: String) {
+        currentContext[key] = value
+    }
+
+    func removeContext(key: String) {
+        currentContext.removeValue(forKey: key)
+    }
+
+    func getContext(key: String) -> String? {
+        return currentContext[key]
+    }
+}
+
+// MARK: - UnifiedEvent Extension for Context Building
+
+extension UnifiedEvent {
+    var contextDescription: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return "\(title) at \(formatter.string(from: startDate))"
+    }
+}
