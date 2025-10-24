@@ -4697,9 +4697,18 @@ struct TaskDetailView: View {
 
     @ViewBuilder
     private func priorityIconView() -> some View {
-        // Show a default icon with rounded square and exclamation mark
-        // This will be displayed before user selects a priority
-        PriorityOption.low.iconView(size: 22)
+        // Map task priority to PriorityOption for display
+        let displayOption: PriorityOption
+        switch task.priority {
+        case .high:
+            displayOption = .high
+        case .medium:
+            displayOption = .medium
+        case .low:
+            displayOption = .none  // Use "no priority" (black circle with line) as default/low
+        }
+
+        return displayOption.iconView(size: 22)
     }
 
     private func setPriority(_ option: PriorityOption) {
