@@ -42,7 +42,7 @@ struct EventTask: Identifiable, Codable, Hashable {
         title: String,
         description: String? = nil,
         isCompleted: Bool = false,
-        priority: TaskPriority = .medium,
+        priority: TaskPriority = .none,
         category: TaskCategory = .preparation,
         timing: TaskTiming = .before(hours: 24),
         estimatedMinutes: Int? = nil,
@@ -71,23 +71,26 @@ struct EventTask: Identifiable, Codable, Hashable {
 }
 
 enum TaskPriority: String, Codable, CaseIterable {
-    case high = "High"
-    case medium = "Medium"
+    case none = "None"
     case low = "Low"
+    case medium = "Medium"
+    case high = "High"
 
     var color: String {
         switch self {
-        case .high: return "red"
+        case .none: return "black"
+        case .low: return "green"
         case .medium: return "orange"
-        case .low: return "blue"
+        case .high: return "red"
         }
     }
 
     var icon: String {
         switch self {
-        case .high: return "exclamationmark.circle.fill"
-        case .medium: return "exclamationmark.circle"
+        case .none: return "exclamationmark"
         case .low: return "circle"
+        case .medium: return "exclamationmark.circle"
+        case .high: return "exclamationmark.circle.fill"
         }
     }
 }
@@ -4148,7 +4151,7 @@ struct TaskDetailView: View {
             case .goal: return .purple
             case .high: return .red
             case .medium: return .yellow
-            case .low: return .black
+            case .low: return .green
             case .none: return .black
             }
         }
@@ -4698,17 +4701,25 @@ struct TaskDetailView: View {
     @ViewBuilder
     private func priorityIconView() -> some View {
         // Map task priority to PriorityOption for display
-        let displayOption: PriorityOption
+        // Use custom view for .none to show black with 1 exclamation
         switch task.priority {
-        case .high:
-            displayOption = .high
-        case .medium:
-            displayOption = .medium
+        case .none:
+            // Black with 1 exclamation mark (placeholder)
+            ZStack {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(Color.black, lineWidth: 2)
+                    .frame(width: 22, height: 22)
+                Text("!")
+                    .font(.system(size: 22 * 0.6, weight: .bold))
+                    .foregroundColor(.black)
+            }
         case .low:
-            displayOption = .low
+            PriorityOption.low.iconView(size: 22)  // Green with 1 exclamation mark
+        case .medium:
+            PriorityOption.medium.iconView(size: 22)  // Yellow with 2 exclamation marks
+        case .high:
+            PriorityOption.high.iconView(size: 22)  // Red with 3 exclamation marks
         }
-
-        return displayOption.iconView(size: 22)
     }
 
     private func setPriority(_ option: PriorityOption) {
@@ -4717,8 +4728,10 @@ struct TaskDetailView: View {
             task.priority = .high
         case .medium:
             task.priority = .medium
-        case .low, .none:
+        case .low:
             task.priority = .low
+        case .none:
+            task.priority = .none
         }
         onSave()
     }
