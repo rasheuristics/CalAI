@@ -3305,24 +3305,44 @@ struct TasksTabView: View {
             }
             .sheet(isPresented: $showingTaskDetail) {
                 if var selected = selectedTask {
-                    TaskDetailView(
-                        task: Binding(
-                            get: { selected.task },
-                            set: { newTask in
-                                selected.task = newTask
-                                // Save the updated task
-                                taskManager.updateTask(newTask, for: selected.eventId)
+                    if #available(iOS 16.4, *) {
+                        TaskDetailView(
+                            task: Binding(
+                                get: { selected.task },
+                                set: { newTask in
+                                    selected.task = newTask
+                                    // Save the updated task
+                                    taskManager.updateTask(newTask, for: selected.eventId)
+                                }
+                            ),
+                            fontManager: fontManager,
+                            eventId: selected.eventId,
+                            onSave: {
+                                // Task is already saved via binding
                             }
-                        ),
-                        fontManager: fontManager,
-                        eventId: selected.eventId,
-                        onSave: {
-                            // Task is already saved via binding
-                        }
-                    )
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.hidden)
-                    .presentationBackgroundInteraction(.enabled)
+                        )
+                        .presentationDetents([.medium, .large])
+                        .presentationDragIndicator(.hidden)
+                        .presentationBackgroundInteraction(.enabled)
+                    } else {
+                        TaskDetailView(
+                            task: Binding(
+                                get: { selected.task },
+                                set: { newTask in
+                                    selected.task = newTask
+                                    // Save the updated task
+                                    taskManager.updateTask(newTask, for: selected.eventId)
+                                }
+                            ),
+                            fontManager: fontManager,
+                            eventId: selected.eventId,
+                            onSave: {
+                                // Task is already saved via binding
+                            }
+                        )
+                        .presentationDetents([.medium, .large])
+                        .presentationDragIndicator(.hidden)
+                    }
                 }
             }
         }
