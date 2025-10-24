@@ -789,8 +789,17 @@ struct AITabView: View {
             let userMessage = ConversationItem(message: transcript, isUser: true)
             conversationHistory.append(userMessage)
         }
-        aiManager.processVoiceCommand(transcript, conversationHistory: conversationHistory, calendarEvents: calendarManager.unifiedEvents, calendarManager: calendarManager) { response in
-            self.handleAIResponse(response)
+
+        // Use enhanced conversational AI with memory if available (iOS 26+)
+        if #available(iOS 26.0, *) {
+            aiManager.processConversationalCommand(transcript, calendarEvents: calendarManager.unifiedEvents) { response in
+                self.handleAIResponse(response)
+            }
+        } else {
+            // Fall back to standard processing for older iOS versions
+            aiManager.processVoiceCommand(transcript, conversationHistory: conversationHistory, calendarEvents: calendarManager.unifiedEvents, calendarManager: calendarManager) { response in
+                self.handleAIResponse(response)
+            }
         }
     }
 
