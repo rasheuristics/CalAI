@@ -3323,8 +3323,9 @@ struct TasksTabView: View {
                         )
                         .presentationDetents([.medium, .large])
                         .presentationDragIndicator(.hidden)
+                        .presentationBackground(.clear)
                         .presentationBackgroundInteraction(.enabled)
-                    } else {
+                    } else if #available(iOS 16.0, *) {
                         TaskDetailView(
                             task: Binding(
                                 get: { selected.task },
@@ -3342,6 +3343,23 @@ struct TasksTabView: View {
                         )
                         .presentationDetents([.medium, .large])
                         .presentationDragIndicator(.hidden)
+                        .presentationBackground(.clear)
+                    } else {
+                        TaskDetailView(
+                            task: Binding(
+                                get: { selected.task },
+                                set: { newTask in
+                                    selected.task = newTask
+                                    // Save the updated task
+                                    taskManager.updateTask(newTask, for: selected.eventId)
+                                }
+                            ),
+                            fontManager: fontManager,
+                            eventId: selected.eventId,
+                            onSave: {
+                                // Task is already saved via binding
+                            }
+                        )
                     }
                 }
             }
