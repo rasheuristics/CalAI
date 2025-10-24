@@ -42,20 +42,25 @@ struct ContentView: View {
                 ZStack {
                     if selectedTab == "ai" {
                         AITabView(voiceManager: voiceManager, aiManager: aiManager, calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
+                            .background(Color.clear)
                     } else if selectedTab == "calendar" {
                         CalendarTabView(calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
+                            .background(Color.clear)
                     } else if selectedTab == "events" {
                         EventsTabView(calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
+                            .background(Color.clear)
                     } else if selectedTab == "tasks" {
                         TasksTabView(fontManager: fontManager, calendarManager: calendarManager)
+                            .background(Color.clear)
                     } else if selectedTab == "settings" {
                         SettingsTabView(calendarManager: calendarManager, voiceManager: voiceManager, fontManager: fontManager, googleCalendarManager: googleCalendarManager, outlookCalendarManager: outlookCalendarManager, appearanceManager: appearanceManager)
+                            .background(Color.clear)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // Custom draggable tab bar
-                CustomTabBar(
+                // iOS 26 style floating bubble tab bar with drag-and-drop
+                iOS26FloatingTabBar(
                     tabBarManager: tabBarManager,
                     selectedTab: $selectedTab,
                     activeTaskCount: activeTaskCount
@@ -103,7 +108,6 @@ struct ContentView: View {
             if hasCompletedOnboarding {
                 calendarManager.requestCalendarAccess()
             }
-            setupiOS26TabBar()
         }
         // PHASE 12 DISABLED - Post-Meeting Summary Sheet
         // .sheet(isPresented: $postMeetingService.showPostMeetingSummary) {
@@ -117,80 +121,6 @@ struct ContentView: View {
         //     }
         // }
     }
-
-    private func setupiOS26TabBar() {
-        // iOS 26 enhanced dock with advanced glassmorphism
-        let appearance = UITabBarAppearance()
-
-        // Ultra-modern transparent configuration with enhanced blur
-        appearance.configureWithTransparentBackground()
-        appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
-
-        // iOS 26 dock styling with refined glass background
-        appearance.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.02)
-
-        // Enhanced shadow for floating dock appearance
-        appearance.shadowColor = UIColor.black.withAlphaComponent(0.15)
-
-        // iOS 26 tab item styling - inactive state with refined opacity
-        appearance.stackedLayoutAppearance.normal.iconColor = UIColor.label.withAlphaComponent(0.55)
-        appearance.stackedLayoutAppearance.normal.titleTextAttributes = [
-            .foregroundColor: UIColor.label.withAlphaComponent(0.55),
-            .font: UIFont.systemFont(ofSize: 9.5, weight: .medium)
-        ]
-        appearance.stackedLayoutAppearance.normal.badgeBackgroundColor = UIColor.systemRed
-
-        // iOS 26 tab item styling - active state with enhanced accent
-        appearance.stackedLayoutAppearance.selected.iconColor = UIColor.systemBlue
-        appearance.stackedLayoutAppearance.selected.titleTextAttributes = [
-            .foregroundColor: UIColor.systemBlue,
-            .font: UIFont.systemFont(ofSize: 9.5, weight: .semibold)
-        ]
-
-        // iOS 26 compact layout for smaller devices
-        appearance.compactInlineLayoutAppearance.normal.iconColor = UIColor.label.withAlphaComponent(0.55)
-        appearance.compactInlineLayoutAppearance.normal.titleTextAttributes = [
-            .foregroundColor: UIColor.label.withAlphaComponent(0.55),
-            .font: UIFont.systemFont(ofSize: 9, weight: .medium)
-        ]
-        appearance.compactInlineLayoutAppearance.selected.iconColor = UIColor.systemBlue
-        appearance.compactInlineLayoutAppearance.selected.titleTextAttributes = [
-            .foregroundColor: UIColor.systemBlue,
-            .font: UIFont.systemFont(ofSize: 9, weight: .semibold)
-        ]
-
-        // Apply iOS 26 dock appearance
-        UITabBar.appearance().standardAppearance = appearance
-        UITabBar.appearance().scrollEdgeAppearance = appearance
-
-        // Note: Compact appearance is available in newer iOS versions
-        // if #available(iOS 15.0, *) {
-        //     UITabBar.appearance().compactAppearance = appearance
-        //     UITabBar.appearance().compactScrollEdgeAppearance = appearance
-        // }
-
-        // iOS 26 enhanced translucency and visual effects
-        UITabBar.appearance().isTranslucent = true
-        UITabBar.appearance().barTintColor = UIColor.clear
-        UITabBar.appearance().tintColor = UIColor.systemBlue
-        UITabBar.appearance().unselectedItemTintColor = UIColor.label.withAlphaComponent(0.55)
-
-        // Force immediate visual update for iOS 26 styling
-        DispatchQueue.main.async {
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-                for window in windowScene.windows {
-                    if let tabBarController = window.rootViewController as? UITabBarController {
-                        tabBarController.tabBar.setNeedsLayout()
-                        tabBarController.tabBar.layoutIfNeeded()
-                    }
-                    window.rootViewController?.view.setNeedsDisplay()
-                    window.rootViewController?.view.setNeedsLayout()
-                }
-            }
-        }
-    }
-
-
 }
 
 struct VoiceInputButton: View {
@@ -302,113 +232,190 @@ class TabBarManager: ObservableObject {
     }
 }
 
-// MARK: - Custom Tab Bar View
+// MARK: - iOS 26 Floating Bubble Tab Bar
 
-struct CustomTabBar: View {
+struct iOS26FloatingTabBar: View {
     @ObservedObject var tabBarManager: TabBarManager
     @Binding var selectedTab: String
     let activeTaskCount: Int
 
     @State private var draggedTab: TabItem?
     @State private var draggedOffset: CGSize = .zero
+    @State private var isEditing: Bool = false
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
             ForEach(Array(tabBarManager.tabs.enumerated()), id: \.element.id) { index, tab in
-                CustomTabBarItem(
+                iOS26TabBubble(
                     tab: tab,
                     isSelected: selectedTab == tab.id,
                     badge: tab.id == "tasks" ? activeTaskCount : nil,
                     isDragging: draggedTab?.id == tab.id,
+                    isEditing: isEditing,
                     onTap: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             selectedTab = tab.id
+                        }
+                    },
+                    onLongPress: {
+                        if !tab.isFixed {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                isEditing = true
+                            }
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         }
                     }
                 )
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
                 .offset(draggedTab?.id == tab.id ? draggedOffset : .zero)
                 .zIndex(draggedTab?.id == tab.id ? 1 : 0)
-                .opacity(draggedTab?.id == tab.id ? 0.8 : 1.0)
+                .scaleEffect(draggedTab?.id == tab.id ? 1.1 : 1.0)
                 .gesture(
-                    tab.isFixed ? nil : // Settings tab cannot be dragged
-                    DragGesture(minimumDistance: 10)
+                    tab.isFixed || !isEditing ? nil :
+                    DragGesture(minimumDistance: 5)
                         .onChanged { value in
                             if draggedTab == nil {
                                 draggedTab = tab
-                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                             }
                             draggedOffset = value.translation
 
                             // Calculate which position we're over
-                            let itemWidth = UIScreen.main.bounds.width / CGFloat(tabBarManager.tabs.count)
+                            let itemWidth = (UIScreen.main.bounds.width - 32) / CGFloat(tabBarManager.tabs.count)
                             let currentX = CGFloat(index) * itemWidth + value.translation.width
                             let newIndex = Int(round(currentX / itemWidth))
 
                             // Check if we've moved to a new position
                             if newIndex != index && newIndex >= 0 && newIndex < tabBarManager.tabs.count - 1 {
-                                // Don't allow moving past settings (last position)
                                 tabBarManager.moveTab(from: index, to: newIndex)
                             }
                         }
                         .onEnded { _ in
-                            withAnimation(.spring()) {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 draggedOffset = .zero
                                 draggedTab = nil
+                                isEditing = false
                             }
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         }
                 )
             }
         }
-        .frame(height: 49) // Standard tab bar height
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .background(
-            Color(.systemBackground)
-                .shadow(color: Color.black.opacity(0.1), radius: 1, x: 0, y: -1)
+            // iOS 26 floating bubble background with glassmorphism
+            ZStack {
+                // Blur effect
+                VisualEffectBlur(blurStyle: .systemUltraThinMaterial)
+
+                // Subtle gradient overlay
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.1),
+                        Color.white.opacity(0.05)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .shadow(color: Color.black.opacity(0.15), radius: 20, x: 0, y: 10)
+            .shadow(color: Color.black.opacity(0.1), radius: 1, x: 0, y: 1)
         )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
     }
 }
 
-// MARK: - Custom Tab Bar Item
+// MARK: - iOS 26 Tab Bubble Item
 
-struct CustomTabBarItem: View {
+struct iOS26TabBubble: View {
     let tab: TabItem
     let isSelected: Bool
     let badge: Int?
     let isDragging: Bool
+    let isEditing: Bool
     let onTap: () -> Void
+    let onLongPress: () -> Void
 
     var body: some View {
         Button(action: onTap) {
             VStack(spacing: 4) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: tab.icon)
-                        .font(.system(size: 24))
-                        .foregroundColor(isSelected ? .blue : .gray)
-                        .scaleEffect(isDragging ? 1.1 : 1.0)
+                        .font(.system(size: 24, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(
+                            isSelected ?
+                            LinearGradient(
+                                colors: [Color.blue, Color.blue.opacity(0.8)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ) :
+                            LinearGradient(
+                                colors: [Color.primary.opacity(0.6), Color.primary.opacity(0.5)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .symbolEffect(.bounce, value: isSelected)
 
                     // Badge
                     if let count = badge, count > 0 {
                         Text("\(count)")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, 5)
                             .padding(.vertical, 2)
-                            .background(Color.red)
-                            .clipShape(Capsule())
-                            .offset(x: 8, y: -8)
+                            .background(
+                                Capsule()
+                                    .fill(Color.red)
+                                    .shadow(color: Color.red.opacity(0.3), radius: 3, x: 0, y: 2)
+                            )
+                            .offset(x: 12, y: -8)
+                    }
+
+                    // Editing indicator
+                    if isEditing && !tab.isFixed {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 8, height: 8)
+                            .offset(x: -12, y: -8)
+                            .transition(.scale.combined(with: .opacity))
                     }
                 }
 
                 Text(tab.title)
-                    .font(.system(size: 10))
-                    .foregroundColor(isSelected ? .blue : .gray)
+                    .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+                    .foregroundColor(isSelected ? .blue : .primary.opacity(0.6))
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(isSelected ? Color.blue.opacity(0.15) : Color.clear)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(PlainButtonStyle())
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .onEnded { _ in
+                    onLongPress()
+                }
+        )
+    }
+}
+
+// MARK: - Visual Effect Blur
+
+struct VisualEffectBlur: UIViewRepresentable {
+    var blurStyle: UIBlurEffect.Style
+
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        return UIVisualEffectView(effect: UIBlurEffect(style: blurStyle))
+    }
+
+    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {
+        uiView.effect = UIBlurEffect(style: blurStyle)
     }
 }
 
