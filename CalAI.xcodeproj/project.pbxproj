@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		99C8B84078D550F7C93BCF3E /* EnhancedConversationalAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60D3613CE71C4720BE318E9B /* EnhancedConversationalAI.swift */; };
 		0B4318950F3D26CF74B88743 /* Services/SmartNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83CFAD08A20B4CCE575C9CE /* Services/SmartNotificationManager.swift */; };
 		1E7EB73033867405B7E0B1E7 /* Services/MeetingAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0F1CE4910EF893F2C790B2 /* Services/MeetingAnalyzer.swift */; };
 		3BED07C18D3A4F60BDEA4CE8 /* EventICSExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51D383FDCAED4DE48824B5E1 /* EventICSExporter.swift */; };
@@ -142,6 +143,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		60D3613CE71C4720BE318E9B /* EnhancedConversationalAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnhancedConversationalAI.swift; sourceTree = "<group>"; };
 		00C6A137E4A14FFAA83844FD /* CalAI/Services/EventColorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalAI/Services/EventColorManager.swift; sourceTree = "<group>"; };
 		020CC79B628E4F26B759D524 /* CalendarSyncStatus+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CalendarSyncStatus+CoreDataProperties.swift"; sourceTree = "<group>"; };
 		03B56C0D32C845768A4C4ED9 /* PostMeetingSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostMeetingSummaryView.swift; sourceTree = "<group>"; };
@@ -725,6 +727,7 @@
 			children = (
 				50C1FEAA2EA46C5B0037FA07 /* ConversationContextManager.swift */,
 				50C1FEA82EA46C300037FA07 /* ConversationalAIService.swift */,
+				60D3613CE71C4720BE318E9B /* EnhancedConversationalAI.swift */,
 				7BA1D74286A54B609D66DA5D /* PostMeetingService.swift */,
 			);
 			path = Services;
@@ -955,6 +958,7 @@
 				77691F15886B476DAAFD8343 /* CachedEvent+CoreDataProperties.swift in Sources */,
 				EC53F5003F3842A6BE0E1AA3 /* CalendarSyncStatus+CoreDataClass.swift in Sources */,
 				50C1FEA92EA46C300037FA07 /* ConversationalAIService.swift in Sources */,
+				99C8B84078D550F7C93BCF3E /* EnhancedConversationalAI.swift in Sources */,
 				8E73C3AB6BD8432F8A259719 /* CalendarSyncStatus+CoreDataProperties.swift in Sources */,
 				50745C962E7CA7C9004D0243 /* CalAIApp.swift in Sources */,
 				550F415622911D2CC80A4805 /* Models/NotificationPreferences.swift in Sources */,
