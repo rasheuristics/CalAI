@@ -3320,6 +3320,9 @@ struct TasksTabView: View {
                             // Task is already saved via binding
                         }
                     )
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.hidden)
+                    .presentationBackgroundInteraction(.enabled)
                 }
             }
         }
