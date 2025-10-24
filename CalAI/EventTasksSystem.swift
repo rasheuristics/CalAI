@@ -4148,7 +4148,7 @@ struct TaskDetailView: View {
             case .goal: return .purple
             case .high: return .red
             case .medium: return .yellow
-            case .low: return .green
+            case .low: return .black
             case .none: return .black
             }
         }
@@ -4705,7 +4705,7 @@ struct TaskDetailView: View {
         case .medium:
             displayOption = .medium
         case .low:
-            displayOption = .none  // Use "no priority" (black circle with line) as default/low
+            displayOption = .low
         }
 
         return displayOption.iconView(size: 22)
