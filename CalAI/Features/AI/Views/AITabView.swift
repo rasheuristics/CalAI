@@ -633,8 +633,9 @@ struct AITabView: View {
         }
         .background(Color(.systemBackground))
         .onAppear {
-            print("👂 AI Tab appeared - starting always-on listening")
-            startAlwaysOnListening()
+            print("👂 AI Tab appeared")
+            // Don't start always-on listening immediately on first load
+            // User will tap Speak button to initiate first interaction
         }
         .onDisappear {
             print("👋 AI Tab disappeared - stopping always-on listening")
