@@ -4488,6 +4488,7 @@ struct TaskDetailView: View {
                                 priorityIconView()
                             }
                         }
+                        .id(task.priority)
 
                         // Flag Icon (Deadline)
                         Menu {
