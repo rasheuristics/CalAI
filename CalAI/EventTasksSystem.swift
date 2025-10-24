@@ -4521,7 +4521,6 @@ struct TaskDetailView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
-                .background(Color(.systemBackground))
             }
             .frame(height: geometry.size.height / 2)
             .background(Color(.systemBackground))
