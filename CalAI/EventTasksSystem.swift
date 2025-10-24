@@ -1154,17 +1154,19 @@ struct EventTasksTabView: View {
 
     private func priorityIcon(_ priority: TaskPriority) -> String {
         switch priority {
-        case .high: return "exclamationmark.3"
-        case .medium: return "exclamationmark.2"
+        case .none: return "exclamationmark"
         case .low: return "exclamationmark"
+        case .medium: return "exclamationmark.2"
+        case .high: return "exclamationmark.3"
         }
     }
 
     private func priorityColor(_ priority: TaskPriority) -> Color {
         switch priority {
-        case .high: return .red
+        case .none: return .black
+        case .low: return .green
         case .medium: return .orange
-        case .low: return .gray
+        case .high: return .red
         }
     }
 
@@ -1283,9 +1285,10 @@ struct TaskRow: View {
 
     private func priorityColor(_ priority: TaskPriority) -> Color {
         switch priority {
-        case .high: return .red
+        case .none: return .black
+        case .low: return .green
         case .medium: return .orange
-        case .low: return .blue
+        case .high: return .red
         }
     }
 }
@@ -2756,9 +2759,10 @@ struct SuggestionRow: View {
 
     private func priorityColor(_ priority: TaskPriority) -> Color {
         switch priority {
-        case .high: return .red
+        case .none: return .black
+        case .low: return .green
         case .medium: return .orange
-        case .low: return .blue
+        case .high: return .red
         }
     }
 }
