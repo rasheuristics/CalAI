@@ -1,7 +1,9 @@
 import Foundation
+import Translation
 
-/// Enhanced conversational AI service with multi-turn conversation memory using OpenAI
-/// Note: Originally designed for iOS 26+ Apple Intelligence, currently using OpenAI as backend
+/// Enhanced conversational AI service with multi-turn conversation memory
+/// Uses Apple Intelligence on iOS 26+, falls back to OpenAI on older devices
+@available(iOS 16.0, *)
 class EnhancedConversationalAI {
 
     // MARK: - Types
@@ -47,6 +49,7 @@ class EnhancedConversationalAI {
         }
     }
 
+    @Generable
     struct ConversationalResponse: Codable {
         enum Intent: String, Codable {
             case createEvent
@@ -101,15 +104,39 @@ class EnhancedConversationalAI {
     // MARK: - Properties
 
     private var conversationHistory: [ConversationTurn] = []
-    private let session: URLSession
+    private var appleSession: Any?  // LanguageModelSession for iOS 26+
+    private let urlSession: URLSession
     private let maxHistoryLength = 10  // Keep last 10 turns
     private var currentContext: [String: String] = [:]
+    private var useAppleIntelligence: Bool = false
 
     // MARK: - Initialization
 
     init() {
-        self.session = URLSession.shared
-        print("✅ Enhanced Conversational AI initialized with OpenAI backend")
+        self.urlSession = URLSession.shared
+
+        // Try to initialize Apple Intelligence session
+        if #available(iOS 26.0, *) {
+            Task {
+                await initializeAppleIntelligence()
+            }
+        } else {
+            print("✅ Enhanced Conversational AI initialized with OpenAI fallback (iOS 26+ required for Apple Intelligence)")
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func initializeAppleIntelligence() async {
+        do {
+            let session = try await LanguageModelSession()
+            self.appleSession = session
+            self.useAppleIntelligence = true
+            print("✅ Enhanced Conversational AI initialized with Apple Intelligence")
+        } catch {
+            print("⚠️ Failed to initialize Apple Intelligence: \(error)")
+            print("✅ Falling back to OpenAI backend")
+            self.useAppleIntelligence = false
+        }
     }
 
     // MARK: - Main Conversation Interface
@@ -132,8 +159,16 @@ class EnhancedConversationalAI {
 
         print("📝 Context prompt built")
 
-        // Generate response using OpenAI
-        let response = try await callOpenAI(systemPrompt: contextPrompt, userMessage: message)
+        // Generate response using Apple Intelligence or OpenAI fallback
+        let response: ConversationalResponse
+        if #available(iOS 26.0, *), useAppleIntelligence,
+           let session = appleSession as? LanguageModelSession {
+            print("🍎 Using Apple Intelligence (on-device)")
+            response = try await session.generate(contextPrompt, as: ConversationalResponse.self)
+        } else {
+            print("☁️ Using OpenAI fallback")
+            response = try await callOpenAI(systemPrompt: contextPrompt, userMessage: message)
+        }
 
         print("✅ Response generated: \(response.intent)")
 
@@ -376,7 +411,7 @@ class EnhancedConversationalAI {
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "EnhancedConversationalAI", code: 500, userInfo: [
