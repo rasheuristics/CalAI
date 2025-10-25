@@ -331,6 +331,7 @@ class AIManager: ObservableObject {
         transcript: String,
         calendarEvents: [UnifiedEvent]
     ) async throws -> ConversationalAIService.AIAction {
+        #if canImport(FoundationModels)
         let onDeviceAction = try await OnDeviceAIService.shared.processCommand(transcript, calendarEvents: calendarEvents)
 
         // Convert OnDeviceAIService.AIAction to ConversationalAIService.AIAction
@@ -359,6 +360,10 @@ class AIManager: ObservableObject {
             shouldContinueListening: onDeviceAction.shouldContinueListening,
             referencedEventIds: onDeviceAction.referencedEventIds
         )
+        #else
+        // FoundationModels not available - this shouldn't happen on iOS 26+
+        throw AIError.apiError("On-device AI not available")
+        #endif
     }
 
     private func convertAIActionToResponse(
