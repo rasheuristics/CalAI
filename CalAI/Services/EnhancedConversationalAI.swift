@@ -49,7 +49,6 @@ class EnhancedConversationalAI {
         }
     }
 
-    @Generable
     struct ConversationalResponse: Codable {
         enum Intent: String, Codable {
             case createEvent
@@ -127,16 +126,24 @@ class EnhancedConversationalAI {
 
     @available(iOS 26.0, *)
     private func initializeAppleIntelligence() async {
-        do {
-            let session = try await LanguageModelSession()
-            self.appleSession = session
-            self.useAppleIntelligence = true
-            print("✅ Enhanced Conversational AI initialized with Apple Intelligence")
-        } catch {
-            print("⚠️ Failed to initialize Apple Intelligence: \(error)")
-            print("✅ Falling back to OpenAI backend")
-            self.useAppleIntelligence = false
-        }
+        // Note: LanguageModelSession may not be available in current SDK
+        // This is a placeholder for when iOS 26 SDK becomes available
+        // For now, we'll use OpenAI fallback
+        print("⚠️ Apple Intelligence (LanguageModelSession) not available in current SDK")
+        print("✅ Using OpenAI backend")
+        self.useAppleIntelligence = false
+
+        // TODO: Uncomment when iOS 26 SDK is available
+        // do {
+        //     let session = try await LanguageModelSession()
+        //     self.appleSession = session
+        //     self.useAppleIntelligence = true
+        //     print("✅ Enhanced Conversational AI initialized with Apple Intelligence")
+        // } catch {
+        //     print("⚠️ Failed to initialize Apple Intelligence: \(error)")
+        //     print("✅ Falling back to OpenAI backend")
+        //     self.useAppleIntelligence = false
+        // }
     }
 
     // MARK: - Main Conversation Interface
@@ -161,14 +168,20 @@ class EnhancedConversationalAI {
 
         // Generate response using Apple Intelligence or OpenAI fallback
         let response: ConversationalResponse
-        if #available(iOS 26.0, *), useAppleIntelligence,
-           let session = appleSession as? LanguageModelSession {
-            print("🍎 Using Apple Intelligence (on-device)")
-            response = try await session.generate(contextPrompt, as: ConversationalResponse.self)
-        } else {
-            print("☁️ Using OpenAI fallback")
-            response = try await callOpenAI(systemPrompt: contextPrompt, userMessage: message)
-        }
+
+        // TODO: Re-enable when iOS 26 SDK is available
+        // if #available(iOS 26.0, *), useAppleIntelligence,
+        //    let session = appleSession as? LanguageModelSession {
+        //     print("🍎 Using Apple Intelligence (on-device)")
+        //     response = try await session.generate(contextPrompt, as: ConversationalResponse.self)
+        // } else {
+        //     print("☁️ Using OpenAI fallback")
+        //     response = try await callOpenAI(systemPrompt: contextPrompt, userMessage: message)
+        // }
+
+        // For now, always use OpenAI until iOS 26 SDK is available
+        print("☁️ Using OpenAI (Apple Intelligence pending iOS 26 SDK)")
+        response = try await callOpenAI(systemPrompt: contextPrompt, userMessage: message)
 
         print("✅ Response generated: \(response.intent)")
 
