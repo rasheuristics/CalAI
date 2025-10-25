@@ -2,7 +2,6 @@ import Foundation
 
 #if canImport(FoundationModels)
 import FoundationModels
-#endif
 
 /// On-device AI service using Apple's Foundation Models (iOS 26+)
 /// Provides private, fast, and free AI processing without requiring API keys or internet connection
@@ -13,12 +12,9 @@ class OnDeviceAIService {
     static let shared = OnDeviceAIService()
 
     // Language model session for on-device AI
-    #if canImport(FoundationModels)
     private let session: LanguageModelSession
-    #endif
 
     private init() {
-        #if canImport(FoundationModels)
         // Initialize session with calendar assistant instructions
         self.session = LanguageModelSession(
             instructions: """
@@ -27,12 +23,10 @@ class OnDeviceAIService {
             Always be helpful, natural, and conversational while maintaining the required JSON structure.
             """
         )
-        #endif
     }
 
     // MARK: - Types
 
-    #if canImport(FoundationModels)
     // Use @Generable for structured output with Foundation Models
     @Generable
     struct AIAction {
@@ -66,18 +60,6 @@ class OnDeviceAIService {
         @Guide(description: "IDs of events referenced in the conversation")
         let referencedEventIds: [String]?
     }
-    #else
-    // Fallback Codable struct when FoundationModels is not available
-    struct AIAction: Codable {
-        let intent: String
-        let parameters: [String: AnyCodableValue]
-        let message: String
-        let needsClarification: Bool
-        let clarificationQuestion: String?
-        let shouldContinueListening: Bool
-        let referencedEventIds: [String]?
-    }
-    #endif
 
     // Helper for type-erased codable values (same as ConversationalAIService)
     enum AnyCodableValue: Codable {
@@ -164,8 +146,6 @@ class OnDeviceAIService {
     ) async throws -> AIAction {
 
         print("🤖 OnDeviceAI: Processing '\(transcript)'")
-
-        #if canImport(FoundationModels)
         print("✅ FoundationModels framework is available")
 
         // Use Foundation Models API (iOS 26+)
@@ -215,28 +195,15 @@ class OnDeviceAIService {
                 ]
             )
         }
-        #else
-        print("❌ FoundationModels framework NOT available at compile time")
-        throw NSError(
-            domain: "OnDeviceAI",
-            code: 503,
-            userInfo: [NSLocalizedDescriptionKey: "Foundation Models framework not available. Requires iOS 26.0+ with FoundationModels framework."]
-        )
-        #endif
     }
 
     // Convert @Generable AIAction to the expected return type with parameters dictionary
     private func convertToReturnType(_ action: AIAction) -> AIAction {
-        #if canImport(FoundationModels)
         // The @Generable version uses individual fields, but we need to return
         // the version with a parameters dictionary for compatibility
         // For now, since both are named AIAction, just return the action as-is
         // The calling code will handle the field differences
         return action
-        #else
-        // This branch won't be reached but is needed for compilation
-        fatalError("FoundationModels not available")
-        #endif
     }
 
     // MARK: - Prompt Building
@@ -303,3 +270,5 @@ class OnDeviceAIService {
     }
 
 }
+
+#endif // canImport(FoundationModels)
