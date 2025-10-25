@@ -1,5 +1,8 @@
 import Foundation
-import Translation
+
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 /// Enhanced conversational AI service with multi-turn conversation memory
 /// Uses Apple Intelligence on iOS 26+, falls back to OpenAI on older devices
@@ -49,7 +52,12 @@ class EnhancedConversationalAI {
         }
     }
 
+    #if canImport(FoundationModels)
+    @Generable
     struct ConversationalResponse: Codable {
+    #else
+    struct ConversationalResponse: Codable {
+    #endif
         enum Intent: String, Codable {
             case createEvent
             case modifyEvent
@@ -103,7 +111,9 @@ class EnhancedConversationalAI {
     // MARK: - Properties
 
     private var conversationHistory: [ConversationTurn] = []
-    private var appleSession: Any?  // LanguageModelSession for iOS 26+
+    #if canImport(FoundationModels)
+    private var appleSession: LanguageModelSession?  // For iOS 26+
+    #endif
     private let urlSession: URLSession
     private let maxHistoryLength = 10  // Keep last 10 turns
     private var currentContext: [String: String] = [:]
@@ -126,24 +136,21 @@ class EnhancedConversationalAI {
 
     @available(iOS 26.0, *)
     private func initializeAppleIntelligence() async {
-        // Note: LanguageModelSession may not be available in current SDK
-        // This is a placeholder for when iOS 26 SDK becomes available
-        // For now, we'll use OpenAI fallback
-        print("⚠️ Apple Intelligence (LanguageModelSession) not available in current SDK")
-        print("✅ Using OpenAI backend")
+        #if canImport(FoundationModels)
+        do {
+            let session = try await LanguageModelSession()
+            self.appleSession = session
+            self.useAppleIntelligence = true
+            print("✅ Enhanced Conversational AI initialized with Apple Intelligence")
+        } catch {
+            print("⚠️ Failed to initialize Apple Intelligence: \(error)")
+            print("✅ Falling back to OpenAI backend")
+            self.useAppleIntelligence = false
+        }
+        #else
+        print("⚠️ FoundationModels not available - using OpenAI backend")
         self.useAppleIntelligence = false
-
-        // TODO: Uncomment when iOS 26 SDK is available
-        // do {
-        //     let session = try await LanguageModelSession()
-        //     self.appleSession = session
-        //     self.useAppleIntelligence = true
-        //     print("✅ Enhanced Conversational AI initialized with Apple Intelligence")
-        // } catch {
-        //     print("⚠️ Failed to initialize Apple Intelligence: \(error)")
-        //     print("✅ Falling back to OpenAI backend")
-        //     self.useAppleIntelligence = false
-        // }
+        #endif
     }
 
     // MARK: - Main Conversation Interface
@@ -169,19 +176,18 @@ class EnhancedConversationalAI {
         // Generate response using Apple Intelligence or OpenAI fallback
         let response: ConversationalResponse
 
-        // TODO: Re-enable when iOS 26 SDK is available
-        // if #available(iOS 26.0, *), useAppleIntelligence,
-        //    let session = appleSession as? LanguageModelSession {
-        //     print("🍎 Using Apple Intelligence (on-device)")
-        //     response = try await session.generate(contextPrompt, as: ConversationalResponse.self)
-        // } else {
-        //     print("☁️ Using OpenAI fallback")
-        //     response = try await callOpenAI(systemPrompt: contextPrompt, userMessage: message)
-        // }
-
-        // For now, always use OpenAI until iOS 26 SDK is available
-        print("☁️ Using OpenAI (Apple Intelligence pending iOS 26 SDK)")
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), useAppleIntelligence, let session = appleSession {
+            print("🍎 Using Apple Intelligence (on-device)")
+            response = try await session.generate(contextPrompt, as: ConversationalResponse.self)
+        } else {
+            print("☁️ Using OpenAI fallback")
+            response = try await callOpenAI(systemPrompt: contextPrompt, userMessage: message)
+        }
+        #else
+        print("☁️ Using OpenAI (FoundationModels not available)")
         response = try await callOpenAI(systemPrompt: contextPrompt, userMessage: message)
+        #endif
 
         print("✅ Response generated: \(response.intent)")
 
