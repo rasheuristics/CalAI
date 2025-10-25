@@ -111,16 +111,13 @@ class AIManager: ObservableObject {
         self.voiceResponseGenerator = VoiceResponseGenerator()
         self.conversationalAI = ConversationalAIService()
 
-        // Initialize enhanced conversational AI if iOS 26+ is available
-        if #available(iOS 26.0, *) {
-            self.enhancedConversationalAI = EnhancedConversationalAI()
-            print("✅ Enhanced Conversational AI with memory enabled")
-        }
+        // Initialize enhanced conversational AI (using OpenAI backend)
+        self.enhancedConversationalAI = EnhancedConversationalAI()
+        print("✅ Enhanced Conversational AI with memory enabled (OpenAI backend)")
     }
 
     // MARK: - Enhanced Conversational Processing
 
-    @available(iOS 26.0, *)
     func processConversationalCommand(
         _ transcript: String,
         calendarEvents: [UnifiedEvent],

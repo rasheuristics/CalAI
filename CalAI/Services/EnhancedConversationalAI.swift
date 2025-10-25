@@ -1,8 +1,7 @@
 import Foundation
-import Translation
 
-/// Enhanced conversational AI service with multi-turn conversation memory using Apple Intelligence
-@available(iOS 26.0, *)
+/// Enhanced conversational AI service with multi-turn conversation memory using OpenAI
+/// Note: Originally designed for iOS 26+ Apple Intelligence, currently using OpenAI as backend
 class EnhancedConversationalAI {
 
     // MARK: - Types
@@ -48,7 +47,6 @@ class EnhancedConversationalAI {
         }
     }
 
-    @Generable
     struct ConversationalResponse: Codable {
         enum Intent: String, Codable {
             case createEvent
@@ -103,25 +101,15 @@ class EnhancedConversationalAI {
     // MARK: - Properties
 
     private var conversationHistory: [ConversationTurn] = []
-    private var session: LanguageModelSession?
+    private let session: URLSession
     private let maxHistoryLength = 10  // Keep last 10 turns
     private var currentContext: [String: String] = [:]
 
     // MARK: - Initialization
 
     init() {
-        Task {
-            await initializeSession()
-        }
-    }
-
-    private func initializeSession() async {
-        do {
-            self.session = try await LanguageModelSession()
-            print("✅ Enhanced Conversational AI session initialized")
-        } catch {
-            print("❌ Failed to initialize session: \(error)")
-        }
+        self.session = URLSession.shared
+        print("✅ Enhanced Conversational AI initialized with OpenAI backend")
     }
 
     // MARK: - Main Conversation Interface
@@ -131,12 +119,6 @@ class EnhancedConversationalAI {
         calendarEvents: [UnifiedEvent],
         tasks: [EventTask]
     ) async throws -> ConversationalResponse {
-
-        guard let session = session else {
-            throw NSError(domain: "EnhancedConversationalAI", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "Language model session not initialized"
-            ])
-        }
 
         print("💬 Processing message: \(message)")
         print("📚 Conversation history: \(conversationHistory.count) turns")
@@ -150,8 +132,8 @@ class EnhancedConversationalAI {
 
         print("📝 Context prompt built")
 
-        // Generate response using Apple Intelligence
-        let response = try await session.generate(contextPrompt, as: ConversationalResponse.self)
+        // Generate response using OpenAI
+        let response = try await callOpenAI(systemPrompt: contextPrompt, userMessage: message)
 
         print("✅ Response generated: \(response.intent)")
 
@@ -352,6 +334,89 @@ class EnhancedConversationalAI {
             .compactMap { $0.intent }
 
         return recentIntents.isEmpty ? "None" : recentIntents.joined(separator: ", ")
+    }
+
+    // MARK: - OpenAI Integration
+
+    private func callOpenAI(systemPrompt: String, userMessage: String) async throws -> ConversationalResponse {
+        guard !Config.openaiAPIKey.isEmpty else {
+            throw NSError(domain: "EnhancedConversationalAI", code: 401, userInfo: [
+                NSLocalizedDescriptionKey: "OpenAI API key not configured"
+            ])
+        }
+
+        let url = URL(string: "https://api.openai.com/v1/chat/completions")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(Config.openaiAPIKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Build messages array with conversation history
+        var messages: [[String: String]] = []
+
+        // Add system prompt
+        messages.append(["role": "system", "content": systemPrompt])
+
+        // Add conversation history (last 5 turns for context)
+        for turn in conversationHistory.suffix(5) {
+            messages.append(["role": "user", "content": turn.userMessage])
+            messages.append(["role": "assistant", "content": turn.assistantResponse])
+        }
+
+        // Add current user message
+        messages.append(["role": "user", "content": userMessage])
+
+        let body: [String: Any] = [
+            "model": Config.openAIModel,
+            "messages": messages,
+            "temperature": 0.3,
+            "max_tokens": 1500,
+            "response_format": ["type": "json_object"]  // Force JSON response
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "EnhancedConversationalAI", code: 500, userInfo: [
+                NSLocalizedDescriptionKey: "Invalid response"
+            ])
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let errorData = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "EnhancedConversationalAI", code: httpResponse.statusCode, userInfo: [
+                NSLocalizedDescriptionKey: "OpenAI API error: \(errorData)"
+            ])
+        }
+
+        struct OpenAIResponse: Codable {
+            struct Choice: Codable {
+                struct Message: Codable {
+                    let content: String
+                }
+                let message: Message
+            }
+            let choices: [Choice]
+        }
+
+        let openAIResponse = try JSONDecoder().decode(OpenAIResponse.self, from: data)
+        guard let content = openAIResponse.choices.first?.message.content else {
+            throw NSError(domain: "EnhancedConversationalAI", code: 500, userInfo: [
+                NSLocalizedDescriptionKey: "Empty response from OpenAI"
+            ])
+        }
+
+        // Parse JSON response into ConversationalResponse
+        guard let jsonData = content.data(using: .utf8) else {
+            throw NSError(domain: "EnhancedConversationalAI", code: 500, userInfo: [
+                NSLocalizedDescriptionKey: "Invalid JSON encoding"
+            ])
+        }
+
+        let conversationalResponse = try JSONDecoder().decode(ConversationalResponse.self, from: jsonData)
+        return conversationalResponse
     }
 
     // MARK: - Context Helpers
