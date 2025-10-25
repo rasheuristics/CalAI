@@ -241,6 +241,9 @@ class NaturalLanguageParser {
         case .anthropic:
             print("🤖 Using Anthropic Service")
             service = AnthropicServiceWrapper(apiKey: Config.anthropicAPIKey)
+        case .onDevice:
+            print("🤖 On-Device AI not supported in NaturalLanguageParser, falling back to OpenAI")
+            service = OpenAIService(apiKey: Config.openaiAPIKey)
         }
         self.init(llmService: service)
     }
@@ -261,6 +264,8 @@ class NaturalLanguageParser {
             model = "gpt-4o"
         case .anthropic:
             model = "claude-3-5-sonnet-20240620"
+        case .onDevice:
+            model = "gpt-4o"  // Fallback to OpenAI
         }
 
         let request = LLMRequest(model: model, prompt: prompt, maxTokens: 500)
@@ -278,6 +283,8 @@ class NaturalLanguageParser {
             model = "gpt-4o"
         case .anthropic:
             model = "claude-3-5-sonnet-20240620"
+        case .onDevice:
+            model = "gpt-4o"  // Fallback to OpenAI
         }
 
         let request = LLMRequest(model: model, prompt: prompt, maxTokens: 800)
@@ -293,6 +300,8 @@ class NaturalLanguageParser {
             model = Config.openAIModel
         case .anthropic:
             model = Config.anthropicModel
+        case .onDevice:
+            model = Config.openAIModel  // Fallback to OpenAI
         }
         
         let request = LLMRequest(model: model, prompt: prompt, maxTokens: maxTokens)
