@@ -553,6 +553,15 @@ class EventTaskManager: ObservableObject {
         return eventTasks[eventId]?.pendingTasks.count ?? 0
     }
 
+    /// Get all tasks across all events
+    func getAllTasks() -> [EventTask] {
+        var allTasks: [EventTask] = []
+        for (_, eventTasksContainer) in eventTasks {
+            allTasks.append(contentsOf: eventTasksContainer.tasks)
+        }
+        return allTasks
+    }
+
     /// Add a task to an event
     func addTask(_ task: EventTask, to eventId: String) {
         if var tasks = eventTasks[eventId] {
