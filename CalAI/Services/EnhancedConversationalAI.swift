@@ -52,12 +52,11 @@ class EnhancedConversationalAI {
         }
     }
 
+    // Conditional struct definition based on FoundationModels availability
     #if canImport(FoundationModels)
     @Generable
-    struct ConversationalResponse: Codable {
-    #else
-    struct ConversationalResponse: Codable {
     #endif
+    struct ConversationalResponse: Codable {
         enum Intent: String, Codable {
             case createEvent
             case modifyEvent
