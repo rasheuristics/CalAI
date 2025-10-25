@@ -52,28 +52,23 @@ class EnhancedConversationalAI {
         }
     }
 
-    // Conditional struct definition based on FoundationModels availability
     #if canImport(FoundationModels)
+    // Use @Generable for structured output with Foundation Models (iOS 26+)
     @Generable
-    #endif
     struct ConversationalResponse: Codable {
-        enum Intent: String, Codable {
-            case createEvent
-            case modifyEvent
-            case deleteEvent
-            case createTask
-            case modifyTask
-            case deleteTask
-            case completeTask
-            case querySchedule
-            case requestAdvice
-            case smallTalk
-            case clarification
-            case multiStepPlanning
-            case scheduleOptimization
-            case unknown
-        }
-
+        let message: String
+        let intent: String
+        let confidence: Float
+        let requiresClarification: Bool
+        let clarificationQuestions: [String]?
+        let actionType: String?
+        let actionParameters: [String: String]?
+        let contextToRemember: [String: String]?
+        let suggestedFollowUps: [String]?
+    }
+    #else
+    // Regular Codable struct for OpenAI (when FoundationModels not available)
+    struct ConversationalResponse: Codable {
         let message: String
         let intent: String
         let confidence: Float
@@ -106,6 +101,7 @@ class EnhancedConversationalAI {
             self.suggestedFollowUps = suggestedFollowUps
         }
     }
+    #endif
 
     // MARK: - Properties
 
@@ -178,7 +174,9 @@ class EnhancedConversationalAI {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *), useAppleIntelligence, let session = appleSession {
             print("🍎 Using Apple Intelligence (on-device)")
-            response = try await session.generate(contextPrompt, as: ConversationalResponse.self)
+            // Use session.respond instead of generate for proper structured output
+            let result = try await session.respond(to: contextPrompt, generating: ConversationalResponse.self)
+            response = result.content
         } else {
             print("☁️ Using OpenAI fallback")
             response = try await callOpenAI(systemPrompt: contextPrompt, userMessage: message)
