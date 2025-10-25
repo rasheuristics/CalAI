@@ -183,7 +183,6 @@ class AIManager: ObservableObject {
         }
     }
 
-    @available(iOS 26.0, *)
     private func executeEnhancedAction(
         type: String,
         parameters: [String: String],
