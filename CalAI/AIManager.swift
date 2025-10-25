@@ -297,6 +297,7 @@ class AIManager: ObservableObject {
 
         switch Config.aiProvider {
         case .onDevice:
+            #if canImport(FoundationModels)
             if #available(iOS 26.0, *) {
                 // Use on-device Foundation Models
                 print("📱 Using On-Device AI (Foundation Models)")
@@ -306,6 +307,11 @@ class AIManager: ObservableObject {
                 print("⚠️ On-device AI not available, falling back to cloud provider")
                 action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
             }
+            #else
+            // FoundationModels not available - fallback to cloud
+            print("⚠️ FoundationModels not available, falling back to cloud provider")
+            action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
+            #endif
 
         case .anthropic, .openai:
             // Use cloud-based AI (OpenAI or Anthropic)
@@ -326,12 +332,12 @@ class AIManager: ObservableObject {
 
     // MARK: - On-Device AI Processing (iOS 26+)
 
+    #if canImport(FoundationModels)
     @available(iOS 26.0, *)
     private func processWithOnDeviceAI(
         transcript: String,
         calendarEvents: [UnifiedEvent]
     ) async throws -> ConversationalAIService.AIAction {
-        #if canImport(FoundationModels)
         let onDeviceAction = try await OnDeviceAIService.shared.processCommand(transcript, calendarEvents: calendarEvents)
 
         // Convert OnDeviceAIService.AIAction to ConversationalAIService.AIAction
@@ -360,11 +366,8 @@ class AIManager: ObservableObject {
             shouldContinueListening: onDeviceAction.shouldContinueListening,
             referencedEventIds: onDeviceAction.referencedEventIds
         )
-        #else
-        // FoundationModels not available - this shouldn't happen on iOS 26+
-        throw AIError.apiError("On-device AI not available")
-        #endif
     }
+    #endif
 
     private func convertAIActionToResponse(
         _ action: ConversationalAIService.AIAction,
