@@ -297,9 +297,21 @@ class AIManager: ObservableObject {
 
         switch Config.aiProvider {
         case .onDevice:
-            // On-device AI - fallback to cloud for now
-            print("⚠️ On-device AI not fully integrated, falling back to cloud provider")
+            #if canImport(FoundationModels)
+            if #available(iOS 26.0, *) {
+                // Use on-device Foundation Models
+                print("📱 Using On-Device AI (Apple Intelligence)")
+                action = try await processWithOnDeviceAI(transcript: transcript, calendarEvents: calendarEvents)
+            } else {
+                // Fallback to cloud if on-device not available
+                print("⚠️ On-device AI requires iOS 26+, falling back to cloud provider")
+                action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
+            }
+            #else
+            // FoundationModels not available - fallback to cloud
+            print("⚠️ FoundationModels not available, falling back to cloud provider")
             action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
+            #endif
 
         case .anthropic, .openai:
             // Use cloud-based AI (OpenAI or Anthropic)
@@ -317,6 +329,45 @@ class AIManager: ObservableObject {
             completion(response)
         }
     }
+
+    // MARK: - On-Device AI Processing (iOS 26+)
+
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    private func processWithOnDeviceAI(
+        transcript: String,
+        calendarEvents: [UnifiedEvent]
+    ) async throws -> ConversationalAIService.AIAction {
+        let onDeviceAction = try await OnDeviceAIService.shared.processCommand(transcript, calendarEvents: calendarEvents)
+
+        // Convert OnDeviceAIService.AIAction to ConversationalAIService.AIAction
+        // Build parameters dictionary from individual fields
+        var parameters: [String: ConversationalAIService.AnyCodableValue] = [:]
+
+        if let startDate = onDeviceAction.startDate {
+            parameters["startDate"] = .string(startDate)
+        }
+        if let endDate = onDeviceAction.endDate {
+            parameters["endDate"] = .string(endDate)
+        }
+        if let title = onDeviceAction.title {
+            parameters["title"] = .string(title)
+        }
+        if let location = onDeviceAction.location {
+            parameters["location"] = .string(location)
+        }
+
+        return ConversationalAIService.AIAction(
+            intent: onDeviceAction.intent,
+            parameters: parameters,
+            message: onDeviceAction.message,
+            needsClarification: onDeviceAction.needsClarification,
+            clarificationQuestion: onDeviceAction.clarificationQuestion,
+            shouldContinueListening: onDeviceAction.shouldContinueListening,
+            referencedEventIds: onDeviceAction.referencedEventIds
+        )
+    }
+    #endif
 
     private func convertAIActionToResponse(
         _ action: ConversationalAIService.AIAction,
