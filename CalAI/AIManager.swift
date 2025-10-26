@@ -97,6 +97,7 @@ class AIManager: ObservableObject {
     private let smartEventParser: SmartEventParser
     private let voiceResponseGenerator: VoiceResponseGenerator
     private let conversationalAI: ConversationalAIService
+    private let enhancedAI: EnhancedConversationalAI
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -109,6 +110,7 @@ class AIManager: ObservableObject {
         self.smartEventParser = SmartEventParser()
         self.voiceResponseGenerator = VoiceResponseGenerator()
         self.conversationalAI = ConversationalAIService()
+        self.enhancedAI = EnhancedConversationalAI(aiService: self.conversationalAI)
     }
 
     // MARK: - Context Management
@@ -299,24 +301,24 @@ class AIManager: ObservableObject {
         case .onDevice:
             #if canImport(FoundationModels)
             if #available(iOS 26.0, *) {
-                // Use on-device Foundation Models
-                print("📱 Using On-Device AI (Apple Intelligence)")
+                // Use on-device Foundation Models with enhanced memory
+                print("📱 Using On-Device AI (Apple Intelligence) with conversation memory")
                 action = try await processWithOnDeviceAI(transcript: transcript, calendarEvents: calendarEvents)
             } else {
-                // Fallback to cloud if on-device not available
-                print("⚠️ On-device AI requires iOS 26+, falling back to cloud provider")
-                action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
+                // Fallback to cloud with enhanced memory
+                print("⚠️ On-device AI requires iOS 26+, falling back to cloud provider with memory")
+                action = try await enhancedAI.processWithMemory(message: transcript, calendarEvents: calendarEvents)
             }
             #else
-            // FoundationModels not available - fallback to cloud
-            print("⚠️ FoundationModels not available, falling back to cloud provider")
-            action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
+            // FoundationModels not available - fallback to cloud with enhanced memory
+            print("⚠️ FoundationModels not available, falling back to cloud provider with memory")
+            action = try await enhancedAI.processWithMemory(message: transcript, calendarEvents: calendarEvents)
             #endif
 
         case .anthropic, .openai:
-            // Use cloud-based AI (OpenAI or Anthropic)
-            print("☁️ Using Cloud AI (\(Config.aiProvider.displayName))")
-            action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
+            // Use cloud-based AI with enhanced conversation memory
+            print("☁️ Using Cloud AI (\(Config.aiProvider.displayName)) with conversation memory")
+            action = try await enhancedAI.processWithMemory(message: transcript, calendarEvents: calendarEvents)
         }
 
         print("✅ AI Action: intent=\(action.intent), needsClarification=\(action.needsClarification)")

@@ -129,6 +129,7 @@
 		F87B6A14A4AE408FB9DE870E /* QRCodeGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5422BA7219D24BB9A5A3E4C9 /* QRCodeGenerator.swift */; };
 		PYTO2L0DI6L5VO0LRWLD62LI /* CrossDeviceSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B9DY4NXHUMP8VJQ7UPL2TLQ /* CrossDeviceSyncManager.swift */; };
 		717E6A04168B41EA /* OnDeviceAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3171C31A45624C15 /* OnDeviceAIService.swift */; };
+		9F4CD8DC23B242A1 /* EnhancedConversationalAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6EEE37574154DFE /* EnhancedConversationalAI.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -270,6 +271,7 @@
 		GZ9DW96JLV4Z5DHWH7OEH0T7 /* WebhookManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookManager.swift; sourceTree = "<group>"; };
 		ZJM2FRZV7X4W9VD4C4B3OGE7 /* DeltaSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeltaSyncManager.swift; sourceTree = "<group>"; };
 		3171C31A45624C15 /* OnDeviceAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceAIService.swift; sourceTree = "<group>"; };
+		D6EEE37574154DFE /* EnhancedConversationalAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnhancedConversationalAI.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -580,6 +582,8 @@
 				6F8F3DFCD60D445B946398BB /* SmartEventParserTests.swift */,
 			
 				3171C31A45624C15 /* OnDeviceAIService.swift */,
+			
+				D6EEE37574154DFE /* EnhancedConversationalAI.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -969,6 +973,8 @@
 				B97AD44CAEAF4CD496063E29 /* SmartEventParserTests.swift in Sources */,
 			
 				717E6A04168B41EA /* OnDeviceAIService.swift in Sources */,
+			
+				9F4CD8DC23B242A1 /* EnhancedConversationalAI.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
