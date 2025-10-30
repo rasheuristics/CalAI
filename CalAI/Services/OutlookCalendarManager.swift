@@ -1091,6 +1091,13 @@ class OutlookCalendarManager: ObservableObject {
     private func loadSavedData() {
         loadCurrentAccount()
         loadSelectedCalendar()
+
+        // Attempt silent token refresh if signed in but no token
+        // This handles the case where app was reinstalled and Keychain was cleared
+        if isSignedIn && accessToken == nil {
+            print("🔄 Account loaded but no access token - attempting silent refresh...")
+            attemptSilentTokenRefresh()
+        }
     }
 
     private func loadCurrentAccount() {
@@ -1131,6 +1138,49 @@ class OutlookCalendarManager: ObservableObject {
             // Automatically fetch events if calendar is loaded
             if isSignedIn {
                 fetchEvents()
+            }
+        }
+    }
+
+    private func attemptSilentTokenRefresh() {
+        guard let msalApp = msalApplication else {
+            print("❌ MSAL not configured")
+            isSignedIn = false  // Reset flag if MSAL unavailable
+            return
+        }
+
+        msalApp.getCurrentAccount(with: nil) { [weak self] (account, _, error) in
+            guard let self = self else { return }
+
+            if let account = account {
+                let silentParameters = MSALSilentTokenParameters(scopes: self.scopes, account: account)
+
+                msalApp.acquireTokenSilent(with: silentParameters) { [weak self] (result, error) in
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+
+                        if let result = result {
+                            self.accessToken = result.accessToken
+                            print("✅ Silent token refresh successful on launch")
+
+                            // Fetch events automatically if calendar is selected
+                            if self.selectedCalendar != nil {
+                                self.fetchEvents()
+                            }
+                        } else {
+                            print("⚠️ Silent token refresh failed: \(error?.localizedDescription ?? "Unknown")")
+                            print("💡 User will need to manually re-authenticate in Settings")
+                            // Don't set isSignedIn = false here, let user manually re-auth
+                            // They're technically still signed in, just token expired
+                        }
+                    }
+                }
+            } else {
+                print("❌ No MSAL account found")
+                DispatchQueue.main.async {
+                    self.isSignedIn = false
+                    self.currentAccount = nil
+                }
             }
         }
     }
@@ -1268,13 +1318,18 @@ class OutlookCalendarManager: ObservableObject {
             return
         }
 
-        // Use stored access token if available
+        // Try stored token first
         if let token = accessToken {
             print("✅ Using stored access token for event fetch")
             fetchEventsWithToken(token, startDate: startDate, endDate: endDate)
+        } else if let msalApp = msalApplication {
+            // No stored token - attempt silent token refresh
+            print("⚠️ No stored access token - attempting silent token acquisition...")
+            refreshTokenAndFetch(msalApp: msalApp, startDate: startDate, endDate: endDate)
         } else {
-            print("⚠️ No stored access token, need to re-authenticate")
+            print("❌ MSAL not configured, cannot fetch events")
             isLoading = false
+            isSignedIn = false  // Reset flag since we can't authenticate
         }
     }
 

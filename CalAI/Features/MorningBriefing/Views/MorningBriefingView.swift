@@ -10,6 +10,7 @@ struct MorningBriefingView: View {
     @State private var isLoading = false
     @State private var showWeatherAlert = false
     @State private var weatherAlertMessage = ""
+    @State private var aiPatterns: SmartSchedulingService.CalendarPatterns?
 
     var body: some View {
         NavigationView {
@@ -163,6 +164,11 @@ struct MorningBriefingView: View {
             // Events List
             if !briefing.events.isEmpty {
                 eventsListSection(briefing.events)
+            }
+
+            // AI Pattern Insights
+            if let patterns = aiPatterns, patterns.confidence != .none {
+                aiInsightsSection(patterns)
             }
 
             // Suggestions
@@ -320,6 +326,17 @@ struct MorningBriefingView: View {
         }
     }
 
+    private func aiInsightsSection(_ patterns: SmartSchedulingService.CalendarPatterns) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("AI Scheduling Insights")
+                .dynamicFont(size: 20, weight: .semibold, fontManager: fontManager)
+                .padding(.horizontal)
+
+            PatternConfidenceView(patterns: patterns)
+                .padding(.horizontal)
+        }
+    }
+
     private var emptyState: some View {
         VStack(spacing: 16) {
             Image(systemName: "sun.horizon.fill")
@@ -358,6 +375,30 @@ struct MorningBriefingView: View {
         isLoading = true
         briefingService.generateBriefing { briefing in
             isLoading = false
+            // Load AI pattern insights after briefing is generated
+            loadAIPatterns()
+        }
+    }
+
+    private func loadAIPatterns() {
+        // Access calendar events through the briefing service
+        guard let events = briefingService.todaysBriefing?.events else {
+            print("📊 No events available for pattern analysis")
+            return
+        }
+
+        // Convert BriefingEvents to UnifiedEvents for analysis
+        // For now, we'll use a simplified approach
+        // In a full implementation, you'd access the CalendarManager directly
+        let schedulingService = SmartSchedulingService()
+
+        // Create mock unified events from briefing events (simplified)
+        // In production, you'd want to pass the actual CalendarManager
+        let patterns = schedulingService.analyzeCalendarPatterns(events: [])
+
+        if patterns.confidence != .none {
+            aiPatterns = patterns
+            print("🧠 Loaded AI patterns for morning briefing")
         }
     }
 

@@ -423,6 +423,10 @@ struct AITabView: View {
     @State private var textEditorHeight: CGFloat = 40
     @State private var isTextInputActive: Bool = false
 
+    // AI Pattern Insights
+    @State private var aiPatterns: SmartSchedulingService.CalendarPatterns?
+    @State private var showPatternInsights = false
+
     // Auto-loop conversation mode
     @State private var isInAutoLoopMode: Bool = false
     @State private var inactivityTimer: Timer?
@@ -489,7 +493,15 @@ struct AITabView: View {
 
             Spacer()
 
-            // Three Action Buttons (scrollable) - Ordered by most common use
+            // AI Pattern Insights Card (only shown when AI Insight button is tapped)
+            if selectedActionCategory == .aiInsight, let patterns = aiPatterns {
+                PatternConfidenceView(patterns: patterns)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            // Four Action Buttons (scrollable) - Ordered by most common use
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     // 🔵 QUERIES - Most common action (time-aware)
@@ -511,6 +523,13 @@ struct AITabView: View {
                         category: .eventManagement,
                         isSelected: selectedActionCategory == .eventManagement,
                         onTap: { handleActionButtonTap(.eventManagement) }
+                    )
+
+                    // 🟣 AI INSIGHT - Show pattern insights
+                    ActionButton(
+                        category: .aiInsight,
+                        isSelected: selectedActionCategory == .aiInsight,
+                        onTap: { handleActionButtonTap(.aiInsight) }
                     )
                 }
                 .padding(.horizontal, 20)
@@ -636,6 +655,9 @@ struct AITabView: View {
             print("👂 AI Tab appeared")
             // Don't start always-on listening immediately on first load
             // User will tap Speak button to initiate first interaction
+
+            // Load AI pattern insights
+            loadPatternInsights()
         }
         .onDisappear {
             print("👋 AI Tab disappeared - stopping always-on listening")
@@ -691,7 +713,10 @@ struct AITabView: View {
 
         withAnimation {
             selectedActionCategory = category
-            showConversationWindow = true
+            // Only show conversation window for non-AI Insight actions
+            if category != .aiInsight {
+                showConversationWindow = true
+            }
         }
 
         switch category {
@@ -712,9 +737,15 @@ struct AITabView: View {
         case .eventManagement:
             // Send attention query with analysis
             handleTranscript(category.autoQuery)
+
+        case .aiInsight:
+            // Just show the AI insights card - no query or conversation needed
+            // The card will appear because selectedActionCategory == .aiInsight
+            // Don't clear selection automatically - let user dismiss by tapping again
+            return
         }
 
-        // Clear selection after a delay
+        // Clear selection after a delay (except for AI Insight)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             withAnimation {
                 self.selectedActionCategory = nil
@@ -956,6 +987,24 @@ struct AITabView: View {
             voiceManager.stopListening()
         }
     }
+
+    // MARK: - Pattern Insights
+
+    private func loadPatternInsights() {
+        // Get all calendar events
+        let allEvents = calendarManager.unifiedEvents
+        print("📊 Loading AI patterns from \(allEvents.count) calendar events")
+
+        // Analyze patterns using SmartSchedulingService
+        let schedulingService = SmartSchedulingService()
+        let patterns = schedulingService.analyzeCalendarPatterns(events: allEvents)
+
+        // Always set patterns and show - even with no confidence, it will show helpful message
+        aiPatterns = patterns
+        showPatternInsights = true
+
+        print("🧠 Loaded AI pattern insights: \(patterns.confidence) confidence with \(patterns.eventCount) events")
+    }
 }
 
 
@@ -973,6 +1022,7 @@ private struct ActionButton: View {
         case .eventQueries: return .blue
         case .scheduleManagement: return .green
         case .eventManagement: return .orange
+        case .aiInsight: return .purple
         }
     }
 
@@ -1048,12 +1098,14 @@ private enum CommandCategory: String, CaseIterable {
     case eventQueries = "Queries"
     case scheduleManagement = "Schedule"
     case eventManagement = "Manage"
+    case aiInsight = "AI Insight"
 
     var icon: String {
         switch self {
         case .eventManagement: return "exclamationmark.triangle.fill"
         case .eventQueries: return "calendar.badge.clock"
         case .scheduleManagement: return "calendar.badge.plus"
+        case .aiInsight: return "brain.head.profile"
         }
     }
 
@@ -1073,6 +1125,8 @@ private enum CommandCategory: String, CaseIterable {
             return "Schedule"
         case .eventManagement:
             return "Manage"
+        case .aiInsight:
+            return "AI Insight"
         }
     }
 
@@ -1091,6 +1145,8 @@ private enum CommandCategory: String, CaseIterable {
             return "What would you like to schedule?"
         case .eventManagement:
             return "What needs my attention?"
+        case .aiInsight:
+            return "" // No query - just shows UI
         }
     }
 
@@ -1099,6 +1155,7 @@ private enum CommandCategory: String, CaseIterable {
         case .eventManagement: return ["Schedule lunch with John tomorrow at 1pm", "Delete my 3pm meeting"]
         case .eventQueries: return ["What does my afternoon look like?", "Am I free at 4pm?"]
         case .scheduleManagement: return ["Find a time for a 30 minute meeting next week", "Clear my schedule on Friday afternoon"]
+        case .aiInsight: return [] // No commands - shows insights card
         }
     }
 }

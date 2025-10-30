@@ -89,6 +89,17 @@ class VoiceManager: NSObject, ObservableObject {
         print("🎙️ Starting listening process... (continuous: \(continuous))")
         print("📋 Checking permissions - hasRecordingPermission: \(hasRecordingPermission)")
 
+        // Prevent starting if already listening
+        guard !isListening else {
+            print("⚠️ Already listening, stopping existing session first...")
+            stopListening()
+            // Schedule restart after a brief delay to allow cleanup
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self.startListening(continuous: continuous, onPartialTranscript: onPartialTranscript, onSpeechDetected: onSpeechDetected, completion: completion)
+            }
+            return
+        }
+
         guard hasRecordingPermission else {
             print("❌ Recording permission not granted")
             return
@@ -151,6 +162,12 @@ class VoiceManager: NSObject, ObservableObject {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
         print("📊 Recording format: \(recordingFormat)")
+
+        // Remove any existing tap before installing new one
+        if inputNode.numberOfInputs > 0 {
+            inputNode.removeTap(onBus: 0)
+            print("🧹 Removed existing tap before installing new one")
+        }
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
             recognitionRequest.append(buffer)

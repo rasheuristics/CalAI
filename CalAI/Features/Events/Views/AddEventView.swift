@@ -128,6 +128,11 @@ struct AddEventView: View {
     @State private var recentLocations: [LocationSuggestion] = []
     @State private var isSearchingLocation = false
 
+    // AI suggestion states
+    @State private var showSmartSuggestion = false
+    @State private var smartSuggestion: SmartSchedulingService.SchedulingSuggestion?
+    @State private var aiPatterns: SmartSchedulingService.CalendarPatterns?
+
     // Computed properties for edit mode
     private var isEditMode: Bool { eventToEdit != nil }
     private var navigationTitle: String { isEditMode ? "Edit Event" : "Add Event" }
@@ -289,6 +294,50 @@ struct AddEventView: View {
 
                         DatePicker("Ends", selection: $endDate, displayedComponents: .date)
                             .dynamicFont(size: 17, fontManager: fontManager)
+                    }
+
+                    // AI Suggestion Button
+                    if !isEditMode && !title.isEmpty {
+                        Button(action: {
+                            generateSmartSuggestion()
+                        }) {
+                            HStack {
+                                Image(systemName: "sparkles")
+                                    .foregroundColor(.purple)
+                                Text("Get AI Suggestion")
+                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                    .foregroundColor(.purple)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                }
+
+                // Smart Suggestion Card (show when available)
+                if showSmartSuggestion, let suggestion = smartSuggestion {
+                    Section {
+                        SmartSuggestionView(
+                            suggestion: suggestion,
+                            onAccept: { selectedTime in
+                                // User accepted the AI suggestion
+                                startDate = selectedTime
+                                let duration = endDate.timeIntervalSince(startDate)
+                                endDate = selectedTime.addingTimeInterval(duration)
+                                showSmartSuggestion = false
+
+                                // Haptic feedback
+                                let generator = UINotificationFeedbackGenerator()
+                                generator.notificationOccurred(.success)
+                            },
+                            onDismiss: {
+                                showSmartSuggestion = false
+                            }
+                        )
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
                     }
                 }
 
@@ -727,6 +776,37 @@ struct AddEventView: View {
            let locations = try? JSONDecoder().decode([String].self, from: data) {
             recentLocations = locations.prefix(5).map { LocationSuggestion(name: $0) }
         }
+    }
+
+    private func generateSmartSuggestion() {
+        // Get all calendar events
+        let allEvents = calendarManager.unifiedEvents
+
+        // Calculate event duration from current start/end dates
+        let duration = endDate.timeIntervalSince(startDate)
+
+        // Create SmartSchedulingService instance
+        let schedulingService = SmartSchedulingService()
+
+        // Get AI suggestion
+        smartSuggestion = schedulingService.suggestOptimalTime(
+            for: duration,
+            events: allEvents
+        )
+
+        // Get patterns for insights
+        aiPatterns = schedulingService.analyzeCalendarPatterns(events: allEvents)
+
+        // Show the suggestion card
+        withAnimation {
+            showSmartSuggestion = true
+        }
+
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+
+        print("✨ Generated AI suggestion for \(Int(duration/60)) minute event")
     }
 
     private func saveToRecentLocations(_ location: String) {
