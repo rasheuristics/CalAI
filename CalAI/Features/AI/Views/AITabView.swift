@@ -820,7 +820,9 @@ struct AITabView: View {
             let userMessage = ConversationItem(message: transcript, isUser: true)
             conversationHistory.append(userMessage)
         }
-        aiManager.processVoiceCommand(transcript, conversationHistory: conversationHistory, calendarEvents: calendarManager.unifiedEvents, calendarManager: calendarManager) { response in
+
+        // Use enhanced conversational AI with memory (OpenAI backend)
+        aiManager.processConversationalCommand(transcript, calendarEvents: calendarManager.unifiedEvents) { response in
             self.handleAIResponse(response)
         }
     }

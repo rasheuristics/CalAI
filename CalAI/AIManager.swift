@@ -97,7 +97,7 @@ class AIManager: ObservableObject {
     private let smartEventParser: SmartEventParser
     private let voiceResponseGenerator: VoiceResponseGenerator
     private let conversationalAI: ConversationalAIService
-    private let enhancedAI: EnhancedConversationalAI
+    private var enhancedConversationalAI: EnhancedConversationalAI?
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -110,7 +110,112 @@ class AIManager: ObservableObject {
         self.smartEventParser = SmartEventParser()
         self.voiceResponseGenerator = VoiceResponseGenerator()
         self.conversationalAI = ConversationalAIService()
-        self.enhancedAI = EnhancedConversationalAI(aiService: self.conversationalAI)
+
+        // Initialize enhanced conversational AI (using OpenAI backend)
+        self.enhancedConversationalAI = EnhancedConversationalAI()
+        print("✅ Enhanced Conversational AI with memory enabled (OpenAI backend)")
+    }
+
+    // MARK: - Enhanced Conversational Processing
+
+    func processConversationalCommand(
+        _ transcript: String,
+        calendarEvents: [UnifiedEvent],
+        completion: @escaping (AICalendarResponse) -> Void
+    ) {
+        guard let enhancedAI = enhancedConversationalAI else {
+            // Fall back to standard processing
+            processVoiceCommand(transcript, calendarEvents: calendarEvents, completion: completion)
+            return
+        }
+
+        print("💬 Using Enhanced Conversational AI with memory")
+        isProcessing = true
+
+        Task {
+            do {
+                // Get all tasks for context
+                let allTasks = EventTaskManager.shared.getAllTasks()
+
+                // Process with conversation memory
+                let response = try await enhancedAI.chat(
+                    message: transcript,
+                    calendarEvents: calendarEvents,
+                    tasks: allTasks
+                )
+
+                print("✅ Enhanced AI Response:")
+                print("   Intent: \(response.intent)")
+                print("   Confidence: \(response.confidence)")
+                print("   Requires clarification: \(response.requiresClarification)")
+
+                // Convert to AICalendarResponse
+                let calendarResponse = AICalendarResponse(
+                    message: response.message,
+                    shouldContinueListening: response.requiresClarification || response.suggestedFollowUps != nil
+                )
+
+                // Execute actions if provided
+                if let actionType = response.actionType,
+                   let parameters = response.actionParameters {
+                    await executeEnhancedAction(
+                        type: actionType,
+                        parameters: parameters,
+                        response: calendarResponse
+                    )
+                }
+
+                await MainActor.run {
+                    self.isProcessing = false
+                    completion(calendarResponse)
+                }
+
+            } catch {
+                print("❌ Enhanced AI processing error: \(error)")
+                await MainActor.run {
+                    self.isProcessing = false
+                    completion(AICalendarResponse(
+                        message: "I had trouble understanding that. Could you rephrase?",
+                        shouldContinueListening: true
+                    ))
+                }
+            }
+        }
+    }
+
+    private func executeEnhancedAction(
+        type: String,
+        parameters: [String: String],
+        response: AICalendarResponse
+    ) async {
+        print("🎬 Executing action: \(type)")
+        print("📋 Parameters: \(parameters)")
+
+        switch type {
+        case "createEvent":
+            // Handle event creation
+            if let title = parameters["title"],
+               let startDateStr = parameters["startDate"] {
+                print("📅 Creating event: \(title) at \(startDateStr)")
+                // Implementation will come from existing event creation logic
+            }
+
+        case "createTask":
+            // Handle task creation
+            if let title = parameters["title"] {
+                let priority = TaskPriority(rawValue: parameters["priority"] ?? "None") ?? .none
+                let task = EventTask(title: title, priority: priority)
+                EventTaskManager.shared.addTask(task, to: "standalone_tasks")
+                print("✅ Task created: \(title)")
+            }
+
+        case "querySchedule":
+            // Schedule query already handled in message
+            print("📊 Schedule query completed")
+
+        default:
+            print("⚠️ Unknown action type: \(type)")
+        }
     }
 
     // MARK: - Context Management
@@ -299,26 +404,20 @@ class AIManager: ObservableObject {
 
         switch Config.aiProvider {
         case .onDevice:
-            #if canImport(FoundationModels)
             if #available(iOS 26.0, *) {
-                // Use on-device Foundation Models with enhanced memory
-                print("📱 Using On-Device AI (Apple Intelligence) with conversation memory")
+                // Use on-device Foundation Models
+                print("📱 Using On-Device AI (Foundation Models)")
                 action = try await processWithOnDeviceAI(transcript: transcript, calendarEvents: calendarEvents)
             } else {
-                // Fallback to cloud with enhanced memory
-                print("⚠️ On-device AI requires iOS 26+, falling back to cloud provider with memory")
-                action = try await enhancedAI.processWithMemory(message: transcript, calendarEvents: calendarEvents)
+                // Fallback to cloud if on-device not available
+                print("⚠️ On-device AI not available, falling back to cloud provider")
+                action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
             }
-            #else
-            // FoundationModels not available - fallback to cloud with enhanced memory
-            print("⚠️ FoundationModels not available, falling back to cloud provider with memory")
-            action = try await enhancedAI.processWithMemory(message: transcript, calendarEvents: calendarEvents)
-            #endif
 
         case .anthropic, .openai:
-            // Use cloud-based AI with enhanced conversation memory
-            print("☁️ Using Cloud AI (\(Config.aiProvider.displayName)) with conversation memory")
-            action = try await enhancedAI.processWithMemory(message: transcript, calendarEvents: calendarEvents)
+            // Use cloud-based AI (OpenAI or Anthropic)
+            print("☁️ Using Cloud AI (\(Config.aiProvider.displayName))")
+            action = try await conversationalAI.processCommand(transcript, calendarEvents: calendarEvents)
         }
 
         print("✅ AI Action: intent=\(action.intent), needsClarification=\(action.needsClarification)")
@@ -334,7 +433,6 @@ class AIManager: ObservableObject {
 
     // MARK: - On-Device AI Processing (iOS 26+)
 
-    #if canImport(FoundationModels)
     @available(iOS 26.0, *)
     private func processWithOnDeviceAI(
         transcript: String,
@@ -369,7 +467,6 @@ class AIManager: ObservableObject {
             referencedEventIds: onDeviceAction.referencedEventIds
         )
     }
-    #endif
 
     private func convertAIActionToResponse(
         _ action: ConversationalAIService.AIAction,
