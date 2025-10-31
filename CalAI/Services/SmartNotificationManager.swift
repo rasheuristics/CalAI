@@ -196,6 +196,7 @@ class SmartNotificationManager: NSObject, ObservableObject {
     private let notificationCenter = UNUserNotificationCenter.current()
     private let locationManager = CLLocationManager()
     private var currentLocation: CLLocation?
+    private var scheduledNotificationIds: Set<String> = []
 
     override private init() {
         super.init()
@@ -636,6 +637,7 @@ class SmartNotificationManager: NSObject, ObservableObject {
 
     /// Setup notification categories for interactive notifications
     func setupNotificationCategories() {
+        // Event notification category
         let viewAction = UNNotificationAction(
             identifier: "VIEW_EVENT",
             title: "View Event",
@@ -654,15 +656,191 @@ class SmartNotificationManager: NSObject, ObservableObject {
             options: []
         )
 
-        let category = UNNotificationCategory(
+        let eventCategory = UNNotificationCategory(
             identifier: "CALENDAR_EVENT",
             actions: [viewAction, snoozeAction, dismissAction],
             intentIdentifiers: [],
             options: []
         )
 
-        notificationCenter.setNotificationCategories([category])
-        print("✅ Notification categories registered")
+        // Task notification category
+        let completeTaskAction = UNNotificationAction(
+            identifier: "COMPLETE_TASK",
+            title: "Mark Complete",
+            options: []
+        )
+
+        let snoozeTaskAction = UNNotificationAction(
+            identifier: "SNOOZE_TASK",
+            title: "Remind in 1 hour",
+            options: []
+        )
+
+        let viewTaskAction = UNNotificationAction(
+            identifier: "VIEW_TASK",
+            title: "View Task",
+            options: .foreground
+        )
+
+        let taskCategory = UNNotificationCategory(
+            identifier: "TASK_REMINDER",
+            actions: [completeTaskAction, snoozeTaskAction, viewTaskAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        notificationCenter.setNotificationCategories([eventCategory, taskCategory])
+        print("✅ Notification categories registered (Events & Tasks)")
+    }
+
+    // MARK: - Task Notifications
+
+    /// Schedule a smart notification for a task
+    func scheduleTaskNotification(for task: EventTask, eventId: String, event: UnifiedEvent? = nil) {
+        guard preferences.isEnabled, hasNotificationPermission else {
+            print("⚠️ Notifications disabled or no permission")
+            return
+        }
+        guard let dueDate = task.dueDate, !task.isCompleted else {
+            print("⚠️ Task has no due date or is completed")
+            return
+        }
+        guard dueDate > Date() else {
+            print("⚠️ Task due date is in the past")
+            return
+        }
+
+        let content = UNMutableNotificationContent()
+
+        // Customize based on priority
+        switch task.priority {
+        case .high:
+            content.title = "🔴 High Priority Task Due"
+        case .medium:
+            content.title = "🟡 Task Due"
+        case .low:
+            content.title = "🟢 Task Reminder"
+        case .none:
+            content.title = "Task Due: \(task.title)"
+        }
+
+        if task.priority != .none {
+            content.subtitle = task.title
+        }
+
+        content.body = buildTaskNotificationBody(for: task, event: event)
+        content.sound = preferences.soundEnabled ? .default : nil
+        content.categoryIdentifier = "TASK_REMINDER"
+        content.userInfo = [
+            "taskId": task.id.uuidString,
+            "eventId": eventId,
+            "priority": task.priority.rawValue,
+            "notificationType": "task"
+        ]
+
+        // Add badge for high priority tasks
+        if task.priority == .high {
+            content.badge = 1
+        }
+
+        // Schedule notification at due date
+        let trigger = UNCalendarNotificationTrigger(
+            dateMatching: Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute],
+                from: dueDate
+            ),
+            repeats: false
+        )
+
+        let identifier = "task_\(task.id.uuidString)"
+        let request = UNNotificationRequest(
+            identifier: identifier,
+            content: content,
+            trigger: trigger
+        )
+
+        notificationCenter.add(request) { [weak self] error in
+            if let error = error {
+                print("❌ Failed to schedule task notification: \(error)")
+            } else {
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateStyle = .short
+                dateFormatter.timeStyle = .short
+                print("✅ Scheduled task notification: '\(task.title)' for \(dateFormatter.string(from: dueDate))")
+
+                // Store scheduled notification
+                DispatchQueue.main.async {
+                    self?.scheduledNotificationIds.insert(identifier)
+                }
+            }
+        }
+    }
+
+    /// Cancel a task notification
+    func cancelTaskNotification(for taskId: UUID) {
+        let identifier = "task_\(taskId.uuidString)"
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: [identifier])
+        scheduledNotificationIds.remove(identifier)
+        print("🗑️ Cancelled task notification for task: \(taskId)")
+    }
+
+    /// Cancel all task notifications for a specific event
+    func cancelAllTaskNotifications(for eventId: String, tasks: [EventTask]) {
+        let identifiers = tasks.map { "task_\($0.id.uuidString)" }
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
+        identifiers.forEach { scheduledNotificationIds.remove($0) }
+        print("🗑️ Cancelled \(identifiers.count) task notifications for event: \(eventId)")
+    }
+
+    /// Build notification body text for task
+    private func buildTaskNotificationBody(for task: EventTask, event: UnifiedEvent?) -> String {
+        var body = ""
+
+        // Add event context
+        if let event = event {
+            body += "Event: \(event.title)\n"
+        }
+
+        // Add task description or default message
+        if let description = task.description, !description.isEmpty {
+            body += description
+        } else {
+            body += "Don't forget to complete this task!"
+        }
+
+        // Add estimated time if available
+        if let minutes = task.estimatedMinutes, minutes > 0 {
+            let hours = minutes / 60
+            let mins = minutes % 60
+            if hours > 0 {
+                body += "\n⏱️ Estimated time: \(hours)h \(mins)m"
+            } else {
+                body += "\n⏱️ Estimated time: \(mins) minutes"
+            }
+        }
+
+        // Add category context
+        if task.category != .reminder {
+            body += "\n📁 Category: \(task.category.rawValue)"
+        }
+
+        return body
+    }
+
+    /// Reschedule all task notifications (useful when preferences change)
+    func rescheduleAllTaskNotifications(tasks: [(task: EventTask, eventId: String, event: UnifiedEvent?)]) {
+        print("🔄 Rescheduling \(tasks.count) task notifications...")
+
+        // Cancel all existing task notifications
+        let taskIdentifiers = tasks.map { "task_\($0.task.id.uuidString)" }
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: taskIdentifiers)
+
+        // Reschedule active tasks
+        for (task, eventId, event) in tasks {
+            if !task.isCompleted, task.dueDate != nil {
+                scheduleTaskNotification(for: task, eventId: eventId, event: event)
+            }
+        }
     }
 }
 

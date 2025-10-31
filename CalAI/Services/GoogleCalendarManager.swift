@@ -442,22 +442,119 @@ class GoogleCalendarManager: ObservableObject {
     func updateEvent(_ event: GoogleEvent, completion: @escaping (Bool, String?) -> Void) {
         print("📅 Attempting to update Google Calendar event: \(event.title)")
 
-        // TODO: Implement actual Google Calendar API event update
-        // This would require:
-        // 1. Authentication with Google Calendar API
-        // 2. Using GTLRCalendarService to update the event
-        // 3. Making a PATCH request to the Calendar API
-
-        // For now, simulate the update for fallback events
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            // Find and update the event in our local array
+        // Update local array immediately for UI responsiveness
+        DispatchQueue.main.async { [weak self] in
             if let index = self?.googleEvents.firstIndex(where: { $0.id == event.id }) {
                 self?.googleEvents[index] = event
-                print("✅ Successfully updated Google Calendar event (simulated): \(event.title)")
-                completion(true, nil)
+                print("✅ Local Google event updated: \(event.title)")
+
+                // Track this update as pending
+                self?.pendingUpdatesQueue.sync {
+                    self?.pendingUpdates[event.id] = event
+                }
+                print("🔒 Event marked as pending update: \(event.id)")
             } else {
-                print("❌ Google Calendar event not found for update: \(event.id)")
-                completion(false, "Event not found")
+                print("⚠️ Event not found in local array: \(event.id)")
+            }
+        }
+
+        // Get access token from current user
+        guard let user = GIDSignIn.sharedInstance.currentUser else {
+            print("⚠️ No Google user signed in - using local update only")
+            completion(true, nil)
+            return
+        }
+
+        let accessToken = user.accessToken.tokenString
+        let calendarId = event.calendarId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? "primary"
+
+        // Make actual Google Calendar API PATCH request
+        let urlString = "https://www.googleapis.com/calendar/v3/calendars/\(calendarId)/events/\(event.id)"
+        guard let url = URL(string: urlString) else {
+            print("❌ Invalid URL for Google event update")
+            completion(false, "Invalid URL")
+            return
+        }
+
+        // Format dates in RFC 3339 format for Google Calendar API
+        let rfc3339Formatter = ISO8601DateFormatter()
+        rfc3339Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let startString = rfc3339Formatter.string(from: event.startDate)
+        let endString = rfc3339Formatter.string(from: event.endDate)
+
+        // Create PATCH request body with all updatable fields
+        var requestBody: [String: Any] = [
+            "summary": event.title,
+            "start": [
+                "dateTime": startString,
+                "timeZone": TimeZone.current.identifier
+            ],
+            "end": [
+                "dateTime": endString,
+                "timeZone": TimeZone.current.identifier
+            ]
+        ]
+
+        // Add optional fields if present
+        if let location = event.location, !location.isEmpty {
+            requestBody["location"] = location
+        }
+        if let description = event.description, !description.isEmpty {
+            requestBody["description"] = description
+        }
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: requestBody) else {
+            print("❌ Failed to serialize JSON for Google event update")
+            completion(false, "JSON serialization failed")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        Task {
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                if let httpResponse = response as? HTTPURLResponse {
+                    if httpResponse.statusCode == 200 {
+                        print("✅ Google event \(event.id) successfully updated via API")
+
+                        // Parse response to get updated event data
+                        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                            print("📊 Updated event response: \(json)")
+                        }
+
+                        // Remove from pending updates - save completed successfully
+                        await MainActor.run { [weak self] in
+                            self?.pendingUpdatesQueue.sync {
+                                self?.pendingUpdates.removeValue(forKey: event.id)
+                            }
+                            print("🔓 Removed \(event.id) from pending updates")
+                        }
+
+                        await MainActor.run {
+                            completion(true, nil)
+                        }
+                    } else {
+                        print("❌ Google API returned status \(httpResponse.statusCode)")
+                        if let errorString = String(data: data, encoding: .utf8) {
+                            print("❌ Error response: \(errorString)")
+                        }
+                        await MainActor.run {
+                            completion(false, "Server returned status \(httpResponse.statusCode)")
+                        }
+                    }
+                }
+            } catch {
+                print("❌ Network error updating Google event: \(error)")
+                await MainActor.run {
+                    completion(false, error.localizedDescription)
+                }
             }
         }
     }

@@ -1294,10 +1294,19 @@ class CalendarManager: ObservableObject {
         // Delete from Core Data
         coreDataManager.permanentlyDeleteEvent(eventId: event.id, source: event.source)
 
-        // Optionally refresh unified events
-        if refreshUnifiedEvents {
+        // Note: For Google/Outlook, the async deletion tasks handle removing from unifiedEvents
+        // For iOS, we need to manually remove and refresh
+        if event.source == .ios && refreshUnifiedEvents {
             DispatchQueue.main.async {
-                self.loadAllUnifiedEvents()
+                // Remove from unified events immediately
+                self.unifiedEvents.removeAll { $0.id == event.id && $0.source == .ios }
+
+                // Track deletion
+                self.trackDeletedEvent(event.id, source: .ios)
+
+                // Trigger UI refresh
+                self.objectWillChange.send()
+                print("✅ iOS event deleted and UI refreshed")
             }
         }
     }

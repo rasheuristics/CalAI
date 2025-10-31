@@ -1616,22 +1616,128 @@ class OutlookCalendarManager: ObservableObject {
     func updateEvent(_ event: OutlookEvent, completion: @escaping (Bool, String?) -> Void) {
         print("📅 Attempting to update Outlook Calendar event: \(event.title)")
 
-        // TODO: Implement actual Microsoft Graph API event update
-        // This would require:
-        // 1. Authentication with Microsoft Graph API (handling keychain issues)
-        // 2. Making a PATCH request to /me/events/{event-id}
-        // 3. Handling date format conversion back to Microsoft Graph format
-
-        // For now, simulate the update for fallback events
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            // Find and update the event in our local array
+        // Update local array immediately for UI responsiveness
+        DispatchQueue.main.async { [weak self] in
             if let index = self?.outlookEvents.firstIndex(where: { $0.id == event.id }) {
                 self?.outlookEvents[index] = event
-                print("✅ Successfully updated Outlook Calendar event (simulated): \(event.title)")
-                completion(true, nil)
+                print("✅ Local Outlook event updated: \(event.title)")
+
+                // Track this update as pending
+                self?.pendingUpdatesQueue.sync {
+                    self?.pendingUpdates[event.id] = event
+                }
+                print("🔒 Event marked as pending update: \(event.id)")
             } else {
-                print("❌ Outlook Calendar event not found for update: \(event.id)")
-                completion(false, "Event not found")
+                print("⚠️ Event not found in local array: \(event.id)")
+            }
+        }
+
+        // Use stored access token if available
+        guard let token = accessToken else {
+            print("⚠️ No access token available for Outlook update - using local update only")
+            completion(true, nil)
+            return
+        }
+
+        // Make actual Microsoft Graph API PATCH request
+        // Outlook event IDs need to be URL encoded
+        guard let encodedEventId = event.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            print("❌ Failed to encode event ID for update")
+            completion(false, "Failed to encode event ID")
+            return
+        }
+
+        let urlString = "https://graph.microsoft.com/v1.0/me/events/\(encodedEventId)"
+        guard let url = URL(string: urlString) else {
+            print("❌ Invalid URL for event update")
+            completion(false, "Invalid URL")
+            return
+        }
+
+        // Format dates in ISO 8601 format for Microsoft Graph API
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+
+        let startString = isoFormatter.string(from: event.startDate)
+        let endString = isoFormatter.string(from: event.endDate)
+
+        // Create PATCH request body with all updatable fields
+        var requestBody: [String: Any] = [
+            "subject": event.title,
+            "start": [
+                "dateTime": startString,
+                "timeZone": TimeZone.current.identifier
+            ],
+            "end": [
+                "dateTime": endString,
+                "timeZone": TimeZone.current.identifier
+            ]
+        ]
+
+        // Add optional fields if present
+        if let location = event.location, !location.isEmpty {
+            requestBody["location"] = [
+                "displayName": location
+            ]
+        }
+        if let description = event.description, !description.isEmpty {
+            requestBody["body"] = [
+                "contentType": "text",
+                "content": description
+            ]
+        }
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: requestBody) else {
+            print("❌ Failed to serialize JSON for event update")
+            completion(false, "JSON serialization failed")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        Task {
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                if let httpResponse = response as? HTTPURLResponse {
+                    if httpResponse.statusCode == 200 {
+                        print("✅ Outlook event \(event.id) successfully updated via API")
+
+                        // Parse response to get updated event data
+                        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                            print("📊 Updated event response: \(json)")
+                        }
+
+                        // Remove from pending updates - save completed successfully
+                        await MainActor.run { [weak self] in
+                            self?.pendingUpdatesQueue.sync {
+                                self?.pendingUpdates.removeValue(forKey: event.id)
+                            }
+                            print("🔓 Removed \(event.id) from pending updates")
+                        }
+
+                        await MainActor.run {
+                            completion(true, nil)
+                        }
+                    } else {
+                        print("❌ Microsoft Graph API returned status \(httpResponse.statusCode)")
+                        if let errorString = String(data: data, encoding: .utf8) {
+                            print("❌ Error response: \(errorString)")
+                        }
+                        await MainActor.run {
+                            completion(false, "Server returned status \(httpResponse.statusCode)")
+                        }
+                    }
+                }
+            } catch {
+                print("❌ Network error updating Outlook event: \(error)")
+                await MainActor.run {
+                    completion(false, error.localizedDescription)
+                }
             }
         }
     }

@@ -380,6 +380,7 @@ struct WeekEventView: View {
         .scaleEffect(isDragging ? 1.05 : 1.0)
         .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
         .animation(.easeInOut(duration: 0.2), value: isDragging)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: eventHeight)
         .simultaneousGesture(
             LongPressGesture(minimumDuration: 0.5)
                 .updating($isDetectingLongPress) { currentState, gestureState, transaction in

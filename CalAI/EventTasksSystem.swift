@@ -539,6 +539,11 @@ class EventTaskManager: ObservableObject {
 
     private init() {
         loadFromStorage()
+
+        // Schedule notifications for all existing tasks with due dates
+        if settings.enableNotifications {
+            rescheduleAllTaskNotifications()
+        }
     }
 
     // MARK: - Task Operations
@@ -578,6 +583,11 @@ class EventTaskManager: ObservableObject {
             )
         }
         saveToStorage()
+
+        // Schedule notification if enabled and task has due date
+        if settings.enableNotifications, task.dueDate != nil, !task.isCompleted {
+            scheduleTaskNotification(for: task, eventId: eventId)
+        }
     }
 
     /// Toggle task completion
@@ -591,6 +601,17 @@ class EventTaskManager: ObservableObject {
             tasks.tasks[index] = task
             eventTasks[eventId] = tasks
             saveToStorage()
+
+            // Handle notifications based on completion status
+            if settings.enableNotifications {
+                if task.isCompleted {
+                    // Cancel notification when task is completed
+                    cancelTaskNotification(for: taskId)
+                } else if let dueDate = task.dueDate {
+                    // Reschedule notification when task is uncompleted
+                    scheduleTaskNotification(for: task, eventId: eventId)
+                }
+            }
         }
     }
 
@@ -601,6 +622,11 @@ class EventTaskManager: ObservableObject {
         tasks.tasks.removeAll { $0.id == taskId }
         eventTasks[eventId] = tasks
         saveToStorage()
+
+        // Cancel notification when task is deleted
+        if settings.enableNotifications {
+            cancelTaskNotification(for: taskId)
+        }
     }
 
     /// Update an existing task
@@ -611,11 +637,24 @@ class EventTaskManager: ObservableObject {
             tasks.tasks[index] = updatedTask
             eventTasks[eventId] = tasks
             saveToStorage()
+
+            // Reschedule notification with updated information
+            if settings.enableNotifications {
+                cancelTaskNotification(for: updatedTask.id)
+                if !updatedTask.isCompleted, updatedTask.dueDate != nil {
+                    scheduleTaskNotification(for: updatedTask, eventId: eventId)
+                }
+            }
         }
     }
 
     /// Delete all tasks for an event
     func deleteTasks(for eventId: String) {
+        // Cancel all notifications for these tasks before deleting
+        if settings.enableNotifications, let tasks = eventTasks[eventId] {
+            SmartNotificationManager.shared.cancelAllTaskNotifications(for: eventId, tasks: tasks.tasks)
+        }
+
         eventTasks.removeValue(forKey: eventId)
         saveToStorage()
     }
@@ -658,8 +697,14 @@ class EventTaskManager: ObservableObject {
 
     /// Update task generation settings
     func updateSettings(_ newSettings: TaskGenerationSettings) {
+        let notificationsWereEnabled = settings.enableNotifications
         settings = newSettings
         saveSettingsToStorage()
+
+        // Reschedule notifications if the notification setting changed
+        if notificationsWereEnabled != newSettings.enableNotifications {
+            rescheduleAllTaskNotifications()
+        }
     }
 
     /// Toggle event type in settings
@@ -670,6 +715,43 @@ class EventTaskManager: ObservableObject {
             settings.enabledEventTypes.insert(eventType)
         }
         saveSettingsToStorage()
+    }
+
+    // MARK: - Notifications
+
+    /// Schedule a notification for a task
+    private func scheduleTaskNotification(for task: EventTask, eventId: String) {
+        let notificationManager = SmartNotificationManager.shared
+        notificationManager.scheduleTaskNotification(for: task, eventId: eventId, event: nil)
+    }
+
+    /// Cancel a task notification
+    private func cancelTaskNotification(for taskId: UUID) {
+        let notificationManager = SmartNotificationManager.shared
+        notificationManager.cancelTaskNotification(for: taskId)
+    }
+
+    /// Reschedule all task notifications (called when settings change)
+    func rescheduleAllTaskNotifications() {
+        guard settings.enableNotifications else {
+            // If notifications are disabled, cancel all task notifications
+            let notificationManager = SmartNotificationManager.shared
+            for (eventId, eventTasks) in eventTasks {
+                notificationManager.cancelAllTaskNotifications(for: eventId, tasks: eventTasks.tasks)
+            }
+            return
+        }
+
+        // Build list of all tasks with notifications
+        var tasksToSchedule: [(task: EventTask, eventId: String, event: UnifiedEvent?)] = []
+        for (eventId, eventTasks) in eventTasks {
+            for task in eventTasks.tasks where !task.isCompleted && task.dueDate != nil {
+                tasksToSchedule.append((task, eventId, nil))
+            }
+        }
+
+        // Use SmartNotificationManager to reschedule all
+        SmartNotificationManager.shared.rescheduleAllTaskNotifications(tasks: tasksToSchedule)
     }
 
     // MARK: - Persistence
