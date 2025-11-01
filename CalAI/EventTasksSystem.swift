@@ -4455,6 +4455,11 @@ struct TaskDetailView: View {
     @State private var durationHours: Int = 0
     @State private var durationMinutes: Int = 0
     @State private var showDurationPicker: Bool = false
+    @State private var showDateTimePicker: Bool = false
+    @State private var selectedCustomDate: Date = Date()
+    @State private var selectedHour: Int = 12
+    @State private var selectedMinute: Int = 0
+    @State private var selectedAMPM: String = "AM"
 
     enum PlanOption: String, CaseIterable {
         case today = "Today"
@@ -4462,6 +4467,7 @@ struct TaskDetailView: View {
         case tomorrow = "Tomorrow"
         case thisWeek = "This week"
         case nextWeek = "Next week"
+        case dateTime = "Date and Time"
     }
 
     enum PriorityOption: String, CaseIterable {
@@ -4909,6 +4915,16 @@ struct TaskDetailView: View {
                 onSave: onSave
             )
         }
+        .sheet(isPresented: $showDateTimePicker) {
+            CustomDateTimePickerView(
+                selectedDate: $selectedCustomDate,
+                selectedHour: $selectedHour,
+                selectedMinute: $selectedMinute,
+                selectedAMPM: $selectedAMPM,
+                onApply: applyCustomDateTime,
+                onCancel: { showDateTimePicker = false }
+            )
+        }
         .alert("Task Information", isPresented: $showTaskInfo) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -5147,7 +5163,43 @@ struct TaskDetailView: View {
             selectedTime = nil
             // Set task due date to next week (7 days from now)
             task.dueDate = calendar.date(byAdding: .weekOfYear, value: 1, to: now)
+
+        case .dateTime:
+            // Show custom date and time picker
+            showDateTimePicker = true
+            return // Don't save yet, wait for custom date/time selection
         }
+        onSave()
+    }
+
+    private func applyCustomDateTime() {
+        // Convert 12-hour time to 24-hour format
+        var hour24 = selectedHour
+        if selectedAMPM == "PM" && selectedHour != 12 {
+            hour24 += 12
+        } else if selectedAMPM == "AM" && selectedHour == 12 {
+            hour24 = 0
+        }
+
+        // Combine date and time
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day], from: selectedCustomDate)
+        components.hour = hour24
+        components.minute = selectedMinute
+
+        if let finalDate = calendar.date(from: components) {
+            task.dueDate = finalDate
+
+            // Update display
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d"
+            selectedPlan = formatter.string(from: selectedCustomDate)
+
+            formatter.dateFormat = "h:mm a"
+            selectedTime = formatter.string(from: finalDate)
+        }
+
+        showDateTimePicker = false
         onSave()
     }
 }
@@ -5585,6 +5637,204 @@ struct TaskPlanningView: View {
 }
 
 // MARK: - Preview
+
+// MARK: - Custom Date Time Picker View
+
+struct CustomDateTimePickerView: View {
+    @Binding var selectedDate: Date
+    @Binding var selectedHour: Int
+    @Binding var selectedMinute: Int
+    @Binding var selectedAMPM: String
+    let onApply: () -> Void
+    let onCancel: () -> Void
+
+    @State private var displayMonth: Date = Date()
+
+    private let calendar = Calendar.current
+    private let hours = Array(1...12)
+    private let minutes = Array(stride(from: 0, through: 55, by: 5))
+    private let ampmOptions = ["AM", "PM"]
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Date Picker Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Select Date")
+                        .font(.system(size: 18, weight: .semibold))
+                        .padding(.horizontal)
+                        .padding(.top, 16)
+
+                    // Month navigation
+                    HStack {
+                        Button(action: previousMonth) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+
+                        Spacer()
+
+                        Text(monthYearString)
+                            .font(.system(size: 17, weight: .semibold))
+
+                        Spacer()
+
+                        Button(action: nextMonth) {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    // Calendar grid
+                    VStack(spacing: 8) {
+                        // Weekday headers
+                        HStack(spacing: 0) {
+                            ForEach(calendar.shortWeekdaySymbols, id: \.self) { day in
+                                Text(day)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+
+                        // Calendar days
+                        let days = getDaysInMonth()
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
+                            ForEach(days, id: \.self) { date in
+                                if let date = date {
+                                    Button(action: {
+                                        selectedDate = date
+                                    }) {
+                                        Text("\(calendar.component(.day, from: date))")
+                                            .font(.system(size: 16, weight: calendar.isDate(date, inSameDayAs: selectedDate) ? .bold : .regular))
+                                            .foregroundColor(calendar.isDate(date, inSameDayAs: selectedDate) ? .white : .primary)
+                                            .frame(width: 40, height: 40)
+                                            .background(calendar.isDate(date, inSameDayAs: selectedDate) ? Color.blue : Color.clear)
+                                            .clipShape(Circle())
+                                    }
+                                } else {
+                                    Color.clear
+                                        .frame(width: 40, height: 40)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                .padding(.bottom, 24)
+
+                Divider()
+
+                // Time Picker Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Select Time")
+                        .font(.system(size: 18, weight: .semibold))
+                        .padding(.horizontal)
+                        .padding(.top, 16)
+
+                    HStack(spacing: 0) {
+                        // Hour picker
+                        Picker("Hour", selection: $selectedHour) {
+                            ForEach(hours, id: \.self) { hour in
+                                Text("\(hour)")
+                                    .font(.system(size: 20))
+                                    .tag(hour)
+                            }
+                        }
+                        .pickerStyle(WheelPickerStyle())
+                        .frame(maxWidth: .infinity)
+
+                        Text(":")
+                            .font(.system(size: 24, weight: .semibold))
+                            .frame(width: 20)
+
+                        // Minute picker
+                        Picker("Minute", selection: $selectedMinute) {
+                            ForEach(minutes, id: \.self) { minute in
+                                Text(String(format: "%02d", minute))
+                                    .font(.system(size: 20))
+                                    .tag(minute)
+                            }
+                        }
+                        .pickerStyle(WheelPickerStyle())
+                        .frame(maxWidth: .infinity)
+
+                        // AM/PM picker
+                        Picker("AM/PM", selection: $selectedAMPM) {
+                            ForEach(ampmOptions, id: \.self) { option in
+                                Text(option)
+                                    .font(.system(size: 20))
+                                    .tag(option)
+                            }
+                        }
+                        .pickerStyle(WheelPickerStyle())
+                        .frame(maxWidth: .infinity)
+                    }
+                    .frame(height: 150)
+                }
+                .padding(.bottom, 16)
+
+                Spacer()
+            }
+            .navigationTitle("Date and Time")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Apply") {
+                        onApply()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+
+    private var monthYearString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: displayMonth)
+    }
+
+    private func previousMonth() {
+        if let newMonth = calendar.date(byAdding: .month, value: -1, to: displayMonth) {
+            displayMonth = newMonth
+        }
+    }
+
+    private func nextMonth() {
+        if let newMonth = calendar.date(byAdding: .month, value: 1, to: displayMonth) {
+            displayMonth = newMonth
+        }
+    }
+
+    private func getDaysInMonth() -> [Date?] {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: displayMonth),
+              let monthFirstWeek = calendar.dateInterval(of: .weekOfMonth, for: monthInterval.start) else {
+            return []
+        }
+
+        var days: [Date?] = []
+        var currentDate = monthFirstWeek.start
+
+        while days.count < 42 { // 6 weeks max
+            if calendar.isDate(currentDate, equalTo: displayMonth, toGranularity: .month) {
+                days.append(currentDate)
+            } else {
+                days.append(nil)
+            }
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
+        }
+
+        return days
+    }
+}
 
 #Preview {
     TasksTabView(

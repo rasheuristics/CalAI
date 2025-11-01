@@ -111,34 +111,45 @@ struct InboxView: View {
     private var taskListView: some View {
         let tasks = taskManager.getTasksForList(selectedList)
 
-        return Group {
-            if tasks.isEmpty {
-                emptyStateView
-            } else {
-                List {
-                    ForEach(tasks) { task in
-                        InboxTaskRow(
-                            task: task,
-                            taskManager: taskManager,
-                            fontManager: fontManager,
-                            onTap: {
-                                selectedTask = task
-                                selectedEventId = task.linkedEventId
-                                showingTaskDetail = true
-                            },
-                            onSchedule: { task, eventId in
-                                taskToSchedule = task
-                                eventIdForScheduling = eventId
-                                showingScheduleSheet = true
-                            }
-                        )
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+        return VStack(spacing: 0) {
+            // Collapsible calendar for Today view only
+            if selectedList == .today {
+                CollapsibleTodayCalendar(
+                    fontManager: fontManager,
+                    taskManager: taskManager
+                )
+            }
+
+            // Task list
+            Group {
+                if tasks.isEmpty {
+                    emptyStateView
+                } else {
+                    List {
+                        ForEach(tasks) { task in
+                            InboxTaskRow(
+                                task: task,
+                                taskManager: taskManager,
+                                fontManager: fontManager,
+                                onTap: {
+                                    selectedTask = task
+                                    selectedEventId = task.linkedEventId
+                                    showingTaskDetail = true
+                                },
+                                onSchedule: { task, eventId in
+                                    taskToSchedule = task
+                                    eventIdForScheduling = eventId
+                                    showingScheduleSheet = true
+                                }
+                            )
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        }
+                        .onDelete { indexSet in
+                            deleteTask(at: indexSet, from: tasks)
+                        }
                     }
-                    .onDelete { indexSet in
-                        deleteTask(at: indexSet, from: tasks)
-                    }
+                    .listStyle(PlainListStyle())
                 }
-                .listStyle(PlainListStyle())
             }
         }
     }
@@ -489,4 +500,387 @@ struct InboxTaskRow: View {
             return formatter.string(from: date)
         }
     }
+}
+
+// MARK: - Collapsible Today Calendar
+
+struct CollapsibleTodayCalendar: View {
+    @ObservedObject var fontManager: FontManager
+    @ObservedObject var taskManager: EventTaskManager
+
+    @State private var isExpanded = false
+    @State private var selectedDate = Date()
+
+    private let collapsedHeight: CGFloat = 50
+    private let expandedHeight: CGFloat = 400
+
+    // Get tasks that should appear on calendar (Today + Upcoming with scheduled times)
+    private var calendarTasks: [TaskTimelineItem] {
+        var timelineEvents: [TaskTimelineItem] = []
+
+        // Get today and upcoming tasks
+        let todayTasks = taskManager.getTasksForList(.today)
+        let upcomingTasks = taskManager.getTasksForList(.upcoming)
+
+        // Combine and filter for scheduled tasks
+        let scheduledTasks = (todayTasks + upcomingTasks).filter { task in
+            task.scheduledTime != nil && task.duration != nil
+        }
+
+        // Convert to TaskTimelineItem
+        for task in scheduledTasks {
+            guard let startTime = task.scheduledTime,
+                  let duration = task.duration else { continue }
+
+            // Convert color string to UIColor
+            let colorName = task.priority.color
+            let uiColor: UIColor = {
+                switch colorName {
+                case "red": return .systemRed
+                case "orange": return .systemOrange
+                case "green": return .systemGreen
+                case "black": return .label
+                default: return .systemBlue
+                }
+            }()
+
+            timelineEvents.append(TaskTimelineItem(
+                id: task.id.uuidString,
+                title: task.title,
+                startTime: startTime,
+                endTime: startTime.addingTimeInterval(duration),
+                color: uiColor
+            ))
+        }
+
+        return timelineEvents
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Collapse/Expand header
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    isExpanded.toggle()
+                }
+            }) {
+                HStack {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.blue)
+
+                    Text("Today's Schedule")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.primary)
+
+                    Spacer()
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .background(Color(.systemGray6))
+            }
+            .buttonStyle(PlainButtonStyle())
+
+            // Calendar week view (expanded)
+            if isExpanded {
+                MiniWeekTimeline(
+                    selectedDate: $selectedDate,
+                    tasks: calendarTasks,
+                    fontManager: fontManager
+                )
+                .frame(height: expandedHeight)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(Color(.systemBackground))
+    }
+}
+
+// MARK: - Mini Week Timeline
+
+struct MiniWeekTimeline: View {
+    @Binding var selectedDate: Date
+    let tasks: [TaskTimelineItem]
+    @ObservedObject var fontManager: FontManager
+
+    @State private var showMonthCalendar = false
+    @State private var dragOffset: CGFloat = 0
+
+    private let calendar = Calendar.current
+    private let hourHeight: CGFloat = 60
+    private let monthCalendarHeight: CGFloat = 320
+
+    private var currentWeekDays: [Date] {
+        let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: selectedDate)?.start ?? selectedDate
+        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: startOfWeek) }
+    }
+
+    private var todayIndex: Int? {
+        currentWeekDays.firstIndex { calendar.isDate($0, inSameDayAs: Date()) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Fixed day header - THIS IS THE FIRST WEEK OF THE 6-WEEK CALENDAR
+            HStack(spacing: 0) {
+                // Spacer for time labels
+                Color.clear.frame(width: 45)
+
+                // Day columns headers
+                ForEach(Array(currentWeekDays.enumerated()), id: \.offset) { index, day in
+                    let isSelected = calendar.isDate(day, inSameDayAs: selectedDate)
+                    let isToday = todayIndex == index
+
+                    Button(action: {
+                        selectedDate = day
+                    }) {
+                        VStack(spacing: 2) {
+                            Text(dayName(for: day))
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.gray)
+
+                            Text("\(calendar.component(.day, from: day))")
+                                .font(.system(size: 14, weight: isToday ? .bold : .regular))
+                                .foregroundColor(isToday ? .white : .black)
+                                .frame(width: 28, height: 28)
+                                .background(isToday ? Color.blue : Color.clear)
+                                .clipShape(Circle())
+                                .overlay(
+                                    Circle()
+                                        .strokeBorder(isSelected && !isToday ? Color.blue : Color.clear, lineWidth: 2)
+                                )
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .frame(height: 50)
+            .background(Color(.systemBackground))
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        // Only allow pulling down
+                        if value.translation.height > 0 {
+                            dragOffset = value.translation.height
+                        }
+                    }
+                    .onEnded { value in
+                        // If pulled down more than 50 points, show additional 5 weeks
+                        if value.translation.height > 50 {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                showMonthCalendar = true
+                            }
+                        }
+                        dragOffset = 0
+                    }
+            )
+
+            // Additional 5 weeks below (revealed by pull-down)
+            if showMonthCalendar {
+                AdditionalWeeksView(selectedDate: $selectedDate, currentWeekDays: currentWeekDays)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            // Scrollable timeline
+            GeometryReader { geometry in
+                ScrollView {
+                    ScrollViewReader { proxy in
+                        ZStack(alignment: .topLeading) {
+                            // Time labels
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(0..<24, id: \.self) { hour in
+                                    Text("\(hour):00")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 40, height: hourHeight, alignment: .top)
+                                        .id("hour_\(hour)")
+                                }
+                            }
+
+                            // Timeline grid
+                            HStack(spacing: 0) {
+                                // Spacer for time labels
+                                Color.clear.frame(width: 45)
+
+                                // Day columns
+                                ForEach(Array(currentWeekDays.enumerated()), id: \.offset) { index, day in
+                                    ZStack(alignment: .topLeading) {
+                                        // Hour lines
+                                        VStack(spacing: 0) {
+                                            ForEach(0..<24, id: \.self) { hour in
+                                                Divider()
+                                                    .frame(height: hourHeight)
+                                            }
+                                        }
+
+                                        // Tasks for this day
+                                        ForEach(tasksForDay(day), id: \.id) { task in
+                                            taskBlock(for: task, in: day)
+                                        }
+                                    }
+                                    .frame(width: (geometry.size.width - 45) / 7)
+                                }
+                            }
+                        }
+                        .onAppear {
+                            // Scroll to 8 AM
+                            proxy.scrollTo("hour_8", anchor: .top)
+                        }
+                        .simultaneousGesture(
+                            DragGesture()
+                                .onEnded { value in
+                                    // If month calendar is showing and user swipes up, hide it
+                                    if showMonthCalendar && value.translation.height < -50 {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                            showMonthCalendar = false
+                                        }
+                                    }
+                                }
+                        )
+                    }
+                }
+            }
+        }
+        .background(Color(.systemBackground))
+    }
+
+    private func dayName(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        return formatter.string(from: date)
+    }
+
+    private func tasksForDay(_ day: Date) -> [TaskTimelineItem] {
+        tasks.filter { calendar.isDate($0.startTime, inSameDayAs: day) }
+    }
+
+    private func taskBlock(for task: TaskTimelineItem, in day: Date) -> some View {
+        let startHour = calendar.component(.hour, from: task.startTime)
+        let startMinute = calendar.component(.minute, from: task.startTime)
+        let duration = task.endTime.timeIntervalSince(task.startTime)
+
+        let topOffset = CGFloat(startHour) * hourHeight + (CGFloat(startMinute) / 60.0) * hourHeight
+        let height = (duration / 3600.0) * hourHeight
+
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 2) {
+                Image(systemName: "checkmark.circle")
+                    .font(.system(size: 7))
+                Text(task.title)
+                    .font(.system(size: 9, weight: .medium))
+            }
+            .foregroundColor(.white)
+            .lineLimit(2)
+        }
+        .padding(4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: max(height, 20))
+        .background(Color(task.color).opacity(0.7))
+        .cornerRadius(4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(Color(task.color), lineWidth: 1, antialiased: true)
+        )
+        .offset(y: topOffset)
+        .padding(.horizontal, 2)
+    }
+}
+
+// MARK: - Additional Weeks View (5 weeks above current week)
+
+struct AdditionalWeeksView: View {
+    @Binding var selectedDate: Date
+    let currentWeekDays: [Date]
+
+    private let calendar = Calendar.current
+
+    // Get 5 weeks after the current visible week
+    private var additionalWeeks: [[Date]] {
+        guard let currentWeekStart = currentWeekDays.first else {
+            return []
+        }
+
+        var weeks: [[Date]] = []
+
+        // Start from week 1 (next week after current)
+        for weekOffset in 1...5 {
+            guard let weekStart = calendar.date(byAdding: .weekOfYear, value: weekOffset, to: currentWeekStart) else {
+                continue
+            }
+
+            let weekDays = (0..<7).compactMap { dayOffset in
+                calendar.date(byAdding: .day, value: dayOffset, to: weekStart)
+            }
+
+            weeks.append(weekDays)
+        }
+
+        return weeks
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // 5 weeks grid (no header needed, weekdays already shown above)
+            ForEach(Array(additionalWeeks.enumerated()), id: \.offset) { weekIndex, week in
+                HStack(spacing: 0) {
+                    // Spacer for time labels alignment
+                    Color.clear.frame(width: 45)
+
+                    // Days in this week
+                    ForEach(Array(week.enumerated()), id: \.offset) { dayIndex, day in
+                        Button(action: {
+                            selectedDate = day
+                        }) {
+                            Text("\(calendar.component(.day, from: day))")
+                                .font(.system(size: 14, weight: calendar.isDate(day, inSameDayAs: selectedDate) ? .bold : .regular))
+                                .foregroundColor(getDateColor(day))
+                                .frame(width: 28, height: 28)
+                                .background(calendar.isDate(day, inSameDayAs: selectedDate) ? Color.blue : Color.clear)
+                                .clipShape(Circle())
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                .frame(height: 40)
+                .background(Color(.systemBackground))
+
+                if weekIndex < additionalWeeks.count - 1 {
+                    Divider()
+                }
+            }
+        }
+        .background(Color(.systemGray6))
+    }
+
+    private func dayName(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        return formatter.string(from: date)
+    }
+
+    private func getDateColor(_ date: Date) -> Color {
+        if calendar.isDate(date, inSameDayAs: selectedDate) {
+            return .white
+        } else if calendar.isDate(date, inSameDayAs: Date()) {
+            return .blue
+        } else {
+            return .primary
+        }
+    }
+}
+
+// MARK: - Task Timeline Item Model
+
+struct TaskTimelineItem: Identifiable {
+    let id: String
+    let title: String
+    let startTime: Date
+    let endTime: Date
+    let color: UIColor
 }
