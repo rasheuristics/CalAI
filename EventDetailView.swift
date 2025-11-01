@@ -14,6 +14,14 @@ struct EventDetailView: View {
     @State private var deletionError: String?
     @State private var showingDeletionError = false
 
+    // Phase 4: AI Task Generation
+    @StateObject private var aiManager = AIManager()
+    @StateObject private var taskManager = EventTaskManager.shared
+    @State private var showTaskPreview = false
+    @State private var generatedTasks: [GeneratedTask] = []
+    @State private var isGeneratingTasks = false
+    @State private var taskGenerationError: String?
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -213,6 +221,35 @@ struct EventDetailView: View {
                     }
                     .padding(.horizontal)
 
+                    // AI Task Generation Button (Phase 4)
+                    Button(action: {
+                        generateAITasks()
+                    }) {
+                        HStack {
+                            Spacer()
+                            if isGeneratingTasks {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.9)
+                                Text("Generating...")
+                                    .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+                            } else {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 16))
+                                Text("Generate AI Tasks")
+                                    .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+                            }
+                            Spacer()
+                        }
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(isGeneratingTasks ? Color.blue.opacity(0.7) : Color.blue)
+                        .cornerRadius(12)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    .disabled(isGeneratingTasks)
+
                     // Delete Button Section
                     Button(action: {
                         print("🔴🔴🔴 DELETE BUTTON TAPPED IN EVENTDETAILVIEW 🔴🔴🔴")
@@ -311,6 +348,22 @@ struct EventDetailView: View {
                 }
             } message: {
                 Text(deletionError ?? "An unknown error occurred while deleting the event.")
+            }
+            .sheet(isPresented: $showTaskPreview) {
+                TaskGenerationPreviewSheet(
+                    taskManager: taskManager,
+                    fontManager: fontManager,
+                    generatedTasks: generatedTasks,
+                    eventId: event.id,
+                    eventTitle: event.title
+                )
+            }
+            .alert("Task Generation Error", isPresented: .constant(taskGenerationError != nil)) {
+                Button("OK", role: .cancel) {
+                    taskGenerationError = nil
+                }
+            } message: {
+                Text(taskGenerationError ?? "An error occurred while generating tasks.")
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
@@ -633,6 +686,38 @@ struct EventDetailView: View {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+
+    // MARK: - Phase 4: AI Task Generation
+
+    private func generateAITasks() {
+        print("🤖 Generating AI tasks for event: \(event.title)")
+        isGeneratingTasks = true
+        taskGenerationError = nil
+
+        Task {
+            do {
+                let result = try await aiManager.generateTasksForEvent(event)
+                print("✅ Generated \(result.tasks.count) tasks")
+
+                await MainActor.run {
+                    self.generatedTasks = result.tasks
+                    self.isGeneratingTasks = false
+
+                    if !result.tasks.isEmpty {
+                        self.showTaskPreview = true
+                    } else {
+                        self.taskGenerationError = result.message
+                    }
+                }
+            } catch {
+                print("❌ Task generation failed: \(error)")
+                await MainActor.run {
+                    self.isGeneratingTasks = false
+                    self.taskGenerationError = "Failed to generate tasks. Please check your API key in Settings and try again."
+                }
+            }
+        }
     }
 }
 

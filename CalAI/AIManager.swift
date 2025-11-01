@@ -112,7 +112,7 @@ class AIManager: ObservableObject {
         self.conversationalAI = ConversationalAIService()
 
         // Initialize enhanced conversational AI (using OpenAI backend)
-        self.enhancedConversationalAI = EnhancedConversationalAI()
+        self.enhancedConversationalAI = EnhancedConversationalAI(aiService: self.conversationalAI)
         print("✅ Enhanced Conversational AI with memory enabled (OpenAI backend)")
     }
 
@@ -134,35 +134,76 @@ class AIManager: ObservableObject {
 
         Task {
             do {
-                // Get all tasks for context
-                let allTasks = EventTaskManager.shared.getAllTasks()
-
                 // Process with conversation memory
-                let response = try await enhancedAI.chat(
+                let response = try await enhancedAI.processWithMemory(
                     message: transcript,
-                    calendarEvents: calendarEvents,
-                    tasks: allTasks
+                    calendarEvents: calendarEvents
                 )
 
                 print("✅ Enhanced AI Response:")
                 print("   Intent: \(response.intent)")
-                print("   Confidence: \(response.confidence)")
-                print("   Requires clarification: \(response.requiresClarification)")
+                print("   Needs clarification: \(response.needsClarification)")
 
-                // Convert to AICalendarResponse
-                let calendarResponse = AICalendarResponse(
-                    message: response.message,
-                    shouldContinueListening: response.requiresClarification || response.suggestedFollowUps != nil
-                )
+                // Handle query intent specially to include event list
+                let calendarResponse: AICalendarResponse
+                if response.intent == "query" {
+                    // Extract time range and filter events for query responses
+                    let (startDate, endDate) = extractTimeRange(from: transcript)
+                    let relevantEvents = calendarEvents.filter { event in
+                        event.startDate >= startDate && event.startDate < endDate
+                    }.sorted { $0.startDate < $1.startDate }
 
-                // Execute actions if provided
-                if let actionType = response.actionType,
-                   let parameters = response.actionParameters {
-                    await executeEnhancedAction(
-                        type: actionType,
-                        parameters: parameters,
-                        response: calendarResponse
+                    print("📅 Query found \(relevantEvents.count) events in range")
+
+                    // Use VoiceResponseGenerator to create proper natural language response with full day narrative
+                    let voiceResponse = voiceResponseGenerator.generateQueryResponse(
+                        events: relevantEvents,
+                        timeRange: (start: startDate, end: endDate)
                     )
+
+                    let fullMessage = voiceResponse.fullMessage
+                    print("✅ Generated full day narrative: \(fullMessage)")
+
+                    // Convert events to EventResult format
+                    let eventResults = relevantEvents.map { event in
+                        EventResult(
+                            id: event.id,
+                            title: event.title,
+                            startDate: event.startDate,
+                            endDate: event.endDate,
+                            location: event.location,
+                            source: event.source.rawValue,
+                            color: nil
+                        )
+                    }
+
+                    let command = CalendarCommand(
+                        type: .queryEvents,
+                        queryStartDate: startDate,
+                        queryEndDate: endDate
+                    )
+
+                    calendarResponse = AICalendarResponse(
+                        message: fullMessage,
+                        command: command,
+                        eventResults: eventResults,
+                        shouldContinueListening: voiceResponse.followUp != nil
+                    )
+                } else {
+                    // For non-query intents, use standard response
+                    calendarResponse = AICalendarResponse(
+                        message: response.message,
+                        shouldContinueListening: response.shouldContinueListening
+                    )
+
+                    // Execute actions if provided with non-empty parameters
+                    if !response.parameters.isEmpty {
+                        await executeEnhancedAction(
+                            type: response.intent,
+                            parameters: response.parameters,
+                            response: calendarResponse
+                        )
+                    }
                 }
 
                 await MainActor.run {
@@ -185,25 +226,47 @@ class AIManager: ObservableObject {
 
     private func executeEnhancedAction(
         type: String,
-        parameters: [String: String],
+        parameters: [String: ConversationalAIService.AnyCodableValue],
         response: AICalendarResponse
     ) async {
         print("🎬 Executing action: \(type)")
         print("📋 Parameters: \(parameters)")
 
+        // Convert AnyCodableValue parameters to strings for easier access
+        let stringParams = parameters.mapValues { value -> String in
+            switch value {
+            case .string(let str):
+                return str
+            case .int(let int):
+                return "\(int)"
+            case .double(let double):
+                return "\(double)"
+            case .bool(let bool):
+                return "\(bool)"
+            case .date(let date):
+                return "\(date)"
+            case .array(let arr):
+                return "\(arr)"
+            case .dictionary(let dict):
+                return "\(dict)"
+            case .null:
+                return ""
+            }
+        }
+
         switch type {
         case "createEvent":
             // Handle event creation
-            if let title = parameters["title"],
-               let startDateStr = parameters["startDate"] {
+            if let title = stringParams["title"],
+               let startDateStr = stringParams["startDate"] {
                 print("📅 Creating event: \(title) at \(startDateStr)")
                 // Implementation will come from existing event creation logic
             }
 
         case "createTask":
             // Handle task creation
-            if let title = parameters["title"] {
-                let priority = TaskPriority(rawValue: parameters["priority"] ?? "None") ?? .none
+            if let title = stringParams["title"] {
+                let priority = TaskPriority(rawValue: stringParams["priority"] ?? "None") ?? .none
                 let task = EventTask(title: title, priority: priority)
                 EventTaskManager.shared.addTask(task, to: "standalone_tasks")
                 print("✅ Task created: \(title)")
@@ -2960,6 +3023,13 @@ class AIManager: ObservableObject {
         default:
             return "Got it, I'll take care of that..."
         }
+    }
+
+    // MARK: - Phase 4: AI Task Generation
+
+    func generateTasksForEvent(_ event: UnifiedEvent) async throws -> TaskGenerationResult {
+        let taskGenerator = AITaskGenerator()
+        return try await taskGenerator.generateTasks(for: event)
     }
 
 }

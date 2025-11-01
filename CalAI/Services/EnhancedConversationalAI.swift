@@ -118,10 +118,10 @@ class EnhancedConversationalAI {
         let action: ConversationalAIService.AIAction
 
         do {
-            // Re-enabled on-device AI with ultra-minimal context for speed
+            // Prioritize on-device AI with ultra-minimal context for speed
             #if canImport(FoundationModels)
             if #available(iOS 26.0, *), useOnDevice, let sessionObj = onDeviceSession {
-                print("🍎 Using on-device Apple Intelligence (optimized context)")
+                print("🍎 Using on-device Apple Intelligence (PRIMARY)")
                 action = try await processWithOnDeviceAI(message: enhancedMessage, events: calendarEvents, session: sessionObj)
             } else {
                 print("☁️ Using cloud AI fallback")

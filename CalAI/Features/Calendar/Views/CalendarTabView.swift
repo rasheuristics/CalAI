@@ -12,6 +12,7 @@ struct CalendarTabView: View {
     @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var fontManager: FontManager
     @ObservedObject var appearanceManager: AppearanceManager
+    @ObservedObject var taskManager = EventTaskManager.shared // NEW: For time-blocking
     @State private var selectedDate = Date()
     @State private var currentViewType: CalendarViewType = .day
     @State private var showingDatePicker = false
@@ -76,8 +77,8 @@ struct CalendarTabView: View {
                     } else {
                         switch currentViewType {
                         case .day:
-                            let dayEvents = unifiedEventsForDate(selectedDate)
-                            if dayEvents.isEmpty && !calendarManager.isLoading {
+                            let timelineEvents = timelineEventsForDate(selectedDate)
+                            if timelineEvents.isEmpty && !calendarManager.isLoading {
                                 EmptyStateView(
                                     icon: "calendar",
                                     title: isToday(selectedDate) ? "No Events Today" : "No Events",
@@ -86,20 +87,23 @@ struct CalendarTabView: View {
                             } else {
                                 CompressedDayTimelineView(
                                     date: selectedDate, // Show selected day
-                                    events: dayEvents.map { TimelineEvent(from: $0) },
+                                    events: timelineEvents,
                                     fontManager: fontManager,
                                     isWeekView: false,
-                                    refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)-\($0.endDate.timeIntervalSince1970)" }.joined(),
+                                    refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)-\($0.endDate.timeIntervalSince1970)" }.joined() + taskManager.getAllTasks().map { "\($0.id)-\($0.scheduledTime?.timeIntervalSince1970 ?? 0)" }.joined(),
                                     onEventTap: { calendarEvent in
-                                        // Find the corresponding UnifiedEvent
-                                        if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == calendarEvent.id }) {
+                                        // Check if it's a task
+                                        if calendarEvent.id.hasPrefix("task-") {
+                                            print("📋 Tapped on scheduled task: \(calendarEvent.title ?? "Unknown")")
+                                            // TODO: Open task detail view
+                                        } else if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == calendarEvent.id }) {
                                             print("📱 Opening EditEventView for: \(unifiedEvent.title)")
                                             selectedEventForEdit = unifiedEvent
                                             showingEditView = true
                                         }
                                     }
                                 )
-                                .id("\(selectedDate.timeIntervalSince1970)-\(calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)-\($0.endDate.timeIntervalSince1970)" }.joined())") // Force recreation when any event times change
+                                .id("\(selectedDate.timeIntervalSince1970)-\(calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)-\($0.endDate.timeIntervalSince1970)" }.joined())-\(taskManager.getAllTasks().map { "\($0.id)-\($0.scheduledTime?.timeIntervalSince1970 ?? 0)" }.joined())") // Force recreation when any event or task times change
                             }
                         case .week:
                             WeekViewWithCompressedTimeline(
@@ -214,6 +218,25 @@ struct CalendarTabView: View {
         }
 
         return unique
+    }
+
+    // NEW: Get timeline events (events + scheduled tasks) for a date
+    private func timelineEventsForDate(_ date: Date) -> [TimelineEvent] {
+        var timelineEvents: [TimelineEvent] = []
+
+        // Add regular events
+        let dayEvents = unifiedEventsForDate(date)
+        timelineEvents.append(contentsOf: dayEvents.map { TimelineEvent(from: $0) })
+
+        // Add scheduled tasks
+        let scheduledTasks = taskManager.getScheduledTasks(for: date)
+        for (task, _) in scheduledTasks {
+            if let scheduledTime = task.scheduledTime {
+                timelineEvents.append(TimelineEvent(from: task, scheduledAt: scheduledTime))
+            }
+        }
+
+        return timelineEvents
     }
 
     // Check if an event has conflicts
@@ -1849,6 +1872,7 @@ struct TimelineEvent: CalendarEvent {
     let eventLocation: String?
     let isAllDay: Bool
     let source: CalendarSource
+    let isTask: Bool // NEW: Distinguish tasks from events
 
     init(from unifiedEvent: UnifiedEvent) {
         self.id = unifiedEvent.id
@@ -1858,6 +1882,7 @@ struct TimelineEvent: CalendarEvent {
         self.eventLocation = unifiedEvent.location
         self.isAllDay = unifiedEvent.isAllDay
         self.source = unifiedEvent.source
+        self.isTask = false
     }
 
     // Legacy support for EKEvent if needed
@@ -1869,6 +1894,25 @@ struct TimelineEvent: CalendarEvent {
         self.eventLocation = ekEvent.location
         self.isAllDay = ekEvent.isAllDay
         self.source = .ios
+        self.isTask = false
+    }
+
+    // NEW: Initialize from EventTask with scheduled time
+    init(from task: EventTask, scheduledAt: Date) {
+        self.id = "task-\(task.id.uuidString)"
+        self.title = "📋 \(task.title)" // Prefix with task icon
+        self.start = scheduledAt
+        // Calculate end time based on task duration
+        if let duration = task.duration {
+            self.end = scheduledAt.addingTimeInterval(duration)
+        } else {
+            // Default to 30 minutes if no duration specified
+            self.end = scheduledAt.addingTimeInterval(1800)
+        }
+        self.eventLocation = nil
+        self.isAllDay = false
+        self.source = .ios // Tasks are local-only for now
+        self.isTask = true
     }
 }
 

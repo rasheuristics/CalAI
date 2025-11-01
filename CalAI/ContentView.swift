@@ -58,7 +58,7 @@ struct ContentView: View {
                     }
                     .tag(2)
 
-                TasksTabView(fontManager: fontManager, calendarManager: calendarManager)
+                InboxView(fontManager: fontManager, appearanceManager: appearanceManager)
                     .tabItem {
                         Image(systemName: "tray.fill")
                         Text("Tasks")

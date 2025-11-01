@@ -45,8 +45,11 @@ enum AIProvider: String, CaseIterable {
             return true
         case .onDevice:
             // Check if Foundation Models framework is available (iOS 26+)
-            let version = ProcessInfo.processInfo.operatingSystemVersion
-            return version.majorVersion >= 26
+            #if canImport(FoundationModels)
+            return true
+            #else
+            return false
+            #endif
         }
     }
 }
