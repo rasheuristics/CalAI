@@ -3151,12 +3151,11 @@ class AIManager: ObservableObject {
 
         // Extract scheduled time using SmartEventParser's time extraction
         let parser = SmartEventParser()
-        if let parsedEvent = parser.parseEvent(from: transcript) {
-            if let startTime = parsedEvent.startTime {
-                let formatter = ISO8601DateFormatter()
-                params["scheduled_time"] = formatter.string(from: startTime)
-                print("⏰ Extracted scheduled time: \(startTime)")
-            }
+        let parseResult = parser.parse(transcript)
+        if let startTime = parseResult.startTime {
+            let formatter = ISO8601DateFormatter()
+            params["scheduled_time"] = formatter.string(from: startTime)
+            print("⏰ Extracted scheduled time: \(startTime)")
         }
 
         // Extract priority
