@@ -314,6 +314,13 @@ class AIManager: ObservableObject {
             // Extract duration
             let durationMinutes = Int(stringParams["duration_minutes"] ?? stringParams["durationMinutes"] ?? "")
 
+            // If task has scheduled time but no duration, set a default duration of 30 minutes
+            var duration: TimeInterval?
+            if let _ = scheduledTime {
+                let minutes = durationMinutes ?? 30  // Default to 30 minutes
+                duration = TimeInterval(minutes * 60)
+            }
+
             // Create the task
             let task = EventTask(
                 title: title,
@@ -321,7 +328,8 @@ class AIManager: ObservableObject {
                 priority: priority,
                 estimatedMinutes: durationMinutes,
                 dueDate: dueDate,
-                scheduledTime: scheduledTime
+                scheduledTime: scheduledTime,
+                duration: duration
             )
 
             EventTaskManager.shared.addTask(task, to: "standalone_tasks")
@@ -890,6 +898,13 @@ class AIManager: ObservableObject {
             // Extract event ID if this is an event-related task
             let eventId = action.parameters["event_id"]?.stringValue
 
+            // If task has scheduled time but no duration, set a default duration of 30 minutes
+            var duration: TimeInterval?
+            if let _ = scheduledTime {
+                let minutes = durationMinutes ?? 30  // Default to 30 minutes
+                duration = TimeInterval(minutes * 60)
+            }
+
             // Create the task
             let task = EventTask(
                 title: title,
@@ -899,13 +914,15 @@ class AIManager: ObservableObject {
                 dueDate: dueDate,
                 project: project,
                 tags: tags,
-                scheduledTime: scheduledTime
+                scheduledTime: scheduledTime,
+                duration: duration
             )
 
             print("🎯 Creating task: \(task.title)")
             print("   Priority: \(task.priority.rawValue)")
             print("   Due date: \(task.dueDate?.description ?? "none")")
             print("   Scheduled time: \(task.scheduledTime?.description ?? "none")")
+            print("   Duration: \(task.duration?.description ?? "none")")
 
             // Add task to appropriate location
             if let eventId = eventId {
