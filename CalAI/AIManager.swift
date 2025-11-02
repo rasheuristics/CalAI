@@ -142,6 +142,8 @@ class AIManager: ObservableObject {
 
                 print("✅ Enhanced AI Response:")
                 print("   Intent: \(response.intent)")
+                print("   Message: \(response.message)")
+                print("   Parameters: \(response.parameters)")
                 print("   Needs clarification: \(response.needsClarification)")
 
                 // Handle query intent specially to include event list
@@ -263,14 +265,58 @@ class AIManager: ObservableObject {
                 // Implementation will come from existing event creation logic
             }
 
-        case "createTask":
+        case "createTask", "create_task":
             // Handle task creation
-            if let title = stringParams["title"] {
-                let priority = TaskPriority(rawValue: stringParams["priority"] ?? "None") ?? .none
-                let task = EventTask(title: title, priority: priority)
-                EventTaskManager.shared.addTask(task, to: "standalone_tasks")
-                print("✅ Task created: \(title)")
+            print("🎯 Creating task from enhanced AI...")
+
+            guard let title = stringParams["title"] else {
+                print("⚠️ No title found in parameters!")
+                return
             }
+
+            print("📝 Task title: \(title)")
+
+            // Extract priority
+            let priorityStr = stringParams["priority"] ?? "medium"
+            let priority = TaskPriority(rawValue: priorityStr.capitalized) ?? .medium
+            print("   Priority: \(priority.rawValue)")
+
+            // Extract description
+            let description = stringParams["description"]
+
+            // Extract scheduled time
+            var scheduledTime: Date?
+            if let scheduledTimeStr = stringParams["scheduled_time"] ?? stringParams["scheduledTime"] {
+                scheduledTime = ISO8601DateFormatter().date(from: scheduledTimeStr)
+                print("   Scheduled time: \(scheduledTime?.description ?? "none")")
+            }
+
+            // Extract due date
+            var dueDate: Date?
+            if let dueDateStr = stringParams["due_date"] ?? stringParams["dueDate"] {
+                dueDate = ISO8601DateFormatter().date(from: dueDateStr)
+                print("   Due date: \(dueDate?.description ?? "none")")
+            }
+
+            // Extract duration
+            let durationMinutes = Int(stringParams["duration_minutes"] ?? stringParams["durationMinutes"] ?? "")
+
+            // Create the task
+            let task = EventTask(
+                title: title,
+                description: description,
+                priority: priority,
+                estimatedMinutes: durationMinutes,
+                dueDate: dueDate,
+                scheduledTime: scheduledTime
+            )
+
+            EventTaskManager.shared.addTask(task, to: "standalone_tasks")
+            print("✅ Task created and added to standalone_tasks")
+
+            // Verify it was added
+            let tasks = EventTaskManager.shared.getTasks(for: "standalone_tasks")
+            print("📊 Total standalone tasks now: \(tasks?.tasks.count ?? 0)")
 
         case "querySchedule":
             // Schedule query already handled in message
