@@ -537,6 +537,11 @@ class AIManager: ObservableObject {
         originalTranscript: String
     ) async -> AICalendarResponse {
 
+        print("🔄 Converting AI action to response")
+        print("   Intent: \(action.intent)")
+        print("   Message: \(action.message)")
+        print("   Parameters: \(action.parameters)")
+
         // Handle clarification requests
         if action.needsClarification {
             return AICalendarResponse(
@@ -784,13 +789,17 @@ class AIManager: ObservableObject {
 
         case "create_task":
             print("✅ Processing create_task intent...")
+            print("📋 Task parameters received: \(action.parameters)")
 
             guard let title = action.parameters["title"]?.stringValue else {
+                print("⚠️ No title found in parameters!")
                 return AICalendarResponse(
                     message: "I need a title for the task. What should the task be called?",
                     shouldContinueListening: true
                 )
             }
+
+            print("📝 Task title: \(title)")
 
             // Extract task parameters
             let description = action.parameters["description"]?.stringValue
@@ -805,10 +814,18 @@ class AIManager: ObservableObject {
                 tags = tagsArray.compactMap { $0.stringValue }
             }
 
-            // Extract due date
+            // Extract due date or scheduled time
             var dueDate: Date?
+            var scheduledTime: Date?
+
             if let dueDateStr = action.parameters["due_date"]?.stringValue {
                 dueDate = ISO8601DateFormatter().date(from: dueDateStr)
+                print("📅 Due date parsed: \(dueDate?.description ?? "nil")")
+            }
+
+            if let scheduledTimeStr = action.parameters["scheduled_time"]?.stringValue {
+                scheduledTime = ISO8601DateFormatter().date(from: scheduledTimeStr)
+                print("⏰ Scheduled time parsed: \(scheduledTime?.description ?? "nil")")
             }
 
             // Extract event ID if this is an event-related task
@@ -822,8 +839,14 @@ class AIManager: ObservableObject {
                 estimatedMinutes: durationMinutes,
                 dueDate: dueDate,
                 project: project,
-                tags: tags
+                tags: tags,
+                scheduledTime: scheduledTime
             )
+
+            print("🎯 Creating task: \(task.title)")
+            print("   Priority: \(task.priority.rawValue)")
+            print("   Due date: \(task.dueDate?.description ?? "none")")
+            print("   Scheduled time: \(task.scheduledTime?.description ?? "none")")
 
             // Add task to appropriate location
             if let eventId = eventId {
@@ -832,7 +855,11 @@ class AIManager: ObservableObject {
             } else {
                 // For standalone tasks, use a special "standalone" event ID
                 EventTaskManager.shared.addTask(task, to: "standalone_tasks")
-                print("✅ Standalone task created")
+                print("✅ Standalone task created and added to 'standalone_tasks'")
+
+                // Verify it was added
+                let tasks = EventTaskManager.shared.getTasks(for: "standalone_tasks")
+                print("📊 Total standalone tasks now: \(tasks?.tasks.count ?? 0)")
             }
 
             return AICalendarResponse(
