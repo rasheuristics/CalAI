@@ -198,14 +198,13 @@ class AIManager: ObservableObject {
                         shouldContinueListening: response.shouldContinueListening
                     )
 
-                    // Execute actions if provided with non-empty parameters
-                    if !response.parameters.isEmpty {
-                        await executeEnhancedAction(
-                            type: response.intent,
-                            parameters: response.parameters,
-                            response: calendarResponse
-                        )
-                    }
+                    // Execute actions - pass original transcript for fallback extraction
+                    await executeEnhancedAction(
+                        type: response.intent,
+                        parameters: response.parameters,
+                        originalTranscript: transcript,
+                        response: calendarResponse
+                    )
                 }
 
                 await MainActor.run {
@@ -229,13 +228,15 @@ class AIManager: ObservableObject {
     private func executeEnhancedAction(
         type: String,
         parameters: [String: ConversationalAIService.AnyCodableValue],
+        originalTranscript: String,
         response: AICalendarResponse
     ) async {
         print("🎬 Executing action: \(type)")
         print("📋 Parameters: \(parameters)")
+        print("📝 Original transcript: \(originalTranscript)")
 
         // Convert AnyCodableValue parameters to strings for easier access
-        let stringParams = parameters.mapValues { value -> String in
+        var stringParams = parameters.mapValues { value -> String in
             switch value {
             case .string(let str):
                 return str
@@ -256,6 +257,12 @@ class AIManager: ObservableObject {
             }
         }
 
+        // If parameters are empty but this looks like a task creation, extract from transcript
+        if (type == "create" || type.contains("task")) && parameters.isEmpty {
+            print("⚠️ Empty parameters - attempting fallback extraction from transcript")
+            stringParams = extractTaskFromTranscript(originalTranscript)
+        }
+
         switch type {
         case "createEvent":
             // Handle event creation
@@ -265,12 +272,18 @@ class AIManager: ObservableObject {
                 // Implementation will come from existing event creation logic
             }
 
-        case "createTask", "create_task":
+        case "create", "createTask", "create_task":
             // Handle task creation
             print("🎯 Creating task from enhanced AI...")
 
             guard let title = stringParams["title"] else {
                 print("⚠️ No title found in parameters!")
+                return
+            }
+
+            // If title is empty, skip
+            if title.trimmingCharacters(in: .whitespaces).isEmpty {
+                print("⚠️ Title is empty after extraction!")
                 return
             }
 
@@ -3103,6 +3116,59 @@ class AIManager: ObservableObject {
     func generateTasksForEvent(_ event: UnifiedEvent) async throws -> TaskGenerationResult {
         let taskGenerator = AITaskGenerator()
         return try await taskGenerator.generateTasks(for: event)
+    }
+
+    // MARK: - Task Extraction Fallback
+
+    private func extractTaskFromTranscript(_ transcript: String) -> [String: String] {
+        print("🔍 Extracting task details from transcript: \(transcript)")
+        var params: [String: String] = [:]
+
+        let lowercased = transcript.lowercased()
+
+        // Extract title - remove task creation keywords
+        var title = transcript
+        let taskPrefixes = ["create a task", "create task", "add a task", "add task", "new task", "make a task", "make task"]
+        for prefix in taskPrefixes {
+            if let range = lowercased.range(of: prefix) {
+                title = String(transcript[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+                break
+            }
+        }
+
+        // Remove time indicators from title to clean it up
+        let timeKeywords = ["for", "at", "by", "tomorrow", "today", "tonight", "am", "pm"]
+        var cleanTitle = title
+        for keyword in timeKeywords {
+            if let range = cleanTitle.lowercased().range(of: " \(keyword) ") {
+                cleanTitle = String(cleanTitle[..<range.lowerBound])
+                break
+            }
+        }
+
+        params["title"] = cleanTitle.trimmingCharacters(in: .whitespaces)
+        print("📝 Extracted title: \(params["title"] ?? "")")
+
+        // Extract scheduled time using SmartEventParser's time extraction
+        let parser = SmartEventParser()
+        if let parsedEvent = parser.parseEvent(from: transcript) {
+            if let startTime = parsedEvent.startTime {
+                let formatter = ISO8601DateFormatter()
+                params["scheduled_time"] = formatter.string(from: startTime)
+                print("⏰ Extracted scheduled time: \(startTime)")
+            }
+        }
+
+        // Extract priority
+        if lowercased.contains("high priority") || lowercased.contains("urgent") || lowercased.contains("important") {
+            params["priority"] = "High"
+        } else if lowercased.contains("low priority") {
+            params["priority"] = "Low"
+        } else {
+            params["priority"] = "Medium"
+        }
+
+        return params
     }
 
 }
