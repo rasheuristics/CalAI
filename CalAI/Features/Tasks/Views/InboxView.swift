@@ -61,13 +61,18 @@ struct InboxView: View {
                 )
             }
             .sheet(isPresented: $showingTaskDetail) {
-                if let task = selectedTask, let eventId = selectedEventId {
-                    // Use existing TaskDetailView from EventTasksSystem
-                    TaskDetailView(
-                        task: .constant(task),
+                if let task = selectedTask {
+                    // Get the event ID (either from selection or by finding it)
+                    let eventId = selectedEventId ?? taskManager.findEventId(for: task) ?? "standalone_tasks"
+
+                    // Use unified StandaloneTaskSheet for editing
+                    StandaloneTaskSheet(
+                        taskManager: taskManager,
                         fontManager: fontManager,
-                        eventId: eventId,
-                        onSave: {}
+                        initialList: selectedList,
+                        linkedEventId: nil,  // Keep nil since we're editing an existing task
+                        editingTask: task,
+                        eventIdForEditing: eventId
                     )
                 }
             }
@@ -133,7 +138,14 @@ struct InboxView: View {
                                 fontManager: fontManager,
                                 onTap: {
                                     selectedTask = task
-                                    selectedEventId = task.linkedEventId
+                                    // Find the event ID for this task
+                                    // First try linkedEventId, then search for it
+                                    if let linkedId = task.linkedEventId {
+                                        selectedEventId = linkedId
+                                    } else {
+                                        // Search through all event tasks to find which event contains this task
+                                        selectedEventId = taskManager.findEventId(for: task) ?? "standalone_tasks"
+                                    }
                                     showingTaskDetail = true
                                 },
                                 onSchedule: { task, eventId in
@@ -684,6 +696,17 @@ struct MiniWeekTimeline: View {
             if showMonthCalendar {
                 AdditionalWeeksView(selectedDate: $selectedDate, currentWeekDays: currentWeekDays)
                     .transition(.move(edge: .top).combined(with: .opacity))
+                    .gesture(
+                        DragGesture()
+                            .onEnded { value in
+                                // If user swipes up on the additional weeks, collapse it
+                                if value.translation.height < -50 {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        showMonthCalendar = false
+                                    }
+                                }
+                            }
+                    )
             }
 
             // Scrollable timeline
@@ -731,17 +754,6 @@ struct MiniWeekTimeline: View {
                             // Scroll to 8 AM
                             proxy.scrollTo("hour_8", anchor: .top)
                         }
-                        .simultaneousGesture(
-                            DragGesture()
-                                .onEnded { value in
-                                    // If month calendar is showing and user swipes up, hide it
-                                    if showMonthCalendar && value.translation.height < -50 {
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                            showMonthCalendar = false
-                                        }
-                                    }
-                                }
-                        )
                     }
                 }
             }
