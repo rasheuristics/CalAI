@@ -98,6 +98,7 @@ class AIManager: ObservableObject {
     private let voiceResponseGenerator: VoiceResponseGenerator
     private let conversationalAI: ConversationalAIService
     private var enhancedConversationalAI: EnhancedConversationalAI?
+    private let intentClassifier: IntentClassifier
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -110,10 +111,11 @@ class AIManager: ObservableObject {
         self.smartEventParser = SmartEventParser()
         self.voiceResponseGenerator = VoiceResponseGenerator()
         self.conversationalAI = ConversationalAIService()
+        self.intentClassifier = IntentClassifier()
 
-        // Initialize enhanced conversational AI (using OpenAI backend)
         self.enhancedConversationalAI = EnhancedConversationalAI(aiService: self.conversationalAI)
         print("✅ Enhanced Conversational AI with memory enabled (OpenAI backend)")
+        print("✅ Apple Intents-based classification enabled for task vs event detection")
     }
 
     // MARK: - Enhanced Conversational Processing
@@ -123,6 +125,12 @@ class AIManager: ObservableObject {
         calendarEvents: [UnifiedEvent],
         completion: @escaping (AICalendarResponse) -> Void
     ) {
+        // Prevent concurrent AI requests
+        guard !isProcessing else {
+            print("⚠️ AI is already processing a request - ignoring duplicate")
+            return
+        }
+
         guard let enhancedAI = enhancedConversationalAI else {
             // Fall back to standard processing
             processVoiceCommand(transcript, calendarEvents: calendarEvents, completion: completion)
@@ -135,7 +143,7 @@ class AIManager: ObservableObject {
         Task {
             do {
                 // Process with conversation memory
-                let response = try await enhancedAI.processWithMemory(
+                var response = try await enhancedAI.processWithMemory(
                     message: transcript,
                     calendarEvents: calendarEvents
                 )
@@ -146,8 +154,65 @@ class AIManager: ObservableObject {
                 print("   Parameters: \(response.parameters)")
                 print("   Needs clarification: \(response.needsClarification)")
 
+                // APPLE INTENTS-BASED CLASSIFICATION
+                // Use IntentClassifier to determine if this should be a task or event
+                let classification = intentClassifier.classify(transcript)
+                print("🎯 IntentClassifier result: \(classification.type.description) (confidence: \(String(format: "%.2f", classification.confidence)))")
+
+                // Apply intent correction based on classification
+                switch classification.type {
+                case .task:
+                    // If AI said query/modify but classifier says task with high confidence
+                    if (response.intent == "query" || response.intent == "modify_schedule") && classification.confidence > 0.7 {
+                        print("⚠️ AI misclassified as \(response.intent) - IntentClassifier correcting to create_task")
+                        response = ConversationalAIService.AIAction(
+                            intent: "create_task",
+                            parameters: [:],  // Will be extracted from transcript
+                            message: "I'll create those tasks for you.",
+                            needsClarification: false,
+                            clarificationQuestion: nil,
+                            shouldContinueListening: false,
+                            referencedEventIds: nil
+                        )
+                    }
+
+                case .event:
+                    // If AI said task/create but classifier says event with high confidence
+                    if (response.intent == "create_task" || response.intent == "create") && classification.confidence > 0.7 {
+                        print("⚠️ AI misclassified as \(response.intent) - IntentClassifier correcting to create_event")
+                        response = ConversationalAIService.AIAction(
+                            intent: "create_event",
+                            parameters: response.parameters,
+                            message: response.message,
+                            needsClarification: response.needsClarification,
+                            clarificationQuestion: response.clarificationQuestion,
+                            shouldContinueListening: response.shouldContinueListening,
+                            referencedEventIds: response.referencedEventIds
+                        )
+                    }
+
+                case .query, .update, .delete:
+                    // Trust the classifier for these explicit intent types
+                    if classification.confidence > 0.8 && response.intent != classification.type.description {
+                        print("⚠️ IntentClassifier overriding AI intent to \(classification.type.description)")
+                        response = ConversationalAIService.AIAction(
+                            intent: classification.type.description,
+                            parameters: response.parameters,
+                            message: response.message,
+                            needsClarification: response.needsClarification,
+                            clarificationQuestion: response.clarificationQuestion,
+                            shouldContinueListening: response.shouldContinueListening,
+                            referencedEventIds: response.referencedEventIds
+                        )
+                    }
+
+                case .unknown:
+                    // Low confidence - trust the AI's original classification
+                    print("⚠️ Low confidence classification - trusting AI intent: \(response.intent)")
+                }
+
                 // Handle query intent specially to include event list
-                let calendarResponse: AICalendarResponse
+                var calendarResponse: AICalendarResponse
                 if response.intent == "query" {
                     // Extract time range and filter events for query responses
                     let (startDate, endDate) = extractTimeRange(from: transcript)
@@ -199,7 +264,7 @@ class AIManager: ObservableObject {
                     )
 
                     // Execute actions - pass original transcript for fallback extraction
-                    await executeEnhancedAction(
+                    calendarResponse = await executeEnhancedAction(
                         type: response.intent,
                         parameters: response.parameters,
                         originalTranscript: transcript,
@@ -230,7 +295,7 @@ class AIManager: ObservableObject {
         parameters: [String: ConversationalAIService.AnyCodableValue],
         originalTranscript: String,
         response: AICalendarResponse
-    ) async {
+    ) async -> AICalendarResponse {
         print("🎬 Executing action: \(type)")
         print("📋 Parameters: \(parameters)")
         print("📝 Original transcript: \(originalTranscript)")
@@ -258,85 +323,156 @@ class AIManager: ObservableObject {
         }
 
         // If parameters are empty but this looks like a task creation, extract from transcript
-        if (type == "create" || type.contains("task")) && parameters.isEmpty {
+        // Now supports multiple tasks!
+        var allTaskParams: [[String: String]] = []
+
+        // Only extract tasks if this is actually a task intent (not event)
+        if type.contains("task") && parameters.isEmpty {
             print("⚠️ Empty parameters - attempting fallback extraction from transcript")
-            stringParams = extractTaskFromTranscript(originalTranscript)
+            allTaskParams = extractMultipleTasksFromTranscript(originalTranscript)
+        } else if type.contains("task") {
+            // Even if we have parameters, check if transcript contains multiple tasks
+            allTaskParams = extractMultipleTasksFromTranscript(originalTranscript)
+        } else if !type.contains("event") {
+            // Single task from parameters (only if not an event)
+            allTaskParams = [stringParams]
         }
 
         switch type {
-        case "createEvent":
-            // Handle event creation
-            if let title = stringParams["title"],
-               let startDateStr = stringParams["startDate"] {
-                print("📅 Creating event: \(title) at \(startDateStr)")
-                // Implementation will come from existing event creation logic
-            }
-
-        case "create", "createTask", "create_task":
-            // Handle task creation
-            print("🎯 Creating task from enhanced AI...")
+        case "create_event", "createEvent":
+            // Handle event creation from IntentClassifier
+            print("📅 Creating calendar event from parameters...")
 
             guard let title = stringParams["title"] else {
-                print("⚠️ No title found in parameters!")
-                return
+                print("⚠️ No title found for event, cannot create")
+                return response
             }
 
-            // If title is empty, skip
-            if title.trimmingCharacters(in: .whitespaces).isEmpty {
-                print("⚠️ Title is empty after extraction!")
-                return
+            // Parse dates
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+            var startDate: Date?
+            var endDate: Date?
+
+            if let startDateStr = stringParams["startDate"] {
+                startDate = dateFormatter.date(from: startDateStr) ?? ISO8601DateFormatter().date(from: startDateStr)
             }
 
-            print("📝 Task title: \(title)")
-
-            // Extract priority
-            let priorityStr = stringParams["priority"] ?? "medium"
-            let priority = TaskPriority(rawValue: priorityStr.capitalized) ?? .medium
-            print("   Priority: \(priority.rawValue)")
-
-            // Extract description
-            let description = stringParams["description"]
-
-            // Extract scheduled time
-            var scheduledTime: Date?
-            if let scheduledTimeStr = stringParams["scheduled_time"] ?? stringParams["scheduledTime"] {
-                scheduledTime = ISO8601DateFormatter().date(from: scheduledTimeStr)
-                print("   Scheduled time: \(scheduledTime?.description ?? "none")")
+            if let endDateStr = stringParams["endDate"] {
+                endDate = dateFormatter.date(from: endDateStr) ?? ISO8601DateFormatter().date(from: endDateStr)
             }
 
-            // Extract due date
-            var dueDate: Date?
-            if let dueDateStr = stringParams["due_date"] ?? stringParams["dueDate"] {
-                dueDate = ISO8601DateFormatter().date(from: dueDateStr)
-                print("   Due date: \(dueDate?.description ?? "none")")
+            // If no dates from parameters, use current date
+            if startDate == nil {
+                startDate = Date()
+                endDate = Calendar.current.date(byAdding: .hour, value: 1, to: startDate!)
             }
 
-            // Extract duration
-            let durationMinutes = Int(stringParams["duration_minutes"] ?? stringParams["durationMinutes"] ?? "")
+            let location = stringParams["location"]
 
-            // If task has scheduled time but no duration, set a default duration of 30 minutes
-            var duration: TimeInterval?
-            if let _ = scheduledTime {
-                let minutes = durationMinutes ?? 30  // Default to 30 minutes
-                duration = TimeInterval(minutes * 60)
-            }
+            print("   Title: \(title)")
+            print("   Start: \(startDate?.description ?? "nil")")
+            print("   End: \(endDate?.description ?? "nil")")
+            print("   Location: \(location ?? "nil")")
 
-            // Create the task
-            let task = EventTask(
+            // Create the calendar command
+            let command = CalendarCommand(
+                type: .createEvent,
                 title: title,
-                description: description,
-                priority: priority,
-                estimatedMinutes: durationMinutes,
-                dueDate: dueDate,
-                scheduledTime: scheduledTime,
-                duration: duration
+                startDate: startDate,
+                endDate: endDate,
+                location: location
             )
 
-            EventTaskManager.shared.addTask(task, to: "standalone_tasks")
-            print("✅ Task created and added to standalone_tasks")
+            var modifiedResponse = response
+            modifiedResponse.command = command
+            print("✅ Calendar event command created")
+            return modifiedResponse
 
-            // Verify it was added
+        case "create", "createTask", "create_task":
+            // Handle task creation - now supports multiple tasks!
+            print("🎯 Creating \(allTaskParams.count) task(s) from enhanced AI...")
+
+            var createdCount = 0
+
+            for (index, taskParams) in allTaskParams.enumerated() {
+                print("\n📝 Processing task \(index + 1) of \(allTaskParams.count)...")
+
+                guard let title = taskParams["title"] else {
+                    print("⚠️ No title found for task \(index + 1), skipping")
+                    continue
+                }
+
+                // If title is empty, skip
+                if title.trimmingCharacters(in: .whitespaces).isEmpty {
+                    print("⚠️ Title is empty for task \(index + 1), skipping")
+                    continue
+                }
+
+                // Skip incomplete tasks (ending with prepositions or articles)
+                let trimmedTitle = title.trimmingCharacters(in: .whitespaces).lowercased()
+                let incompleteEndings = ["to", "for", "with", "about", "from", "by", "at", "in", "on", "an", "a", "the"]
+                let lastWord = trimmedTitle.components(separatedBy: " ").last ?? ""
+
+                if incompleteEndings.contains(lastWord) {
+                    print("⚠️ Task \(index + 1) appears incomplete (ends with '\(lastWord)'), skipping")
+                    continue
+                }
+
+                print("   Task title: \(title)")
+
+                // Extract priority
+                let priorityStr = taskParams["priority"] ?? "medium"
+                let priority = TaskPriority(rawValue: priorityStr.capitalized) ?? .medium
+                print("   Priority: \(priority.rawValue)")
+
+                // Extract description
+                let description = taskParams["description"]
+
+                // Extract scheduled time
+                var scheduledTime: Date?
+                if let scheduledTimeStr = taskParams["scheduled_time"] ?? taskParams["scheduledTime"] {
+                    scheduledTime = ISO8601DateFormatter().date(from: scheduledTimeStr)
+                    print("   Scheduled time: \(scheduledTime?.description ?? "none")")
+                }
+
+                // Extract due date
+                var dueDate: Date?
+                if let dueDateStr = taskParams["due_date"] ?? taskParams["dueDate"] {
+                    dueDate = ISO8601DateFormatter().date(from: dueDateStr)
+                    print("   Due date: \(dueDate?.description ?? "none")")
+                }
+
+                // Extract duration
+                let durationMinutes = Int(taskParams["duration_minutes"] ?? taskParams["durationMinutes"] ?? "")
+
+                // If task has scheduled time but no duration, set a default duration of 30 minutes
+                var duration: TimeInterval?
+                if let _ = scheduledTime {
+                    let minutes = durationMinutes ?? 30  // Default to 30 minutes
+                    duration = TimeInterval(minutes * 60)
+                }
+
+                // Create the task
+                let task = EventTask(
+                    title: title,
+                    description: description,
+                    priority: priority,
+                    estimatedMinutes: durationMinutes,
+                    dueDate: dueDate,
+                    duration: duration,
+                    scheduledTime: scheduledTime
+                )
+
+                EventTaskManager.shared.addTask(task, to: "standalone_tasks")
+                createdCount += 1
+                print("   ✅ Task \(index + 1) created and added to standalone_tasks")
+            }
+
+            // Verify they were added
             let tasks = EventTaskManager.shared.getTasks(for: "standalone_tasks")
+            print("\n🎉 Successfully created \(createdCount) task(s)")
             print("📊 Total standalone tasks now: \(tasks?.tasks.count ?? 0)")
 
         case "querySchedule":
@@ -346,6 +482,8 @@ class AIManager: ObservableObject {
         default:
             print("⚠️ Unknown action type: \(type)")
         }
+
+        return response
     }
 
     // MARK: - Context Management
@@ -370,6 +508,12 @@ class AIManager: ObservableObject {
     // MARK: - Main Command Processing
 
     func processVoiceCommand(_ transcript: String, conversationHistory: [ConversationItem] = [], calendarEvents: [UnifiedEvent] = [], calendarManager: CalendarManager? = nil, completion: @escaping (AICalendarResponse) -> Void) {
+        // Prevent concurrent AI requests
+        guard !isProcessing else {
+            print("⚠️ AI is already processing a request - ignoring duplicate")
+            return
+        }
+
         print("🧠 AI Manager processing transcript: \"\(transcript)\"")
         print("🔄 Current conversation state: \(conversationState)")
         isProcessing = true
@@ -858,92 +1002,204 @@ class AIManager: ObservableObject {
             print("✅ Processing create_task intent...")
             print("📋 Task parameters received: \(action.parameters)")
 
-            guard let title = action.parameters["title"]?.stringValue else {
-                print("⚠️ No title found in parameters!")
-                return AICalendarResponse(
-                    message: "I need a title for the task. What should the task be called?",
-                    shouldContinueListening: true
+            // Check if transcript contains multiple tasks
+            let allTaskParams = extractMultipleTasksFromTranscript(originalTranscript)
+            print("📊 Found \(allTaskParams.count) task(s) to create")
+
+            var createdCount = 0
+            var taskTitles: [String] = []
+
+            for (index, taskParams) in allTaskParams.enumerated() {
+                // Try to get title from extracted params first, then fallback to action parameters
+                guard let title = taskParams["title"] ?? action.parameters["title"]?.stringValue else {
+                    print("⚠️ No title found for task \(index + 1), skipping")
+                    continue
+                }
+
+                if title.trimmingCharacters(in: .whitespaces).isEmpty {
+                    print("⚠️ Title is empty for task \(index + 1), skipping")
+                    continue
+                }
+
+                // Skip incomplete tasks (ending with prepositions or articles)
+                let trimmedTitle = title.trimmingCharacters(in: .whitespaces).lowercased()
+                let incompleteEndings = ["to", "for", "with", "about", "from", "by", "at", "in", "on", "an", "a", "the"]
+                let lastWord = trimmedTitle.components(separatedBy: " ").last ?? ""
+
+                if incompleteEndings.contains(lastWord) {
+                    print("⚠️ Task \(index + 1) appears incomplete (ends with '\(lastWord)'), skipping: \(title)")
+                    continue
+                }
+
+                print("\n📝 Creating task \(index + 1): \(title)")
+
+                // Extract task parameters (prefer extracted, fallback to action params)
+                let description = taskParams["description"] ?? action.parameters["description"]?.stringValue
+                let priorityStr = taskParams["priority"] ?? action.parameters["priority"]?.stringValue ?? "medium"
+                let priority = TaskPriority(rawValue: priorityStr.capitalized) ?? .medium
+                let project = action.parameters["project"]?.stringValue
+                let durationMinutes = Int(taskParams["duration_minutes"] ?? "") ?? action.parameters["duration_minutes"]?.intValue
+
+                // Extract tags
+                var tags: [String] = []
+                if case .array(let tagsArray) = action.parameters["tags"] {
+                    tags = tagsArray.compactMap { $0.stringValue }
+                }
+
+                // Extract due date or scheduled time
+                var dueDate: Date?
+                var scheduledTime: Date?
+
+                if let dueDateStr = taskParams["due_date"] ?? action.parameters["due_date"]?.stringValue {
+                    dueDate = ISO8601DateFormatter().date(from: dueDateStr)
+                    print("   📅 Due date: \(dueDate?.description ?? "nil")")
+                }
+
+                if let scheduledTimeStr = taskParams["scheduled_time"] ?? action.parameters["scheduled_time"]?.stringValue {
+                    scheduledTime = ISO8601DateFormatter().date(from: scheduledTimeStr)
+                    print("   ⏰ Scheduled time: \(scheduledTime?.description ?? "nil")")
+                }
+
+                // Extract event ID if this is an event-related task
+                let eventId = action.parameters["event_id"]?.stringValue
+
+                // If task has scheduled time but no duration, set a default duration of 30 minutes
+                var duration: TimeInterval?
+                if let _ = scheduledTime {
+                    let minutes = durationMinutes ?? 30  // Default to 30 minutes
+                    duration = TimeInterval(minutes * 60)
+                }
+
+                // Create the task
+                let task = EventTask(
+                    title: title,
+                    description: description,
+                    priority: priority,
+                    estimatedMinutes: durationMinutes,
+                    dueDate: dueDate,
+                    project: project,
+                    tags: tags,
+                    duration: duration,
+                    scheduledTime: scheduledTime
                 )
+
+                print("   Priority: \(task.priority.rawValue)")
+                print("   Duration: \(task.duration?.description ?? "none")")
+
+                // Add task to appropriate location
+                if let eventId = eventId {
+                    EventTaskManager.shared.addTask(task, to: eventId)
+                    print("   ✅ Task added to event \(eventId)")
+                } else {
+                    // For standalone tasks, use a special "standalone" event ID
+                    EventTaskManager.shared.addTask(task, to: "standalone_tasks")
+                    print("   ✅ Task added to standalone_tasks")
+                }
+
+                createdCount += 1
+                taskTitles.append(title)
             }
 
-            print("📝 Task title: \(title)")
+            // Verify they were added
+            let tasks = EventTaskManager.shared.getTasks(for: "standalone_tasks")
+            print("\n🎉 Successfully created \(createdCount) task(s)")
+            print("📊 Total standalone tasks now: \(tasks?.tasks.count ?? 0)")
 
-            // Extract task parameters
-            let description = action.parameters["description"]?.stringValue
-            let priorityStr = action.parameters["priority"]?.stringValue ?? "medium"
-            let priority = TaskPriority(rawValue: priorityStr.capitalized) ?? .medium
-            let project = action.parameters["project"]?.stringValue
-            let durationMinutes = action.parameters["duration_minutes"]?.intValue
-
-            // Extract tags
-            var tags: [String] = []
-            if case .array(let tagsArray) = action.parameters["tags"] {
-                tags = tagsArray.compactMap { $0.stringValue }
-            }
-
-            // Extract due date or scheduled time
-            var dueDate: Date?
-            var scheduledTime: Date?
-
-            if let dueDateStr = action.parameters["due_date"]?.stringValue {
-                dueDate = ISO8601DateFormatter().date(from: dueDateStr)
-                print("📅 Due date parsed: \(dueDate?.description ?? "nil")")
-            }
-
-            if let scheduledTimeStr = action.parameters["scheduled_time"]?.stringValue {
-                scheduledTime = ISO8601DateFormatter().date(from: scheduledTimeStr)
-                print("⏰ Scheduled time parsed: \(scheduledTime?.description ?? "nil")")
-            }
-
-            // Extract event ID if this is an event-related task
-            let eventId = action.parameters["event_id"]?.stringValue
-
-            // If task has scheduled time but no duration, set a default duration of 30 minutes
-            var duration: TimeInterval?
-            if let _ = scheduledTime {
-                let minutes = durationMinutes ?? 30  // Default to 30 minutes
-                duration = TimeInterval(minutes * 60)
-            }
-
-            // Create the task
-            let task = EventTask(
-                title: title,
-                description: description,
-                priority: priority,
-                estimatedMinutes: durationMinutes,
-                dueDate: dueDate,
-                project: project,
-                tags: tags,
-                scheduledTime: scheduledTime,
-                duration: duration
-            )
-
-            print("🎯 Creating task: \(task.title)")
-            print("   Priority: \(task.priority.rawValue)")
-            print("   Due date: \(task.dueDate?.description ?? "none")")
-            print("   Scheduled time: \(task.scheduledTime?.description ?? "none")")
-            print("   Duration: \(task.duration?.description ?? "none")")
-
-            // Add task to appropriate location
-            if let eventId = eventId {
-                EventTaskManager.shared.addTask(task, to: eventId)
-                print("✅ Task added to event \(eventId)")
+            // Generate response message
+            let responseMessage: String
+            if createdCount == 0 {
+                responseMessage = "I couldn't create any tasks. Please provide a task title."
+            } else if createdCount == 1 {
+                responseMessage = action.message
             } else {
-                // For standalone tasks, use a special "standalone" event ID
-                EventTaskManager.shared.addTask(task, to: "standalone_tasks")
-                print("✅ Standalone task created and added to 'standalone_tasks'")
-
-                // Verify it was added
-                let tasks = EventTaskManager.shared.getTasks(for: "standalone_tasks")
-                print("📊 Total standalone tasks now: \(tasks?.tasks.count ?? 0)")
+                responseMessage = "I've created \(createdCount) tasks for you: \(taskTitles.joined(separator: ", "))"
             }
 
             return AICalendarResponse(
-                message: action.message,
+                message: responseMessage,
                 shouldContinueListening: false
             )
 
-        case "list_tasks", "update_task", "complete_task":
+        case "list_tasks":
+            // Handle task listing - fetch actual tasks
+            print("✅ Processing list_tasks intent...")
+
+            // Get all standalone tasks
+            let standaloneTasks = EventTaskManager.shared.getTasks(for: "standalone_tasks")?.tasks ?? []
+
+            // Filter by time range if specified in transcript
+            let lowercased = originalTranscript.lowercased()
+            var filteredTasks = standaloneTasks
+
+            if lowercased.contains("today") {
+                let calendar = Calendar.current
+                let today = calendar.startOfDay(for: Date())
+                let tomorrow = calendar.date(byAdding: .day, value: 1, to: today)!
+
+                filteredTasks = standaloneTasks.filter { task in
+                    if let dueDate = task.dueDate {
+                        return dueDate >= today && dueDate < tomorrow
+                    }
+                    if let scheduledTime = task.scheduledTime {
+                        return scheduledTime >= today && scheduledTime < tomorrow
+                    }
+                    return false
+                }
+            } else if lowercased.contains("tomorrow") {
+                let calendar = Calendar.current
+                let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: Date()))!
+                let dayAfter = calendar.date(byAdding: .day, value: 1, to: tomorrow)!
+
+                filteredTasks = standaloneTasks.filter { task in
+                    if let dueDate = task.dueDate {
+                        return dueDate >= tomorrow && dueDate < dayAfter
+                    }
+                    if let scheduledTime = task.scheduledTime {
+                        return scheduledTime >= tomorrow && scheduledTime < dayAfter
+                    }
+                    return false
+                }
+            }
+
+            // Generate response message
+            var message: String
+            if filteredTasks.isEmpty && (lowercased.contains("today") || lowercased.contains("tomorrow")) {
+                let timeframe = lowercased.contains("today") ? "today" : "tomorrow"
+                message = "You don't have any tasks scheduled for \(timeframe)."
+            } else if filteredTasks.isEmpty {
+                message = "You don't have any tasks yet."
+            } else {
+                let pendingTasks = filteredTasks.filter { !$0.isCompleted }
+                let completedTasks = filteredTasks.filter { $0.isCompleted }
+
+                if pendingTasks.isEmpty {
+                    message = "All \(filteredTasks.count) task\(filteredTasks.count == 1 ? "" : "s") completed! Great work!"
+                } else {
+                    let timeframe = lowercased.contains("today") ? " for today" : lowercased.contains("tomorrow") ? " for tomorrow" : ""
+                    message = "You have \(pendingTasks.count) pending task\(pendingTasks.count == 1 ? "" : "s")\(timeframe):\n\n"
+
+                    for (index, task) in pendingTasks.enumerated() {
+                        message += "\(index + 1). \(task.title)"
+                        if let dueDate = task.dueDate {
+                            let formatter = DateFormatter()
+                            formatter.timeStyle = .short
+                            message += " (due at \(formatter.string(from: dueDate)))"
+                        }
+                        message += " - \(task.priority.rawValue) priority\n"
+                    }
+
+                    if !completedTasks.isEmpty {
+                        message += "\nAnd \(completedTasks.count) completed task\(completedTasks.count == 1 ? "" : "s")."
+                    }
+                }
+            }
+
+            return AICalendarResponse(
+                message: message,
+                shouldContinueListening: false
+            )
+
+        case "update_task", "complete_task":
             // These intents are handled - return the AI's message
             print("✅ Processing \(action.intent) intent...")
             return AICalendarResponse(
@@ -3137,54 +3393,303 @@ class AIManager: ObservableObject {
 
     // MARK: - Task Extraction Fallback
 
+    /// Split transcript into multiple action items
+    /// Handles patterns like "I need to X, Y, and Z" or "Do A then B then C"
+    private func splitIntoActionItems(_ transcript: String) -> [String] {
+        print("🔀 Splitting transcript into action items: \(transcript)")
+
+        let lowercased = transcript.lowercased()
+
+        // Check if this is a multi-task command
+        let multiTaskIndicators = [
+            ("and then", " and then "),
+            ("then", " then "),
+            ("also", " also "),
+            ("and also", " and also "),
+            ("plus", " plus "),
+            ("comma", ", "),
+            ("semicolon", "; ")
+        ]
+
+        // Try to split by common separators
+        var items: [String] = []
+
+        // First, try splitting by commas (comma-separated list)
+        if transcript.contains(", ") {
+            let commaSplit = transcript.components(separatedBy: ", ")
+            for part in commaSplit {
+                // Check if this part has "and" or "as well as" connecting two items
+                if part.lowercased().contains(" as well as ") {
+                    let asWellAsSplit = part.components(separatedBy: " as well as ")
+                    items.append(contentsOf: asWellAsSplit)
+                } else if part.lowercased().contains(" and ") && !part.lowercased().contains("create") && !part.lowercased().contains("add") {
+                    let andSplit = part.components(separatedBy: " and ")
+                    items.append(contentsOf: andSplit)
+                } else {
+                    items.append(part)
+                }
+            }
+        }
+        // Try splitting by "and" (without comma) - need to detect action verbs
+        else if lowercased.contains(" and ") {
+            // Split by "and" only if it connects two action items
+            // Look for action verbs before and after "and"
+            let actionVerbs = ["call", "email", "send", "buy", "schedule", "remind", "create", "add", "write", "review", "finish", "prepare", "check", "set", "setup", "set up", "grocery", "shopping"]
+
+            let parts = transcript.components(separatedBy: " and ")
+            var isMultiTask = false
+
+            // Check if we have action verbs in multiple parts
+            var actionCount = 0
+            for part in parts {
+                let partLower = part.lowercased()
+                if actionVerbs.contains(where: { partLower.contains($0) }) {
+                    actionCount += 1
+                }
+            }
+
+            if actionCount >= 2 {
+                // This is a multi-task command, split it
+                // But also check each part for "as well as"
+                for part in parts {
+                    if part.lowercased().contains(" as well as ") {
+                        let asWellAsSplit = part.components(separatedBy: " as well as ")
+                        items.append(contentsOf: asWellAsSplit)
+                    } else {
+                        items.append(part)
+                    }
+                }
+                isMultiTask = true
+            }
+
+            if !isMultiTask {
+                // Not a multi-task, keep as single item
+                items = [transcript]
+            }
+        }
+        // Try splitting by "as well as"
+        else if lowercased.contains(" as well as ") {
+            let parts = transcript.components(separatedBy: " as well as ")
+            items = parts
+        }
+        // Try splitting by "then"
+        else if lowercased.contains(" then ") {
+            items = transcript.components(separatedBy: " then ")
+        }
+        // Try splitting by semicolon
+        else if transcript.contains(";") {
+            items = transcript.components(separatedBy: ";")
+        }
+        // No clear separators - return as single item
+        else {
+            items = [transcript]
+        }
+
+        // Clean up each item
+        items = items.map { item in
+            var cleaned = item.trimmingCharacters(in: .whitespaces)
+
+            // Remove leading conjunctions/connectors
+            let leadingWords = ["and", "also", "then", "plus", "as well"]
+            for word in leadingWords {
+                if cleaned.lowercased().hasPrefix("\(word) ") {
+                    cleaned = String(cleaned.dropFirst(word.count + 1)).trimmingCharacters(in: .whitespaces)
+                }
+            }
+
+            return cleaned
+        }.filter { !$0.isEmpty }
+
+        print("📋 Split into \(items.count) action items:")
+        for (index, item) in items.enumerated() {
+            print("   \(index + 1). \(item)")
+        }
+
+        return items
+    }
+
+    /// Determine if an action item should be a calendar event or a task
+    private func shouldBeEvent(_ transcript: String) -> Bool {
+        let lowercased = transcript.lowercased()
+
+        // Event indicators (synchronous activities with others)
+        let eventKeywords = [
+            "call", "phone call", "meeting", "meet", "lunch", "dinner",
+            "breakfast", "coffee", "appointment", "interview", "demo",
+            "presentation", "conference", "sync", "standup", "review"
+        ]
+
+        // Task indicators (async solo work)
+        let taskKeywords = [
+            "email", "send", "write", "finish", "complete", "buy",
+            "shopping", "grocery", "pick up", "drop off", "submit",
+            "file", "prepare", "draft", "review document", "read"
+        ]
+
+        // Check for task keywords first (higher priority)
+        for keyword in taskKeywords {
+            if lowercased.contains(keyword) {
+                return false // It's a task
+            }
+        }
+
+        // Check for event keywords
+        for keyword in eventKeywords {
+            if lowercased.contains(keyword) {
+                return true // It's an event
+            }
+        }
+
+        // Check if it mentions other people (with, invite, etc.)
+        if lowercased.contains(" with ") || lowercased.contains("invite") {
+            return true // Likely an event
+        }
+
+        // Default to task if unclear
+        return false
+    }
+
+    /// Extract multiple tasks from a transcript
+    /// Returns an array of task parameter dictionaries
+    private func extractMultipleTasksFromTranscript(_ transcript: String) -> [[String: String]] {
+        print("🔍 Extracting multiple tasks from transcript")
+
+        // Split into individual action items
+        let actionItems = splitIntoActionItems(transcript)
+
+        // If only one item, use the original single-task extraction
+        if actionItems.count == 1 {
+            return [extractTaskFromTranscript(transcript)]
+        }
+
+        // Extract parameters for each action item
+        var allTasks: [[String: String]] = []
+
+        for (index, item) in actionItems.enumerated() {
+            print("📝 Processing action item \(index + 1): \(item)")
+
+            // For multi-task commands, prepend "create task" if not present
+            var taskTranscript = item
+            let hasTaskKeyword = item.lowercased().contains("task") ||
+                                item.lowercased().contains("create") ||
+                                item.lowercased().contains("add") ||
+                                item.lowercased().contains("call") ||
+                                item.lowercased().contains("email") ||
+                                item.lowercased().contains("buy") ||
+                                item.lowercased().contains("send") ||
+                                item.lowercased().contains("write")
+
+            if !hasTaskKeyword {
+                taskTranscript = "create task \(item)"
+            }
+
+            let params = extractTaskFromTranscript(taskTranscript)
+            allTasks.append(params)
+        }
+
+        print("✅ Extracted \(allTasks.count) tasks total")
+        return allTasks
+    }
+
     private func extractTaskFromTranscript(_ transcript: String) -> [String: String] {
         print("🔍 Extracting task details from transcript: \(transcript)")
         var params: [String: String] = [:]
 
         let lowercased = transcript.lowercased()
 
-        // Extract title - remove task creation keywords
+        // Extract title - remove task creation keywords and natural language prefixes
         var title = transcript
-        let taskPrefixes = ["create a task", "create task", "add a task", "add task", "new task", "make a task", "make task"]
+        let taskPrefixes = [
+            "i need to ",
+            "i have to ",
+            "i should ",
+            "i want to ",
+            "i must ",
+            "remind me to ",
+            "remember to ",
+            "don't forget to ",
+            "create a task to ",
+            "create a task for ",
+            "create a task ",
+            "create task to ",
+            "create task for ",
+            "create task ",
+            "add a task to ",
+            "add a task for ",
+            "add a task ",
+            "add task to ",
+            "add task for ",
+            "add task ",
+            "new task to ",
+            "new task for ",
+            "new task ",
+            "make a task to ",
+            "make a task for ",
+            "make a task ",
+            "make task to ",
+            "make task for ",
+            "make task "
+        ]
+
         for prefix in taskPrefixes {
-            if let range = lowercased.range(of: prefix) {
-                title = String(transcript[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+            if lowercased.hasPrefix(prefix) {
+                title = String(transcript.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
                 break
             }
         }
 
         // Remove time indicators from title to clean it up
-        let timeKeywords = ["for", "at", "by", "tomorrow", "today", "tonight", "am", "pm"]
+        // Match patterns like "at 3pm", "by 5pm", "at 3 pm", "tomorrow", etc.
         var cleanTitle = title
-        for keyword in timeKeywords {
-            if let range = cleanTitle.lowercased().range(of: " \(keyword) ") {
-                cleanTitle = String(cleanTitle[..<range.lowerBound])
-                break
+        let titleLower = cleanTitle.lowercased()
+
+        // Find time-related patterns and remove everything after them
+        let timePatterns = [
+            " at ",
+            " by ",
+            " for ",
+            " tomorrow",
+            " today",
+            " tonight",
+            " this morning",
+            " this afternoon",
+            " this evening",
+            " next week",
+            " next month"
+        ]
+
+        var earliestRange: Range<String.Index>? = nil
+
+        for pattern in timePatterns {
+            if let range = titleLower.range(of: pattern) {
+                if earliestRange == nil || range.lowerBound < earliestRange!.lowerBound {
+                    earliestRange = range
+                }
             }
         }
+
+        if let range = earliestRange {
+            cleanTitle = String(cleanTitle[..<range.lowerBound])
+        }
+
+        // Smart title condensing - make titles concise and action-oriented
+        cleanTitle = condenseTitle(cleanTitle)
 
         params["title"] = cleanTitle.trimmingCharacters(in: .whitespaces)
         print("📝 Extracted title: \(params["title"] ?? "")")
 
         // Extract scheduled time using SmartEventParser's time extraction
+        // IMPORTANT: Parse the ORIGINAL item text, not the cleaned title
         let parser = SmartEventParser()
-        let parseResult = parser.parse(transcript)
 
-        // Extract entities from parse result
-        let entities: ExtractedEntities?
-        switch parseResult {
-        case .success(let extractedEntities, _):
-            entities = extractedEntities
-        case .needsClarification(let extractedEntities, _):
-            entities = extractedEntities
-        case .failure:
-            entities = nil
-        }
-
-        if let startTime = entities?.time {
+        // For split tasks, directly extract time without requiring action detection
+        if let startTime = parser.extractTime(from: transcript) {
             let formatter = ISO8601DateFormatter()
             params["scheduled_time"] = formatter.string(from: startTime)
+            params["due_date"] = formatter.string(from: startTime) // Also set due date
             print("⏰ Extracted scheduled time: \(startTime)")
+        } else {
+            print("⚠️ No time found in transcript: \(transcript)")
         }
 
         // Extract priority
@@ -3197,6 +3702,90 @@ class AIManager: ObservableObject {
         }
 
         return params
+    }
+
+    /// Condense a task title to be concise and action-oriented
+    /// Examples:
+    ///   "Set up a phone call with John" -> "Call John"
+    ///   "an email to Sarah" -> "Email Sarah"
+    ///   "Send an email out to Sarah" -> "Email Sarah"
+    ///   "grocery shopping" -> "Grocery shopping"
+    private func condenseTitle(_ title: String) -> String {
+        var condensed = title.trimmingCharacters(in: .whitespaces)
+        let lowercased = condensed.lowercased()
+
+        // Define action patterns with their condensed forms
+        let actionPatterns: [(pattern: String, replacement: String)] = [
+            // Phone/call related
+            ("set up a phone call with ", "Call "),
+            ("set up a call with ", "Call "),
+            ("schedule a phone call with ", "Call "),
+            ("schedule a call with ", "Call "),
+            ("make a phone call to ", "Call "),
+            ("make a call to ", "Call "),
+            ("phone call with ", "Call "),
+            ("call with ", "Call "),
+            ("phone ", "Call "),
+            ("call ", "Call "),
+
+            // Email related
+            ("send an email out to ", "Email "),
+            ("send an email to ", "Email "),
+            ("send email to ", "Email "),
+            ("write an email to ", "Email "),
+            ("write email to ", "Email "),
+            ("an email to ", "Email "),
+            ("email to ", "Email "),
+            ("email ", "Email "),
+
+            // Meeting related
+            ("set up a meeting with ", "Meet "),
+            ("schedule a meeting with ", "Meet "),
+            ("arrange a meeting with ", "Meet "),
+            ("meeting with ", "Meet "),
+            ("meet with ", "Meet "),
+
+            // General task patterns
+            ("set up ", ""),
+            ("schedule ", ""),
+            ("arrange ", ""),
+            ("organize ", ""),
+            ("plan ", ""),
+            ("do ", ""),
+            ("complete ", ""),
+            ("finish ", ""),
+            ("work on ", ""),
+
+            // Remove articles at the start
+            ("a ", ""),
+            ("an ", ""),
+            ("the ", "")
+        ]
+
+        // Apply patterns from longest to shortest to avoid partial matches
+        for (pattern, replacement) in actionPatterns {
+            if lowercased.hasPrefix(pattern) {
+                // Calculate the range to remove
+                let prefixLength = pattern.count
+                let remaining = String(condensed.dropFirst(prefixLength))
+
+                // Capitalize first letter of remaining text if not empty
+                if !remaining.isEmpty {
+                    let capitalizedRemaining = remaining.prefix(1).uppercased() + remaining.dropFirst()
+                    condensed = replacement + capitalizedRemaining
+                } else {
+                    condensed = replacement.trimmingCharacters(in: .whitespaces)
+                }
+                break
+            }
+        }
+
+        // Capitalize first letter if not already
+        if !condensed.isEmpty && condensed.first?.isLowercase == true {
+            condensed = condensed.prefix(1).uppercased() + condensed.dropFirst()
+        }
+
+        return condensed.trimmingCharacters(in: .whitespaces)
     }
 
 }
