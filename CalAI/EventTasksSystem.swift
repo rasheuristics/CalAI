@@ -625,6 +625,16 @@ class EventTaskManager: ObservableObject {
         return allTasks
     }
 
+    /// Find the event ID that contains a specific task
+    func findEventId(for task: EventTask) -> String? {
+        for (eventId, eventTasksContainer) in eventTasks {
+            if eventTasksContainer.tasks.contains(where: { $0.id == task.id }) {
+                return eventId
+            }
+        }
+        return nil
+    }
+
     /// Add a task to an event
     func addTask(_ task: EventTask, to eventId: String) {
         // Ensure linkedEventId is set for backward compatibility

@@ -24,7 +24,20 @@ struct CalendarTabView: View {
     @State private var showingShareView = false
     @State private var showingConflictList = false
 
+    // Day view swipe gesture state
+    @State private var daySwipeDragOffset: CGFloat = 0
+    @State private var isDayDragging = false
+    @State private var dayGestureDirection: GestureDirection = .none
+    @State private var isDayTransitioning = false
+    @State private var daySwipeProgress: CGFloat = 0
+
     private let eventFilterService = EventFilterService()
+
+    enum GestureDirection {
+        case none
+        case horizontal
+        case vertical
+    }
 
     var body: some View {
         ZStack {
@@ -78,33 +91,87 @@ struct CalendarTabView: View {
                         switch currentViewType {
                         case .day:
                             let timelineEvents = timelineEventsForDate(selectedDate)
-                            if timelineEvents.isEmpty && !calendarManager.isLoading {
-                                EmptyStateView(
-                                    icon: "calendar",
-                                    title: isToday(selectedDate) ? "No Events Today" : "No Events",
-                                    message: isToday(selectedDate) ? "Your calendar is clear for today." : "No events scheduled for this day."
-                                )
-                            } else {
-                                CompressedDayTimelineView(
-                                    date: selectedDate, // Show selected day
-                                    events: timelineEvents,
-                                    fontManager: fontManager,
-                                    isWeekView: false,
-                                    refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)-\($0.endDate.timeIntervalSince1970)" }.joined() + taskManager.getAllTasks().map { "\($0.id)-\($0.scheduledTime?.timeIntervalSince1970 ?? 0)" }.joined(),
-                                    onEventTap: { calendarEvent in
-                                        // Check if it's a task
-                                        if calendarEvent.id.hasPrefix("task-") {
-                                            print("📋 Tapped on scheduled task: \(calendarEvent.title ?? "Unknown")")
-                                            // TODO: Open task detail view
-                                        } else if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == calendarEvent.id }) {
-                                            print("📱 Opening EditEventView for: \(unifiedEvent.title)")
-                                            selectedEventForEdit = unifiedEvent
-                                            showingEditView = true
+                            Group {
+                                if timelineEvents.isEmpty && !calendarManager.isLoading {
+                                    EmptyStateView(
+                                        icon: "calendar",
+                                        title: isToday(selectedDate) ? "No Events Today" : "No Events",
+                                        message: isToday(selectedDate) ? "Your calendar is clear for today." : "No events scheduled for this day."
+                                    )
+                                } else {
+                                    CompressedDayTimelineView(
+                                        date: selectedDate, // Show selected day
+                                        events: timelineEvents,
+                                        fontManager: fontManager,
+                                        isWeekView: false,
+                                        refreshTrigger: calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)-\($0.endDate.timeIntervalSince1970)" }.joined(),
+                                        onEventTap: { calendarEvent in
+                                            // Only handle event taps (tasks are in Tasks tab)
+                                            if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == calendarEvent.id }) {
+                                                print("📱 Opening EditEventView for: \(unifiedEvent.title)")
+                                                selectedEventForEdit = unifiedEvent
+                                                showingEditView = true
+                                            }
+                                        }
+                                    )
+                                    .id("\(selectedDate.timeIntervalSince1970)-\(calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)-\($0.endDate.timeIntervalSince1970)" }.joined())") // Force recreation when events change
+                                }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                            .offset(x: daySwipeDragOffset)
+                            .simultaneousGesture(
+                                DragGesture(minimumDistance: 20)
+                                    .onChanged { value in
+                                        // Prevent gestures during transitions
+                                        guard !isDayTransitioning else { return }
+
+                                        let horizontalAmount = abs(value.translation.width)
+                                        let verticalAmount = abs(value.translation.height)
+
+                                        // Determine gesture direction on first movement
+                                        if dayGestureDirection == .none && (horizontalAmount > 10 || verticalAmount > 10) {
+                                            dayGestureDirection = horizontalAmount > verticalAmount ? .horizontal : .vertical
+                                        }
+
+                                        // Only process horizontal swipes
+                                        if dayGestureDirection == .horizontal && horizontalAmount > 20 {
+                                            isDayDragging = true
+
+                                            // Apply rubber-band effect at extremes (dampen beyond full screen width)
+                                            let screenWidth = UIScreen.main.bounds.width
+                                            let rawOffset = value.translation.width
+                                            let dampingFactor: CGFloat = 0.3 // Resistance beyond screen width
+
+                                            if abs(rawOffset) > screenWidth {
+                                                // Apply damping for over-scroll
+                                                let excess = abs(rawOffset) - screenWidth
+                                                let dampedExcess = excess * dampingFactor
+                                                daySwipeDragOffset = rawOffset > 0 ? screenWidth + dampedExcess : -(screenWidth + dampedExcess)
+                                            } else {
+                                                daySwipeDragOffset = rawOffset
+                                            }
+
+                                            // Calculate progress (0 to 1) based on distance to threshold
+                                            let threshold = screenWidth / 2
+                                            daySwipeProgress = min(abs(value.translation.width) / threshold, 1.0)
                                         }
                                     }
-                                )
-                                .id("\(selectedDate.timeIntervalSince1970)-\(calendarManager.unifiedEvents.map { "\($0.id)-\($0.startDate.timeIntervalSince1970)-\($0.endDate.timeIntervalSince1970)" }.joined())-\(taskManager.getAllTasks().map { "\($0.id)-\($0.scheduledTime?.timeIntervalSince1970 ?? 0)" }.joined())") // Force recreation when any event or task times change
-                            }
+                                    .onEnded { value in
+                                        guard !isDayTransitioning else { return }
+
+                                        if dayGestureDirection == .horizontal {
+                                            handleDaySwipeDragEnd(translation: value.translation.width, predictedEndTranslation: value.predictedEndTranslation.width)
+                                        }
+
+                                        // Reset gesture state
+                                        isDayDragging = false
+                                        daySwipeDragOffset = 0
+                                        daySwipeProgress = 0
+                                        dayGestureDirection = .none
+                                    }
+                            )
+                            .animation(.interactiveSpring(response: 0.5, dampingFraction: 0.8), value: daySwipeDragOffset)
                         case .week:
                             WeekViewWithCompressedTimeline(
                                 selectedDate: $selectedDate,
@@ -228,13 +295,8 @@ struct CalendarTabView: View {
         let dayEvents = unifiedEventsForDate(date)
         timelineEvents.append(contentsOf: dayEvents.map { TimelineEvent(from: $0) })
 
-        // Add scheduled tasks
-        let scheduledTasks = taskManager.getScheduledTasks(for: date)
-        for (task, _) in scheduledTasks {
-            if let scheduledTime = task.scheduledTime {
-                timelineEvents.append(TimelineEvent(from: task, scheduledAt: scheduledTime))
-            }
-        }
+        // Tasks are now only shown in the Tasks tab, not in the Calendar tab
+        // Removed task display from calendar view
 
         return timelineEvents
     }
@@ -243,6 +305,64 @@ struct CalendarTabView: View {
     private func eventHasConflict(_ eventId: String) -> ScheduleConflict? {
         return calendarManager.detectedConflicts.first { conflict in
             conflict.conflictingEvents.contains { $0.id == eventId }
+        }
+    }
+
+    // Handle day view swipe gesture completion
+    private func handleDaySwipeDragEnd(translation: CGFloat, predictedEndTranslation: CGFloat) {
+        let screenWidth = UIScreen.main.bounds.width
+        let distanceThreshold = screenWidth / 2 // Midpoint of screen
+
+        // Calculate velocity from predicted end translation
+        let velocity = abs(predictedEndTranslation - translation)
+        let velocityThreshold: CGFloat = 100 // Points per second threshold
+
+        // Quick swipe with high velocity requires less distance
+        let isQuickSwipe = velocity > velocityThreshold
+        let effectiveThreshold = isQuickSwipe ? screenWidth / 3 : distanceThreshold
+
+        if abs(translation) > effectiveThreshold {
+            // Passed threshold - smoothly complete the transition
+            isDayTransitioning = true
+            HapticManager.shared.light()
+
+            // Update date first
+            if translation > 0 {
+                // Swiped right - go to previous day
+                if let newDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) {
+                    selectedDate = newDate
+                }
+                // Animate: old page was at 0, new page comes from left (-screenWidth), slides to 0
+                daySwipeDragOffset = -screenWidth
+            } else {
+                // Swiped left - go to next day
+                if let newDate = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) {
+                    selectedDate = newDate
+                }
+                // Animate: old page was at 0, new page comes from right (+screenWidth), slides to 0
+                daySwipeDragOffset = screenWidth
+            }
+
+            // Animate new page sliding smoothly into center
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.75, blendDuration: 0)) {
+                daySwipeDragOffset = 0
+            }
+
+            // Re-enable gestures after full transition
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                isDayTransitioning = false
+            }
+        } else {
+            // Didn't pass threshold - slide back to current day with haptic feedback
+            HapticManager.shared.light()
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85, blendDuration: 0)) {
+                daySwipeDragOffset = 0
+            }
+
+            // Reset transition flag after snap-back
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                isDayTransitioning = false
+            }
         }
     }
 }
@@ -332,8 +452,8 @@ struct iOSCalendarHeader: View {
 
                     Spacer()
 
-                    // Only show arrows for Day, Month, and Year views (not Week)
-                    if currentViewType != .week {
+                    // Only show arrows for Month and Year views (Day and Week use swipe gestures)
+                    if currentViewType != .week && currentViewType != .day {
                         HStack(spacing: 24) {
                             Button(action: previousPeriod) {
                                 Image(systemName: "chevron.left")
@@ -374,7 +494,12 @@ struct iOSCalendarHeader: View {
 
     private var monthYearText: String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
+        // Show full date in day view, otherwise just month and year
+        if currentViewType == .day {
+            formatter.dateFormat = "MMMM d, yyyy"
+        } else {
+            formatter.dateFormat = "MMMM yyyy"
+        }
         return formatter.string(from: selectedDate)
     }
 

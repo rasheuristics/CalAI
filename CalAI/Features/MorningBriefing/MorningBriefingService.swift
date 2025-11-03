@@ -146,6 +146,167 @@ class MorningBriefingService: ObservableObject {
         }
     }
 
+    // MARK: - AI-Enhanced Briefing
+
+    #if canImport(FoundationModels)
+    /// Generate an AI-enhanced briefing using on-device AI (iOS 26+)
+    @available(iOS 26.0, *)
+    func generateEnhancedBriefing(for date: Date = Date(), completion: @escaping (DailyBriefing, String) -> Void) {
+        print("🤖 Starting AI-enhanced briefing generation...")
+        isGenerating = true
+
+        // Get today's events
+        guard let calendarManager = calendarManager else {
+            print("❌ CalendarManager not configured")
+            isGenerating = false
+            return
+        }
+
+        guard let weatherService = weatherService else {
+            print("❌ WeatherService not configured!")
+            isGenerating = false
+            return
+        }
+
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+
+        // Filter events for today
+        let todaysEvents = calendarManager.unifiedEvents.filter { event in
+            event.startDate >= startOfDay && event.startDate < endOfDay
+        }.sorted { $0.startDate < $1.startDate }
+
+        // Get today's tasks (if available)
+        let allTasks = EventTaskManager.shared.getAllTasks()
+        let todaysTasks = allTasks.filter { task in
+            guard let dueDate = task.dueDate else { return false }
+            return calendar.isDateInToday(dueDate)
+        }.map { $0.title }
+
+        // Convert to briefing events
+        let briefingEvents = todaysEvents.map { event in
+            BriefingEvent(
+                id: event.id,
+                title: event.title,
+                startTime: event.startDate,
+                endTime: event.endDate,
+                location: event.location,
+                isAllDay: event.isAllDay,
+                source: event.source
+            )
+        }
+
+        // Generate suggestions (keep the existing logic)
+        let suggestions = DayAnalyzer.generateSuggestions(for: briefingEvents)
+
+        // Fetch weather
+        weatherService.fetchCurrentWeather { [weak self] result in
+            guard let self = self else { return }
+
+            var weather: WeatherData? = nil
+            var weatherDescription: String? = nil
+
+            switch result {
+            case .success(let weatherData):
+                print("✅ Weather fetched successfully")
+                weather = weatherData
+                weatherDescription = "\(weatherData.condition), \(weatherData.temperatureFormatted)"
+            case .failure(let error):
+                print("❌ Weather fetch failed: \(error.localizedDescription)")
+            }
+
+            // Generate AI briefing content
+            Task {
+                do {
+                    let aiContent = try await OnDeviceAIService.shared.generateMorningBriefing(
+                        todaysEvents: todaysEvents,
+                        tasks: todaysTasks,
+                        weatherDescription: weatherDescription
+                    )
+
+                    // Format the AI content into a natural briefing message
+                    let briefingMessage = """
+                    \(aiContent.greeting)
+
+                    \(aiContent.daySummary)
+
+                    🎯 Key Focus: \(aiContent.keyFocus)
+
+                    \(aiContent.weatherNote ?? "")
+
+                    \(aiContent.actionableReminder != nil ? "💡 \(aiContent.actionableReminder!)\n" : "")\(aiContent.motivation)
+                    """
+
+                    await MainActor.run {
+                        let briefing = DailyBriefing(
+                            date: date,
+                            weather: weather,
+                            events: briefingEvents,
+                            suggestions: suggestions
+                        )
+
+                        print("✅ AI-enhanced briefing created")
+                        self.todaysBriefing = briefing
+                        self.isGenerating = false
+                        completion(briefing, briefingMessage)
+                    }
+                } catch {
+                    print("❌ AI briefing generation failed: \(error)")
+                    // Fallback to standard briefing
+                    await MainActor.run {
+                        let briefing = DailyBriefing(
+                            date: date,
+                            weather: weather,
+                            events: briefingEvents,
+                            suggestions: suggestions
+                        )
+
+                        let fallbackMessage = self.createFallbackBriefing(
+                            events: briefingEvents,
+                            weather: weather,
+                            tasks: todaysTasks
+                        )
+
+                        self.todaysBriefing = briefing
+                        self.isGenerating = false
+                        completion(briefing, fallbackMessage)
+                    }
+                }
+            }
+        }
+    }
+    #endif
+
+    /// Create a fallback briefing message when AI is not available
+    private func createFallbackBriefing(events: [BriefingEvent], weather: WeatherData?, tasks: [String]) -> String {
+        let greeting = Calendar.current.component(.hour, from: Date()) < 12 ? "Good morning!" : "Good day!"
+        let eventCount = events.count
+        let taskCount = tasks.count
+
+        var message = "\(greeting)\n\n"
+
+        if eventCount > 0 {
+            message += "You have \(eventCount) event\(eventCount == 1 ? "" : "s") scheduled today"
+            if taskCount > 0 {
+                message += " and \(taskCount) task\(taskCount == 1 ? "" : "s") to complete"
+            }
+            message += ".\n\n"
+        } else if taskCount > 0 {
+            message += "No events scheduled today, but you have \(taskCount) task\(taskCount == 1 ? "" : "s") to complete.\n\n"
+        } else {
+            message += "Your calendar is clear today!\n\n"
+        }
+
+        if let weather = weather {
+            message += "🌤 Current weather: \(weather.condition), \(weather.temperatureFormatted)\n\n"
+        }
+
+        message += "Have a productive day!"
+
+        return message
+    }
+
     // MARK: - Notification Management
 
     func scheduleNotification() {

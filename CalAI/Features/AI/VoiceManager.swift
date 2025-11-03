@@ -21,7 +21,7 @@ class VoiceManager: NSObject, ObservableObject {
 
     // Silence detection
     private var silenceTimer: Timer?
-    private let silenceThreshold: TimeInterval = 2.5 // 2.5 seconds of silence
+    private let silenceThreshold: TimeInterval = 5.0 // 5 seconds of silence (allows 3+ second pause between tasks)
     private var autoStopEnabled = true // Can be toggled
 
     // Continuous listening mode
@@ -155,7 +155,18 @@ class VoiceManager: NSObject, ObservableObject {
             return
         }
         recognitionRequest.shouldReportPartialResults = true
-        print("✅ Recognition request created")
+
+        // Configure for longer listening sessions
+        if #available(iOS 13, *) {
+            recognitionRequest.requiresOnDeviceRecognition = false // Allow server-based for longer sessions
+        }
+
+        // Set task hint for dictation (more forgiving with pauses)
+        if #available(iOS 13, *) {
+            recognitionRequest.taskHint = .dictation // More patient with pauses than .search or .confirmation
+        }
+
+        print("✅ Recognition request created with extended listening settings")
 
         // Configure audio engine
         print("🎛️ Configuring audio engine...")
@@ -231,12 +242,22 @@ class VoiceManager: NSObject, ObservableObject {
                         let transcript = self.latestTranscript
                         if !transcript.isEmpty {
                             self.hasProcessedResult = true
+
+                            // Save continuous mode state before stopping
+                            let wasContinuous = self.continuousModeEnabled
+
                             self.completionHandler?(transcript)
 
-                            // In continuous mode, restart listening after processing
-                            if self.continuousModeEnabled {
-                                print("🔄 Continuous mode: Restarting listening after transcript")
-                                self.restartListeningForContinuousMode()
+                            // In continuous mode, stop audio engine but preserve continuous flag
+                            // Let the caller (AITabView) decide when to restart after AI response
+                            if wasContinuous {
+                                print("🔄 Continuous mode: Stopping audio engine but preserving continuous flag")
+                                self.audioEngine.stop()
+                                self.audioEngine.inputNode.removeTap(onBus: 0)
+                                self.recognitionRequest?.endAudio()
+                                self.recognitionTask?.cancel()
+                                self.isListening = false
+                                // Don't clear continuousModeEnabled - keep it for restart
                             } else {
                                 self.stopListening()
                             }
@@ -295,7 +316,7 @@ class VoiceManager: NSObject, ObservableObject {
 
         DispatchQueue.main.async { [weak self] in
             self?.silenceTimer?.invalidate()
-            self?.silenceTimer = Timer.scheduledTimer(withTimeInterval: self?.silenceThreshold ?? 2.5, repeats: false) { [weak self] _ in
+            self?.silenceTimer = Timer.scheduledTimer(withTimeInterval: self?.silenceThreshold ?? 5.0, repeats: false) { [weak self] _ in
                 print("⏱️ Silence detected - auto-stopping")
                 self?.handleSilenceDetected()
             }
@@ -323,16 +344,30 @@ class VoiceManager: NSObject, ObservableObject {
             if !transcript.isEmpty {
                 print("✅ Auto-stop with transcript: \(transcript)")
                 self.hasProcessedResult = true
+
+                // Save continuous mode state before stopping
+                let wasContinuous = self.continuousModeEnabled
+
                 self.completionHandler?(transcript)
 
-                // In continuous mode, restart listening after processing
-                if self.continuousModeEnabled {
-                    print("🔄 Continuous mode: Restarting listening after silence")
-                    self.restartListeningForContinuousMode()
-                    return
+                // In continuous mode, stop audio engine but preserve continuous flag
+                // Let the caller (AITabView) decide when to restart after AI response
+                if wasContinuous {
+                    print("🔄 Continuous mode: Stopping audio engine but preserving continuous flag")
+                    self.audioEngine.stop()
+                    self.audioEngine.inputNode.removeTap(onBus: 0)
+                    self.recognitionRequest?.endAudio()
+                    self.recognitionTask?.cancel()
+                    self.isListening = false
+                    // Don't clear continuousModeEnabled - keep it for restart
+                } else {
+                    self.stopListening()
                 }
+                return
             }
-            self.stopListening()
+            if !self.continuousModeEnabled {
+                self.stopListening()
+            }
         }
     }
 

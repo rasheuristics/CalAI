@@ -191,6 +191,19 @@ class AIManager: ObservableObject {
                         )
                     }
 
+                case .weather:
+                    // Weather queries detected - override to weather intent
+                    print("⚠️ IntentClassifier detected weather query - overriding to weather intent")
+                    response = ConversationalAIService.AIAction(
+                        intent: "weather",
+                        parameters: response.parameters,
+                        message: "Let me check the weather for you.",
+                        needsClarification: false,
+                        clarificationQuestion: nil,
+                        shouldContinueListening: false,
+                        referencedEventIds: nil
+                    )
+
                 case .query, .update, .delete:
                     // Trust the classifier for these explicit intent types
                     if classification.confidence > 0.8 && response.intent != classification.type.description {
@@ -478,6 +491,69 @@ class AIManager: ObservableObject {
         case "querySchedule":
             // Schedule query already handled in message
             print("📊 Schedule query completed")
+
+        case "weather":
+            // Handle weather queries
+            print("🌦️ Processing weather intent in executeEnhancedAction...")
+
+            // Extract date from transcript if present
+            let weatherDate = extractWeatherDate(from: originalTranscript)
+
+            // Fetch weather and update response
+            return await withCheckedContinuation { continuation in
+                let fetchCompletion: (Result<WeatherData, Error>) -> Void = { result in
+                    var weatherResponse = response
+
+                    switch result {
+                    case .success(let weatherData):
+                        print("✅ Weather fetched: \(weatherData.temperatureFormatted)")
+
+                        // Build natural weather response
+                        var weatherMessage: String
+                        if let date = weatherDate {
+                            let calendar = Calendar.current
+                            if calendar.isDateInToday(date) {
+                                weatherMessage = "Today's weather: "
+                            } else if calendar.isDateInTomorrow(date) {
+                                weatherMessage = "Tomorrow's forecast: "
+                            } else {
+                                let formatter = DateFormatter()
+                                formatter.dateStyle = .full
+                                weatherMessage = "Weather for \(formatter.string(from: date)): "
+                            }
+                        } else {
+                            weatherMessage = "It's currently "
+                        }
+
+                        weatherMessage += weatherData.temperatureFormatted
+                        if !weatherData.condition.isEmpty {
+                            weatherMessage += " and \(weatherData.condition.lowercased())"
+                        }
+                        if weatherData.high != weatherData.temperature || weatherData.low != weatherData.temperature {
+                            weatherMessage += ", with a high of \(String(format: "%.0f°", weatherData.high)) and a low of \(String(format: "%.0f°", weatherData.low))"
+                        }
+                        if weatherData.precipitationChance > 0 {
+                            weatherMessage += ". There's a \(weatherData.precipitationChance)% chance of precipitation"
+                        }
+                        weatherMessage += "."
+
+                        weatherResponse.message = weatherMessage
+
+                    case .failure(let error):
+                        print("❌ Weather fetch failed: \(error)")
+                        weatherResponse.message = "I couldn't fetch the weather right now. \(error.localizedDescription)"
+                    }
+
+                    continuation.resume(returning: weatherResponse)
+                }
+
+                // Call weather service
+                if let date = weatherDate {
+                    WeatherService.shared.fetchWeatherForDate(date, completion: fetchCompletion)
+                } else {
+                    WeatherService.shared.fetchCurrentWeather(completion: fetchCompletion)
+                }
+            }
 
         default:
             print("⚠️ Unknown action type: \(type)")

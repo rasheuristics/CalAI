@@ -224,7 +224,8 @@ class SmartEventParser {
 
     // MARK: - Time Extraction
 
-    func extractTime(from text: String) -> Date? {
+    // Public method to extract time from text without requiring action detection
+    public func extractTime(from text: String) -> Date? {
         let now = Date()
         let calendar = Calendar.current
         let lowercased = text.lowercased()
@@ -275,39 +276,51 @@ class SmartEventParser {
     }
 
     private func extractSpecificTime(from text: String) -> (hour: Int, minute: Int)? {
-        // Pattern: "at 2pm", "at 14:30", "2 pm", "noon"
+        // Pattern: "at 2pm", "by 5pm", "at 14:30", "2 pm", "noon", "at five pm"
+        print("🕐 Attempting to extract specific time from: \"\(text)\"")
 
         // Special cases
         if text.contains("noon") {
+            print("✅ Found 'noon' - returning 12:00")
             return (12, 0)
         }
         if text.contains("midnight") {
+            print("✅ Found 'midnight' - returning 00:00")
             return (0, 0)
         }
 
-        // Pattern: "at XX:XX am/pm" or "at XX am/pm"
+        // Convert written numbers to digits first
+        let textWithDigits = convertWrittenNumbersToDigits(text)
+        print("🔢 After converting written numbers: \"\(textWithDigits)\"")
+
+        // Pattern: "at XX:XX am/pm", "by XX am/pm", "at XX am/pm", or just "XX am/pm"
         let patterns = [
-            #"at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)"#,
-            #"(\d{1,2})(?::(\d{2}))?\s*(am|pm)"#,
-            #"at\s+(\d{1,2})"# // 24-hour format
+            #"(?:at|by)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)"#,  // "at/by 2pm" or "at/by 2:30pm"
+            #"(\d{1,2})(?::(\d{2}))?\s*(am|pm)"#,               // "2pm" or "2:30pm"
+            #"(?:at|by)\s+(\d{1,2})"#                           // "at/by 14" (24-hour format)
         ]
 
-        for pattern in patterns {
+        for (index, pattern) in patterns.enumerated() {
+            print("🔍 Trying pattern \(index + 1): \(pattern)")
             if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                if let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
+                if let match = regex.firstMatch(in: textWithDigits, range: NSRange(textWithDigits.startIndex..., in: textWithDigits)) {
+                    print("✅ Pattern \(index + 1) matched!")
                     var hour = 0
                     var minute = 0
 
-                    if let hourRange = Range(match.range(at: 1), in: text) {
-                        hour = Int(text[hourRange]) ?? 0
+                    if let hourRange = Range(match.range(at: 1), in: textWithDigits) {
+                        hour = Int(textWithDigits[hourRange]) ?? 0
+                        print("   Hour: \(hour)")
                     }
 
-                    if match.numberOfRanges > 2, let minuteRange = Range(match.range(at: 2), in: text) {
-                        minute = Int(text[minuteRange]) ?? 0
+                    if match.numberOfRanges > 2, let minuteRange = Range(match.range(at: 2), in: textWithDigits) {
+                        minute = Int(textWithDigits[minuteRange]) ?? 0
+                        print("   Minute: \(minute)")
                     }
 
-                    if match.numberOfRanges > 3, let ampmRange = Range(match.range(at: 3), in: text) {
-                        let ampm = String(text[ampmRange]).lowercased()
+                    if match.numberOfRanges > 3, let ampmRange = Range(match.range(at: 3), in: textWithDigits) {
+                        let ampm = String(textWithDigits[ampmRange]).lowercased()
+                        print("   AM/PM: \(ampm)")
                         if ampm == "pm" && hour < 12 {
                             hour += 12
                         } else if ampm == "am" && hour == 12 {
@@ -315,12 +328,37 @@ class SmartEventParser {
                         }
                     }
 
+                    print("✅ Final time: \(hour):\(String(format: "%02d", minute))")
                     return (hour, minute)
+                } else {
+                    print("❌ Pattern \(index + 1) did not match")
                 }
             }
         }
 
+        print("❌ No time patterns matched")
         return nil
+    }
+
+    /// Convert written numbers to digits for time parsing
+    /// Examples: "five" -> "5", "twelve thirty" -> "12 30"
+    private func convertWrittenNumbersToDigits(_ text: String) -> String {
+        let numberMap: [String: String] = [
+            "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+            "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+            "eleven": "11", "twelve": "12", "thirteen": "13", "fourteen": "14",
+            "fifteen": "15", "sixteen": "16", "seventeen": "17", "eighteen": "18",
+            "nineteen": "19", "twenty": "20", "thirty": "30", "forty": "40", "fifty": "50"
+        ]
+
+        var result = text.lowercased()
+
+        // Replace written numbers with digits
+        for (word, digit) in numberMap {
+            result = result.replacingOccurrences(of: "\\b\(word)\\b", with: digit, options: .regularExpression)
+        }
+
+        return result
     }
 
     private func extractWeekday(from text: String) -> Int? {

@@ -71,6 +71,17 @@ class PostMeetingService: ObservableObject {
     private func extractFollowUpWithAI(for event: UnifiedEvent, notes: String?) async -> MeetingFollowUp {
         let meetingNotes = notes ?? event.description ?? "No notes provided."
 
+        // Try on-device AI first if available
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
+            if let enhancedFollowUp = try? await extractFollowUpWithOnDeviceAI(for: event, notes: meetingNotes) {
+                return enhancedFollowUp
+            }
+            // Fall through to cloud AI if on-device fails
+        }
+        #endif
+
+        // Cloud AI fallback
         let summaryPrompt = "Generate a concise 2-3 sentence meeting summary for an event titled '\(event.title)' with these notes: \(meetingNotes)"
         let actionItemsPrompt = "Analyze the following text and extract a list of action items, each on a new line. If none, respond with an empty string. Text: \(meetingNotes)"
         let decisionsPrompt = "Analyze the following text and extract a list of key decisions, each on a new line. If none, respond with an empty string. Text: \(meetingNotes)"
@@ -180,4 +191,139 @@ class PostMeetingService: ObservableObject {
         formatter.timeStyle = .short
         return formatter.string(from: date)
     }
+
+    // MARK: - On-Device AI Integration
+
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    private func extractFollowUpWithOnDeviceAI(for event: UnifiedEvent, notes: String) async throws -> MeetingFollowUp {
+        print("🤖 Using on-device AI for meeting insights...")
+
+        // Extract attendees from event
+        let attendees: [String] = [] // TODO: Extract from event if available
+
+        // Use on-device AI to analyze meeting notes
+        let insights = try await OnDeviceAIService.shared.analyzeMeetingNotes(
+            eventTitle: event.title,
+            notes: notes,
+            attendees: attendees
+        )
+
+        print("✅ On-device AI extracted \(insights.actionItems.count) action items")
+
+        // Convert AI action items to our ActionItem model
+        let actionItems = insights.actionItems.map { aiItem in
+            // Parse due date if provided
+            var dueDate: Date? = nil
+            if let dueDateStr = aiItem.dueDate, dueDateStr.lowercased() != "unknown" {
+                dueDate = parseDateString(dueDateStr)
+            }
+
+            // Map priority
+            let priority: ActionItem.ActionPriority
+            switch aiItem.priority.lowercased() {
+            case "urgent": priority = .urgent
+            case "high": priority = .high
+            case "low": priority = .low
+            default: priority = .medium
+            }
+
+            return ActionItem(
+                id: UUID(),
+                title: aiItem.title,
+                description: aiItem.context,
+                assignee: aiItem.assignee != "Unknown" ? aiItem.assignee : nil,
+                dueDate: dueDate,
+                priority: priority,
+                category: .task,
+                isCompleted: false,
+                completedDate: nil,
+                sourceText: notes
+            )
+        }
+
+        // Convert decisions
+        let decisions = insights.decisions.map { decisionText in
+            Decision(
+                id: UUID(),
+                decision: decisionText,
+                context: insights.summary,
+                madeBy: nil,
+                timestamp: event.startDate
+            )
+        }
+
+        // Create enhanced summary
+        let summary = MeetingSummary(
+            highlights: insights.summary,
+            outcomes: insights.decisions,
+            topics: insights.topics,
+            duration: event.endDate.timeIntervalSince(event.startDate), // in seconds
+            attendance: attendees.isEmpty ? nil : attendees.joined(separator: ", ")
+        )
+
+        // Create follow-up meetings if needed
+        var followUpMeetings: [FollowUpMeeting] = []
+        if insights.followUpNeeded, let suggestedDate = insights.suggestedFollowUpDate {
+            // Parse suggested follow-up date
+            if let followUpDate = parseDateString(suggestedDate) {
+                followUpMeetings.append(FollowUpMeeting(
+                    id: UUID(),
+                    title: "Follow-up: \(event.title)",
+                    suggestedDate: followUpDate,
+                    purpose: "Continue discussion from \(event.title)",
+                    attendees: attendees,
+                    isScheduled: false
+                ))
+            }
+        }
+
+        return MeetingFollowUp(
+            id: UUID().uuidString,
+            eventId: event.id,
+            eventTitle: event.title,
+            meetingDate: event.startDate,
+            summary: summary,
+            actionItems: actionItems,
+            decisions: decisions,
+            followUpMeetings: followUpMeetings,
+            participants: attendees,
+            createdAt: Date()
+        )
+    }
+
+    private func parseDateString(_ dateStr: String) -> Date? {
+        let calendar = Calendar.current
+        let now = Date()
+        let lowercased = dateStr.lowercased()
+
+        if lowercased.contains("today") {
+            return now
+        } else if lowercased.contains("tomorrow") {
+            return calendar.date(byAdding: .day, value: 1, to: now)
+        } else if lowercased.contains("next week") || lowercased.contains("week") {
+            return calendar.date(byAdding: .weekOfYear, value: 1, to: now)
+        } else if lowercased.contains("monday") {
+            return nextWeekday(1, from: now)
+        } else if lowercased.contains("tuesday") {
+            return nextWeekday(2, from: now)
+        } else if lowercased.contains("wednesday") {
+            return nextWeekday(3, from: now)
+        } else if lowercased.contains("thursday") {
+            return nextWeekday(4, from: now)
+        } else if lowercased.contains("friday") {
+            return nextWeekday(5, from: now)
+        }
+
+        return nil
+    }
+
+    private func nextWeekday(_ weekday: Int, from date: Date) -> Date? {
+        let calendar = Calendar.current
+        var components = DateComponents()
+        components.weekday = weekday
+
+        return calendar.nextDate(after: date, matching: components, matchingPolicy: .nextTime)
+    }
+    #endif
 }

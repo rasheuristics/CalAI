@@ -1,0 +1,158 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project CalAI.xcodeproj -scheme CalAI -destination "platform=iOS Simulator,name=iPhone 15" clean build
+
+User defaults from command line:
+    IDEPackageSupportUseBuiltinSCM = YES
+
+Resolve Package Graph
+unable to restore workspace state: unknown 'WorkspaceStateStorage' version '7' at '/Users/btessema/Library/Developer/Xcode/DerivedData/CalAI-gnpqpwwpxyilrmgypnfywoycrtdh/SourcePackages/workspace-state.json'
+Creating working copy of package ‘swift-algorithms’
+
+Checking out 1.2.1 of package ‘swift-algorithms’
+
+Creating working copy of package ‘swift-nio’
+
+Checking out 2.87.0 of package ‘swift-nio’
+
+Creating working copy of package ‘SwiftAnthropic’
+
+Checking out 1.8.6 of package ‘SwiftAnthropic’
+
+Creating working copy of package ‘swift-atomics’
+
+Checking out 1.3.0 of package ‘swift-atomics’
+
+Creating working copy of package ‘promises’
+
+Checking out 2.4.0 of package ‘promises’
+
+Creating working copy of package ‘AppAuth-iOS’
+
+Checking out 2.0.0 of package ‘AppAuth-iOS’
+
+Creating working copy of package ‘swift-system’
+
+Checking out 1.6.3 of package ‘swift-system’
+
+Creating working copy of package ‘app-check’
+
+Checking out 11.2.0 of package ‘app-check’
+
+Creating working copy of package ‘google-auth-library-swift’
+
+Checking out 0.5.3 of package ‘google-auth-library-swift’
+
+Creating working copy of package ‘swift-collections’
+
+Checking out 1.3.0 of package ‘swift-collections’
+
+Creating working copy of package ‘GTMAppAuth’
+
+Checking out 5.0.0 of package ‘GTMAppAuth’
+
+Creating working copy of package ‘google-api-swift-client’
+
+Checking out main (a7a7b3c) of package ‘google-api-swift-client’
+
+Creating working copy of package ‘BigInt’
+
+Checking out 5.7.0 of package ‘BigInt’
+
+Creating working copy of package ‘swift-numerics’
+
+Checking out 1.1.1 of package ‘swift-numerics’
+
+Creating working copy of package ‘CryptoSwift’
+
+Checking out 1.3.2 of package ‘CryptoSwift’
+
+Creating working copy of package ‘gtm-session-fetcher’
+
+Checking out 3.5.0 of package ‘gtm-session-fetcher’
+
+Creating working copy of package ‘microsoft-authentication-library-for-objc’
+
+Checking out 2.4.2 of package ‘microsoft-authentication-library-for-objc’
+
+Creating working copy of package ‘GoogleSignIn-iOS’
+
+Checking out 9.0.0 of package ‘GoogleSignIn-iOS’
+
+Creating working copy of package ‘GoogleUtilities’
+
+Checking out 8.1.0 of package ‘GoogleUtilities’
+
+
+Resolved source packages:
+  AppCheck: https://github.com/google/app-check.git @ 11.2.0
+  MSAL: https://github.com/AzureAD/microsoft-authentication-library-for-objc @ 2.4.2
+  swift-numerics: https://github.com/apple/swift-numerics.git @ 1.1.1
+  Auth: https://github.com/googleapis/google-auth-library-swift.git @ 0.5.3
+  GoogleUtilities: https://github.com/google/GoogleUtilities.git @ 8.1.0
+  swift-collections: https://github.com/apple/swift-collections.git @ 1.3.0
+  CryptoSwift: https://github.com/krzyzanowskim/CryptoSwift.git @ 1.3.2
+  GTMAppAuth: https://github.com/google/GTMAppAuth.git @ 5.0.0
+  swift-system: https://github.com/apple/swift-system.git @ 1.6.3
+  AppAuth: https://github.com/openid/AppAuth-iOS.git @ 2.0.0
+  GoogleSignIn: https://github.com/google/GoogleSignIn-iOS @ 9.0.0
+  GTMSessionFetcher: https://github.com/google/gtm-session-fetcher.git @ 3.5.0
+  BigInt: https://github.com/attaswift/BigInt @ 5.7.0
+  swift-atomics: https://github.com/apple/swift-atomics.git @ 1.3.0
+  google-api-swift-client: https://github.com/googleapis/google-api-swift-client @ main (a7a7b3c)
+  Promises: https://github.com/google/promises.git @ 2.4.0
+  SwiftAnthropic: https://github.com/jamesrochabrun/SwiftAnthropic @ 1.8.6
+  swift-nio: https://github.com/apple/swift-nio.git @ 2.87.0
+  swift-algorithms: https://github.com/apple/swift-algorithms.git @ 1.2.1
+
+2025-11-02 18:06:53.959 xcodebuild[4193:129871] Writing error result bundle to /var/folders/v0/g4c80v6j6d5gl3xd1l6jsm6h0000gn/T/ResultBundle_2025-02-11_18-06-0053.xcresult
+xcodebuild: error: Unable to find a device matching the provided destination specifier:
+		{ platform:iOS Simulator, OS:latest, name:iPhone 15 }
+
+	The requested device could not be found because no available devices matched the request.
+
+	Available destinations for the "CalAI" scheme:
+		{ platform:macOS, arch:arm64, variant:Designed for [iPad,iPhone], id:00006000-0002381A3662801E, name:My Mac }
+		{ platform:iOS, arch:arm64, id:00008140-000430C236E8801C, name:RAS Heuristics }
+		{ platform:iOS, id:dvtdevice-DVTiPhonePlaceholder-iphoneos:placeholder, name:Any iOS Device }
+		{ platform:iOS Simulator, id:dvtdevice-DVTiOSDeviceSimulatorPlaceholder-iphonesimulator:placeholder, name:Any iOS Simulator Device }
+		{ platform:iOS Simulator, id:E6B42546-C602-4221-A775-5D211794C224, OS:18.1, name:iPad (10th generation) }
+		{ platform:iOS Simulator, id:E6B42546-C602-4221-A775-5D211794C224, OS:18.1, name:iPad (10th generation) }
+		{ platform:iOS Simulator, id:2E32B063-3338-4CED-AF41-0AE4D3E5C17E, OS:26.1, name:iPad (10th generation) }
+		{ platform:iOS Simulator, id:08FD4C82-23B3-4DE9-8F03-DF7CB6CB8B58, OS:26.1, name:iPad (A16) }
+		{ platform:iOS Simulator, id:2F531526-6D36-4C9D-90A0-34010F241365, OS:18.1, name:iPad Air 11-inch (M2) }
+		{ platform:iOS Simulator, id:2F531526-6D36-4C9D-90A0-34010F241365, OS:18.1, name:iPad Air 11-inch (M2) }
+		{ platform:iOS Simulator, id:6B796666-BAFC-494C-815D-981983398EC9, OS:26.1, name:iPad Air 11-inch (M2) }
+		{ platform:iOS Simulator, id:96FB0B66-AF87-45C1-9A67-A2EE269B49FC, OS:26.1, name:iPad Air 11-inch (M3) }
+		{ platform:iOS Simulator, id:870C7F36-58F0-424C-A704-8743979776BE, OS:18.1, name:iPad Air 13-inch (M2) }
+		{ platform:iOS Simulator, id:870C7F36-58F0-424C-A704-8743979776BE, OS:18.1, name:iPad Air 13-inch (M2) }
+		{ platform:iOS Simulator, id:32F42670-EE9D-48B7-B764-7C1DF55FF84F, OS:26.1, name:iPad Air 13-inch (M2) }
+		{ platform:iOS Simulator, id:D16AA0CA-6927-461F-99E3-51B0AE68CC34, OS:26.1, name:iPad Air 13-inch (M3) }
+		{ platform:iOS Simulator, id:89B98DFD-89E6-459F-82B7-6E15CBAF4C2C, OS:18.1, name:iPad Pro 11-inch (M4) }
+		{ platform:iOS Simulator, id:89B98DFD-89E6-459F-82B7-6E15CBAF4C2C, OS:18.1, name:iPad Pro 11-inch (M4) }
+		{ platform:iOS Simulator, id:474A0174-9A4B-4349-B3A5-3166F99631A3, OS:26.1, name:iPad Pro 11-inch (M4) }
+		{ platform:iOS Simulator, id:CEE5E4F1-E625-4A8A-92E9-693B33E7B9B3, OS:18.1, name:iPad Pro 13-inch (M4) }
+		{ platform:iOS Simulator, id:CEE5E4F1-E625-4A8A-92E9-693B33E7B9B3, OS:18.1, name:iPad Pro 13-inch (M4) }
+		{ platform:iOS Simulator, id:EE8C8BDF-54E1-46F8-89B4-692AD00DFA58, OS:26.1, name:iPad Pro 13-inch (M4) }
+		{ platform:iOS Simulator, id:91BB89F9-FF5F-4475-B5AE-DF9E215AE2F1, OS:18.1, name:iPad mini (A17 Pro) }
+		{ platform:iOS Simulator, id:91BB89F9-FF5F-4475-B5AE-DF9E215AE2F1, OS:18.1, name:iPad mini (A17 Pro) }
+		{ platform:iOS Simulator, id:FA9BCF70-9052-469C-8848-8C76A39CA91C, OS:26.1, name:iPad mini (A17 Pro) }
+		{ platform:iOS Simulator, id:D5EC0CC8-28F5-496A-AF40-3FD08E2E09E3, OS:18.1, name:iPhone 16 }
+		{ platform:iOS Simulator, id:D5EC0CC8-28F5-496A-AF40-3FD08E2E09E3, OS:18.1, name:iPhone 16 }
+		{ platform:iOS Simulator, id:702712E6-A8FF-48C2-9405-7D61B49F0DAA, OS:26.1, name:iPhone 16 }
+		{ platform:iOS Simulator, id:4CDF95B0-2453-4C47-A488-F364D26AE642, OS:18.1, name:iPhone 16 Plus }
+		{ platform:iOS Simulator, id:4CDF95B0-2453-4C47-A488-F364D26AE642, OS:18.1, name:iPhone 16 Plus }
+		{ platform:iOS Simulator, id:5122D3C4-7BC8-4143-B4F9-DDF0F7E63513, OS:26.1, name:iPhone 16 Plus }
+		{ platform:iOS Simulator, id:515ED98C-4CC6-4D29-B5B7-2525A6C313BC, OS:18.1, name:iPhone 16 Pro }
+		{ platform:iOS Simulator, id:515ED98C-4CC6-4D29-B5B7-2525A6C313BC, OS:18.1, name:iPhone 16 Pro }
+		{ platform:iOS Simulator, id:23639012-FBEC-4273-8E24-6AD62E88BD07, OS:26.1, name:iPhone 16 Pro }
+		{ platform:iOS Simulator, id:75F52A1A-0189-497C-BC23-A7D4C18C2D8D, OS:18.1, name:iPhone 16 Pro Max }
+		{ platform:iOS Simulator, id:75F52A1A-0189-497C-BC23-A7D4C18C2D8D, OS:18.1, name:iPhone 16 Pro Max }
+		{ platform:iOS Simulator, id:D1B29451-9350-4C7C-9369-EAAD5A1ACF03, OS:26.1, name:iPhone 16 Pro Max }
+		{ platform:iOS Simulator, id:5A2AE602-8F78-41D8-8BEC-EB531D534400, OS:26.1, name:iPhone 16e }
+		{ platform:iOS Simulator, id:C0AEA397-53D4-426F-A566-C15A8CD41653, OS:26.1, name:iPhone 17 }
+		{ platform:iOS Simulator, id:1EACD22E-CC7B-47F2-9D4F-7CC587C20EAE, OS:26.1, name:iPhone 17 Pro }
+		{ platform:iOS Simulator, id:AB7EC369-1407-4051-94CF-F5B834187512, OS:26.1, name:iPhone 17 Pro Max }
+		{ platform:iOS Simulator, id:AD86090F-775F-43DC-9F1E-FD6DBA74CFD4, OS:26.1, name:iPhone Air }
+		{ platform:iOS Simulator, id:EDD2A6D0-EF76-41AE-B050-CB0DA40DCBF4, OS:18.1, name:iPhone SE (3rd generation) }
+		{ platform:iOS Simulator, id:EDD2A6D0-EF76-41AE-B050-CB0DA40DCBF4, OS:18.1, name:iPhone SE (3rd generation) }
+		{ platform:iOS Simulator, id:F73DC0AA-D501-43C5-8D01-D3059F02C860, OS:26.1, name:iPhone SE (3rd generation) }

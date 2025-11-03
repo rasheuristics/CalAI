@@ -8,6 +8,7 @@ enum IntentType {
     case query      // User wants to query their calendar
     case update     // User wants to update something
     case delete     // User wants to delete something
+    case weather    // User wants to know the weather
     case unknown    // Could not determine intent
 
     var description: String {
@@ -17,6 +18,7 @@ enum IntentType {
         case .query: return "query"
         case .update: return "update"
         case .delete: return "delete"
+        case .weather: return "weather"
         case .unknown: return "unknown"
         }
     }
@@ -40,7 +42,17 @@ class IntentClassifier {
 
         let lowercased = text.lowercased()
 
-        // Step 1: Check for explicit queries first
+        // Step 1: Check for weather queries FIRST (very specific)
+        if isWeather(lowercased) {
+            print("✅ Classified as WEATHER")
+            return IntentClassification(
+                type: .weather,
+                confidence: 0.95,
+                details: "Detected weather keywords"
+            )
+        }
+
+        // Step 2: Check for explicit queries
         if isQuery(lowercased) {
             print("✅ Classified as QUERY")
             return IntentClassification(
@@ -99,6 +111,19 @@ class IntentClassifier {
                 details: "Low confidence, defaulted to task"
             )
         }
+    }
+
+    // MARK: - Weather Detection
+
+    private func isWeather(_ text: String) -> Bool {
+        let weatherPatterns = [
+            "weather", "temperature", "forecast",
+            "how hot", "how cold", "raining", "rain",
+            "sunny", "cloudy", "what's the temp", "temp",
+            "degrees", "precipitation", "storm", "snow"
+        ]
+
+        return weatherPatterns.contains { text.contains($0) }
     }
 
     // MARK: - Query Detection

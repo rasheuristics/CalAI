@@ -460,7 +460,7 @@ struct AITabView: View {
 
             // Conversation Area
             if showConversationWindow {
-                ConversationScrollView(conversationHistory: $conversationHistory)
+                ConversationScrollView(conversationHistory: $conversationHistory, onRefresh: clearConversation)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .onTapGesture {
                         dismissKeyboard()
@@ -862,12 +862,22 @@ struct AITabView: View {
             // Only speak if user is not currently speaking (in continuous mode)
             // The continuous mode will automatically interrupt if user starts speaking mid-response
             SpeechManager.shared.speak(text: response.message) {
-                // If in auto-loop mode and user hasn't started speaking, continue
-                // Note: In continuous mode, listening is already active and will handle interruptions
-                if self.isInAutoLoopMode && !self.voiceManager.isContinuousMode {
-                    print("🔄 Auto-loop: Continuous mode not active, restarting listening")
-                    self.startListeningWithAutoLoop()
+                // After AI finishes speaking, restart listening if in auto-loop mode
+                if self.isInAutoLoopMode {
+                    print("🔄 Auto-loop: AI finished speaking, restarting listening")
+                    // Small delay to ensure speech has fully completed
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        if self.isInAutoLoopMode && !self.voiceManager.isListening {
+                            self.startListeningWithAutoLoop()
+                        }
+                    }
                 }
+            }
+        } else {
+            // If voice output is disabled, restart listening immediately
+            if self.isInAutoLoopMode && !self.voiceManager.isListening {
+                print("🔄 Auto-loop: No voice output, restarting listening immediately")
+                self.startListeningWithAutoLoop()
             }
         }
         if let command = response.command {
@@ -878,6 +888,27 @@ struct AITabView: View {
     private func dismissConversation() {
         withAnimation { showConversationWindow = false }
         aiManager.resetConversationState()
+    }
+
+    private func clearConversation() {
+        withAnimation {
+            conversationHistory.removeAll()
+            showConversationWindow = false
+        }
+
+        // Stop any ongoing speech
+        SpeechManager.shared.stopSpeaking()
+
+        // Exit auto-loop mode if active
+        if isInAutoLoopMode {
+            exitAutoLoopMode()
+            voiceManager.stopListening()
+        }
+
+        // Reset AI state
+        aiManager.resetConversationState()
+
+        print("🗑️ Conversation cleared")
     }
 
     private func dismissKeyboard() {
@@ -900,24 +931,38 @@ struct AITabView: View {
         // Start listening in CONTINUOUS mode with speech detection
         voiceManager.startListening(
             continuous: true,
+            onPartialTranscript: { partialTranscript in
+                // User is speaking - reset the inactivity timer
+                self.resetInactivityTimer()
+            },
             onSpeechDetected: {
                 // User started speaking - interrupt AI if it's speaking
                 print("🛑 User started speaking - interrupting AI output")
                 SpeechManager.shared.stopSpeaking()
+                // Reset timer when user starts speaking
+                self.resetInactivityTimer()
             },
             completion: { finalTranscript in
                 if !finalTranscript.isEmpty {
-                    // Reset inactivity timer when user speaks
+                    // Cancel inactivity timer when transcript is final
                     self.inactivityTimer?.invalidate()
                     self.handleTranscript(finalTranscript)
                 }
             }
         )
 
-        // Start 5-second inactivity timer
-        inactivityTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
+        // Start initial inactivity timer
+        resetInactivityTimer()
+    }
+
+    private func resetInactivityTimer() {
+        // Cancel existing timer
+        inactivityTimer?.invalidate()
+
+        // Start new 8-second timer
+        inactivityTimer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: false) { _ in
             if self.voiceManager.isListening {
-                print("⏱️ 5-second inactivity timeout - ending auto-loop (keeping history)")
+                print("⏱️ 8-second inactivity timeout - ending auto-loop (keeping history)")
                 self.voiceManager.stopListening()
                 self.exitAutoLoopMode()
             }
@@ -1056,6 +1101,7 @@ private struct ActionButton: View {
 
 private struct ConversationScrollView: View {
     @Binding var conversationHistory: [ConversationItem]
+    var onRefresh: () -> Void
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -1073,6 +1119,9 @@ private struct ConversationScrollView: View {
                         }
                     }
                 }
+            }
+            .refreshable {
+                onRefresh()
             }
         }
         .frame(maxHeight: .infinity)
