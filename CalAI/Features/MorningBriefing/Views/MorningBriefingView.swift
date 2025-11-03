@@ -11,6 +11,7 @@ struct MorningBriefingView: View {
     @State private var showWeatherAlert = false
     @State private var weatherAlertMessage = ""
     @State private var aiPatterns: SmartSchedulingService.CalendarPatterns?
+    @State private var aiEnhancedMessage: String? = nil
 
     var body: some View {
         NavigationView {
@@ -102,6 +103,11 @@ struct MorningBriefingView: View {
                 .padding(.horizontal)
                 .padding(.top)
 
+            // AI-Enhanced Message (if available)
+            if let aiMessage = aiEnhancedMessage {
+                aiEnhancedMessageSection(aiMessage)
+            }
+
             // Weather Section
             if let weather = briefing.weather {
                 weatherSection(weather)
@@ -177,6 +183,33 @@ struct MorningBriefingView: View {
             }
         }
         .padding(.bottom, 24)
+    }
+
+    private func aiEnhancedMessageSection(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "sparkles")
+                    .foregroundColor(.purple)
+                Text("AI Briefing")
+                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                    .foregroundColor(.purple)
+            }
+            .padding(.horizontal)
+
+            Text(message)
+                .dynamicFont(size: 16, fontManager: fontManager)
+                .foregroundColor(.primary)
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.purple.opacity(0.1))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.purple.opacity(0.3), lineWidth: 1)
+                )
+                .padding(.horizontal)
+        }
     }
 
     private func weatherSection(_ weather: WeatherData) -> some View {
@@ -373,8 +406,26 @@ struct MorningBriefingView: View {
 
     private func refreshBriefing() {
         isLoading = true
+
+        // Use AI-enhanced briefing if on-device AI is available
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
+            briefingService.generateEnhancedBriefing { briefing, aiMessage in
+                isLoading = false
+                // Store AI-generated message for display
+                aiEnhancedMessage = aiMessage
+                // Load AI pattern insights after briefing is generated
+                loadAIPatterns()
+            }
+            return
+        }
+        #endif
+
+        // Fallback to standard briefing
         briefingService.generateBriefing { briefing in
             isLoading = false
+            // Clear AI message when using standard briefing
+            aiEnhancedMessage = nil
             // Load AI pattern insights after briefing is generated
             loadAIPatterns()
         }

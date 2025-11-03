@@ -24,6 +24,11 @@ struct CalendarTabView: View {
     @State private var showingShareView = false
     @State private var showingConflictList = false
 
+    // AI Smart Suggestions state
+    @State private var showSmartSuggestions = false
+    @State private var smartSuggestionsData: Any? = nil // Holds [OnDeviceAIService.EventSuggestion] on iOS 26+
+    @State private var isLoadingSuggestions = false
+
     // Day view swipe gesture state
     @State private var daySwipeDragOffset: CGFloat = 0
     @State private var isDayDragging = false
@@ -81,6 +86,18 @@ struct CalendarTabView: View {
                     fontManager: fontManager,
                     calendarManager: calendarManager
                 )
+
+                // AI Smart Suggestions Card
+                #if canImport(FoundationModels)
+                if #available(iOS 26.0, *) {
+                    if showSmartSuggestions && smartSuggestionsData != nil {
+                        smartSuggestionsCard()
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                #endif
 
                 // Main calendar content
                 Group {
@@ -243,6 +260,9 @@ struct CalendarTabView: View {
             // Always reset to day view showing today
             currentViewType = .day
             selectedDate = Date()
+
+            // Load smart suggestions
+            loadSmartSuggestions()
         }
     }
 
@@ -364,6 +384,117 @@ struct CalendarTabView: View {
                 isDayTransitioning = false
             }
         }
+    }
+
+    // MARK: - AI Smart Suggestions
+
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    @ViewBuilder
+    private func smartSuggestionsCard() -> some View {
+        if let suggestions = smartSuggestionsData as? [OnDeviceAIService.EventSuggestion] {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "sparkles")
+                        .foregroundColor(.blue)
+                    Text("Smart Suggestions")
+                        .font(.headline)
+                        .foregroundColor(.blue)
+
+                    Spacer()
+
+                    Button(action: {
+                        withAnimation {
+                            showSmartSuggestions = false
+                        }
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                ForEach(suggestions.prefix(3), id: \.title) { suggestion in
+                    suggestionRow(suggestion)
+                }
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.blue.opacity(0.1))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+            )
+        }
+    }
+    #endif
+
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    @ViewBuilder
+    private func suggestionRow(_ suggestion: OnDeviceAIService.EventSuggestion) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(suggestion.title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                HStack(spacing: 8) {
+                    Label(suggestion.suggestedDay, systemImage: "calendar")
+                    Label(suggestion.suggestedTime, systemImage: "clock")
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+                Text(suggestion.reason)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            Button(action: {
+                // TODO: Create event from suggestion
+                print("📅 Creating event: \(suggestion.title)")
+            }) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.blue)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+    #endif
+
+    private func loadSmartSuggestions() {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
+            isLoadingSuggestions = true
+
+            Task {
+                do {
+                    let suggestions = try await OnDeviceAIService.shared.suggestEvents(
+                        basedOn: calendarManager.unifiedEvents,
+                        currentWeek: selectedDate
+                    )
+
+                    await MainActor.run {
+                        smartSuggestionsData = suggestions
+                        showSmartSuggestions = !suggestions.isEmpty
+                        isLoadingSuggestions = false
+                        print("✨ Loaded \(suggestions.count) smart event suggestions")
+                    }
+                } catch {
+                    await MainActor.run {
+                        isLoadingSuggestions = false
+                        print("❌ Failed to load smart suggestions: \(error)")
+                    }
+                }
+            }
+        }
+        #endif
     }
 }
 
