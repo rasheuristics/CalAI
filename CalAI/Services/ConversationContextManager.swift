@@ -40,6 +40,10 @@ class ConversationContextManager {
     private let maxHistoryCount = 10  // Keep last 10 messages
     private let defaultEntityExpiration: TimeInterval = 300  // 5 minutes
 
+    // Persistence
+    private let persistence = ConversationHistoryPersistence()
+    private var autoSaveTimer: Timer?
+
     // MARK: - Message Management
 
     func addUserMessage(_ content: String) {
@@ -241,5 +245,41 @@ class ConversationContextManager {
         if !expiredKeys.isEmpty {
             print("🧹 Context: Removed \(expiredKeys.count) expired entities")
         }
+    }
+
+    // MARK: - Persistence
+
+    func getMessageHistory() -> [Message] {
+        return messageHistory
+    }
+
+    func restoreMessageHistory(_ messages: [Message]) {
+        messageHistory = messages
+        print("📂 Context: Restored \(messages.count) messages from persistence")
+    }
+
+    func enablePersistence() {
+        // Load previous conversation if exists
+        if let savedMessages = persistence.loadConversation() {
+            restoreMessageHistory(savedMessages)
+        }
+
+        // Setup auto-save every 30 seconds
+        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.persistence.saveConversation(messages: self.messageHistory)
+        }
+
+        print("💾 Context: Persistence enabled with auto-save")
+    }
+
+    func disablePersistence() {
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = nil
+        print("💾 Context: Persistence disabled")
+    }
+
+    func clearPersistence() {
+        persistence.clearConversation()
     }
 }

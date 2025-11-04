@@ -4,6 +4,7 @@ struct InboxView: View {
     @ObservedObject var taskManager = EventTaskManager.shared
     @ObservedObject var fontManager: FontManager
     @ObservedObject var appearanceManager: AppearanceManager
+    @ObservedObject var calendarManager: CalendarManager
 
     @State private var selectedList: TaskList = .today
     @State private var showingAddTask = false
@@ -14,11 +15,28 @@ struct InboxView: View {
     @State private var taskToSchedule: EventTask?
     @State private var eventIdForScheduling: String?
 
+    // AI Task Scheduling state
+    @State private var showSchedulingRecommendations = false
+    @State private var schedulingRecommendationsData: Any? = nil // Holds [OnDeviceAIService.TaskScheduleRecommendation] on iOS 26+
+    @State private var isLoadingRecommendations = false
+
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
                 // List selector
                 listSelectorView
+
+                // AI Task Scheduling Recommendations
+                #if canImport(FoundationModels)
+                if #available(iOS 26.0, *) {
+                    if showSchedulingRecommendations && schedulingRecommendationsData != nil {
+                        schedulingRecommendationsCard()
+                            .padding(.horizontal)
+                            .padding(.vertical, 8)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                #endif
 
                 // Task list
                 taskListView
@@ -42,6 +60,18 @@ struct InboxView: View {
                             .font(.title3)
                     }
                 }
+
+                #if canImport(FoundationModels)
+                if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: toggleSchedulingRecommendations) {
+                            Image(systemName: "sparkles")
+                                .font(.title3)
+                                .foregroundColor(.purple)
+                        }
+                    }
+                }
+                #endif
 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
@@ -85,6 +115,9 @@ struct InboxView: View {
                         eventId: eventId
                     )
                 }
+            }
+            .onAppear {
+                // Don't auto-load recommendations - user will tap sparkles button
             }
         }
     }
@@ -895,4 +928,379 @@ struct TaskTimelineItem: Identifiable {
     let startTime: Date
     let endTime: Date
     let color: UIColor
+}
+
+// MARK: - AI Task Scheduling Recommendations
+
+extension InboxView {
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    @ViewBuilder
+    func schedulingRecommendationsCard() -> some View {
+        if let recommendations = schedulingRecommendationsData as? [OnDeviceAIService.TaskScheduleRecommendation] {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "sparkles")
+                        .foregroundColor(.green)
+                    Text("Smart Scheduling")
+                        .font(.headline)
+                        .foregroundColor(.green)
+
+                    Spacer()
+
+                    Button(action: {
+                        withAnimation {
+                            showSchedulingRecommendations = false
+                        }
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                ForEach(recommendations.prefix(3), id: \.taskTitle) { recommendation in
+                    recommendationRow(recommendation)
+                }
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.green.opacity(0.1))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.green.opacity(0.3), lineWidth: 1)
+            )
+        }
+    }
+
+    @available(iOS 26.0, *)
+    @ViewBuilder
+    private func recommendationRow(_ recommendation: OnDeviceAIService.TaskScheduleRecommendation) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(recommendation.taskTitle)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                HStack(spacing: 8) {
+                    Label(recommendation.recommendedDay, systemImage: "calendar")
+                    Label(recommendation.recommendedTimeSlot, systemImage: "clock")
+
+                    // Priority badge
+                    Text(recommendation.priority.uppercased())
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(priorityColor(recommendation.priority))
+                        .cornerRadius(4)
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+                Text(recommendation.reasoning)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            Button(action: {
+                scheduleTaskFromRecommendation(recommendation)
+            }) {
+                Image(systemName: "calendar.badge.plus")
+                    .font(.title2)
+                    .foregroundColor(.green)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    @available(iOS 26.0, *)
+    private func priorityColor(_ priority: String) -> Color {
+        switch priority.lowercased() {
+        case "high": return .red
+        case "medium": return .orange
+        case "low": return .blue
+        default: return .gray
+        }
+    }
+    #endif
+
+    func toggleSchedulingRecommendations() {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            withAnimation {
+                if showSchedulingRecommendations {
+                    // Hide the card
+                    showSchedulingRecommendations = false
+                } else {
+                    // Show the card - load if needed
+                    if schedulingRecommendationsData == nil && !isLoadingRecommendations {
+                        loadSchedulingRecommendations()
+                    } else {
+                        showSchedulingRecommendations = true
+                    }
+                }
+            }
+        }
+        #endif
+    }
+
+    func loadSchedulingRecommendations() {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
+            isLoadingRecommendations = true
+
+            Task {
+                do {
+                    // Get all unscheduled tasks (tasks with duration but no scheduled time)
+                    let allTasks = taskManager.getTasksForList(.inbox) +
+                                   taskManager.getTasksForList(.today) +
+                                   taskManager.getTasksForList(.upcoming)
+
+                    let unscheduledTasks = allTasks.filter { task in
+                        task.duration != nil && task.scheduledTime == nil
+                    }
+
+                    // Convert tasks to array of titles (what the AI expects)
+                    let taskTitles = unscheduledTasks.map { $0.title }
+
+                    // Get calendar events from the injected CalendarManager instance
+                    let calendarEvents = self.calendarManager.unifiedEvents
+
+                    // Use default working hours (9 AM to 5 PM)
+                    let workingHours = (start: 9, end: 17)
+
+                    let recommendations = try await OnDeviceAIService.shared.scheduleTasksIntelligently(
+                        tasks: taskTitles,
+                        calendar: calendarEvents,
+                        workingHours: workingHours
+                    )
+
+                    await MainActor.run {
+                        schedulingRecommendationsData = recommendations
+                        showSchedulingRecommendations = !recommendations.isEmpty
+                        isLoadingRecommendations = false
+                        print("✨ Loaded \(recommendations.count) task scheduling recommendations")
+                    }
+                } catch {
+                    await MainActor.run {
+                        isLoadingRecommendations = false
+                        print("❌ Failed to load scheduling recommendations: \(error)")
+                    }
+                }
+            }
+        }
+        #endif
+    }
+
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    private func scheduleTaskFromRecommendation(_ recommendation: OnDeviceAIService.TaskScheduleRecommendation) {
+        print("📅 Scheduling task from recommendation: \(recommendation.taskTitle)")
+
+        // Find the task in our task manager
+        let allTasks = taskManager.getTasksForList(.inbox) +
+                       taskManager.getTasksForList(.today) +
+                       taskManager.getTasksForList(.upcoming)
+
+        // Try exact match first, then fuzzy match
+        var task = allTasks.first(where: { $0.title == recommendation.taskTitle })
+
+        if task == nil {
+            // Try case-insensitive and partial match
+            task = allTasks.first(where: {
+                $0.title.lowercased().contains(recommendation.taskTitle.lowercased()) ||
+                recommendation.taskTitle.lowercased().contains($0.title.lowercased())
+            })
+        }
+
+        // Parse the recommended time slot first
+        let scheduledTime = parseRecommendedTimeSlot(
+            day: recommendation.recommendedDay,
+            timeSlot: recommendation.recommendedTimeSlot
+        )
+
+        // Calculate duration from the time slot (e.g., "9:00 AM - 10:00 AM")
+        let duration = parseDurationFromTimeSlot(recommendation.recommendedTimeSlot)
+
+        if let foundTask = task, let eventId = foundTask.linkedEventId {
+            // Task exists - just schedule it
+            taskManager.scheduleTask(foundTask.id, at: scheduledTime, in: eventId)
+            print("✅ Task scheduled successfully: \(recommendation.taskTitle) at \(scheduledTime)")
+        } else {
+            // Task doesn't exist - create it as a standalone task
+            print("📝 Task not found, creating new task: \(recommendation.taskTitle)")
+
+            // Determine priority from recommendation
+            let priority: TaskPriority
+            switch recommendation.priority.lowercased() {
+            case "high": priority = .high
+            case "medium": priority = .medium
+            case "low": priority = .low
+            default: priority = .medium
+            }
+
+            // Determine category from task type
+            let category: TaskCategory
+            switch recommendation.taskType.lowercased() {
+            case "focus": category = .research
+            case "admin": category = .logistics
+            case "creative": category = .preparation
+            default: category = .preparation
+            }
+
+            // Create the task
+            let newTask = EventTask(
+                title: recommendation.taskTitle,
+                description: recommendation.reasoning,
+                isCompleted: false,
+                priority: priority,
+                category: category,
+                dueDate: scheduledTime,
+                linkedEventId: "standalone_tasks", // Special ID for standalone tasks
+                duration: duration,
+                taskList: .today,
+                scheduledTime: scheduledTime
+            )
+
+            // Add to standalone tasks using the standard addTask method
+            taskManager.addTask(newTask, to: "standalone_tasks")
+            print("✅ Created and scheduled new task: \(recommendation.taskTitle) at \(scheduledTime)")
+        }
+
+        print("✅ Task scheduled successfully: \(recommendation.taskTitle) at \(scheduledTime)")
+
+        // Remove this recommendation from the list
+        if let recommendations = schedulingRecommendationsData as? [OnDeviceAIService.TaskScheduleRecommendation] {
+            schedulingRecommendationsData = recommendations.filter { $0.taskTitle != recommendation.taskTitle }
+            if (schedulingRecommendationsData as? [OnDeviceAIService.TaskScheduleRecommendation])?.isEmpty ?? true {
+                showSchedulingRecommendations = false
+            }
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func parseRecommendedTimeSlot(day: String, timeSlot: String) -> Date {
+        let calendar = Calendar.current
+        let now = Date()
+
+        // Parse the day
+        var targetDate: Date
+        let dayLower = day.lowercased()
+
+        if dayLower.contains("today") {
+            targetDate = now
+        } else if dayLower.contains("tomorrow") {
+            targetDate = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        } else if dayLower.contains("monday") {
+            targetDate = nextWeekday(2, from: now) // Monday = 2
+        } else if dayLower.contains("tuesday") {
+            targetDate = nextWeekday(3, from: now) // Tuesday = 3
+        } else if dayLower.contains("wednesday") {
+            targetDate = nextWeekday(4, from: now) // Wednesday = 4
+        } else if dayLower.contains("thursday") {
+            targetDate = nextWeekday(5, from: now) // Thursday = 5
+        } else if dayLower.contains("friday") {
+            targetDate = nextWeekday(6, from: now) // Friday = 6
+        } else if dayLower.contains("saturday") {
+            targetDate = nextWeekday(7, from: now) // Saturday = 7
+        } else if dayLower.contains("sunday") {
+            targetDate = nextWeekday(1, from: now) // Sunday = 1
+        } else {
+            // Default to today
+            targetDate = now
+        }
+
+        // Parse the time slot start time (e.g., "9:00 AM - 10:00 AM" -> "9:00 AM")
+        let startTime = timeSlot.components(separatedBy: " - ").first ?? timeSlot
+        let timeComponents = startTime.components(separatedBy: .whitespaces)
+
+        if let timeString = timeComponents.first {
+            let hourMinute = timeString.components(separatedBy: ":")
+            if hourMinute.count == 2,
+               var hour = Int(hourMinute[0]),
+               let minute = Int(hourMinute[1]) {
+
+                // Check for PM
+                if startTime.uppercased().contains("PM") && hour < 12 {
+                    hour += 12
+                } else if startTime.uppercased().contains("AM") && hour == 12 {
+                    hour = 0
+                }
+
+                // Set the time on target date
+                var components = calendar.dateComponents([.year, .month, .day], from: targetDate)
+                components.hour = hour
+                components.minute = minute
+
+                if let finalDate = calendar.date(from: components) {
+                    return finalDate
+                }
+            }
+        }
+
+        // Default: use target date with current time
+        return targetDate
+    }
+
+    @available(iOS 26.0, *)
+    private func nextWeekday(_ weekdayInt: Int, from date: Date) -> Date {
+        let calendar = Calendar.current
+        let currentWeekday = calendar.component(.weekday, from: date)
+        var daysToAdd = weekdayInt - currentWeekday
+
+        if daysToAdd <= 0 {
+            daysToAdd += 7
+        }
+
+        return calendar.date(byAdding: .day, value: daysToAdd, to: date) ?? date
+    }
+
+    @available(iOS 26.0, *)
+    private func parseDurationFromTimeSlot(_ timeSlot: String) -> TimeInterval? {
+        // Parse duration from time slot like "9:00 AM - 10:00 AM"
+        let components = timeSlot.components(separatedBy: " - ")
+        guard components.count == 2 else {
+            // Default to estimated duration if can't parse
+            return 3600 // 1 hour default
+        }
+
+        let startTimeStr = components[0].trimmingCharacters(in: .whitespaces)
+        let endTimeStr = components[1].trimmingCharacters(in: .whitespaces)
+
+        // Simple hour extraction (assumes format like "9:00 AM")
+        let startHour = extractHour(from: startTimeStr)
+        let endHour = extractHour(from: endTimeStr)
+
+        if let start = startHour, let end = endHour {
+            let durationHours = end - start
+            return TimeInterval(durationHours * 3600) // Convert hours to seconds
+        }
+
+        return 3600 // Default 1 hour
+    }
+
+    @available(iOS 26.0, *)
+    private func extractHour(from timeString: String) -> Int? {
+        let components = timeString.components(separatedBy: .whitespaces)
+        guard let timeStr = components.first else { return nil }
+
+        let hourMinute = timeStr.components(separatedBy: ":")
+        guard hourMinute.count >= 1, var hour = Int(hourMinute[0]) else { return nil }
+
+        // Adjust for PM
+        if timeString.uppercased().contains("PM") && hour < 12 {
+            hour += 12
+        } else if timeString.uppercased().contains("AM") && hour == 12 {
+            hour = 0
+        }
+
+        return hour
+    }
+    #endif
 }

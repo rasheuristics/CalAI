@@ -44,10 +44,10 @@ struct ContentView: View {
                     }
                     .tag(0)
 
-                EventsTabView(calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
+                InsightsView(calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
                     .tabItem {
-                        Image(systemName: "list.bullet")
-                        Text("Events")
+                        Image(systemName: "chart.bar.fill")
+                        Text("Insights")
                     }
                     .tag(1)
 
@@ -58,7 +58,7 @@ struct ContentView: View {
                     }
                     .tag(2)
 
-                InboxView(fontManager: fontManager, appearanceManager: appearanceManager)
+                InboxView(fontManager: fontManager, appearanceManager: appearanceManager, calendarManager: calendarManager)
                     .tabItem {
                         Image(systemName: "tray.fill")
                         Text("Tasks")

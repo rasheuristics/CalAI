@@ -45,12 +45,13 @@ struct CalendarTabView: View {
     }
 
     var body: some View {
-        ZStack {
-            // Transparent background to show main gradient
-            Color.clear
-                .ignoresSafeArea(.all)
+        NavigationView {
+            ZStack {
+                // Transparent background to show main gradient
+                Color.clear
+                    .ignoresSafeArea(.all)
 
-            VStack(spacing: 0) {
+                VStack(spacing: 0) {
                 // Error banner (if present)
                 if let error = calendarManager.errorState {
                     ErrorBannerView(
@@ -256,13 +257,37 @@ struct CalendarTabView: View {
         .sheet(isPresented: $calendarManager.showingAddEventFromCalendar) {
             AddEventView(calendarManager: calendarManager, fontManager: fontManager)
         }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            #if canImport(FoundationModels)
+            if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: toggleSmartSuggestions) {
+                        Image(systemName: "sparkles")
+                            .font(.title3)
+                            .foregroundColor(.purple)
+                    }
+                }
+            }
+            #endif
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    calendarManager.showingAddEventFromCalendar = true
+                }) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.blue)
+                }
+            }
+        }
         .onAppear {
             // Always reset to day view showing today
             currentViewType = .day
             selectedDate = Date()
 
-            // Load smart suggestions
-            loadSmartSuggestions()
+            // Don't auto-load suggestions - user will tap sparkles button
+        }
         }
     }
 
@@ -456,8 +481,7 @@ struct CalendarTabView: View {
             Spacer()
 
             Button(action: {
-                // TODO: Create event from suggestion
-                print("📅 Creating event: \(suggestion.title)")
+                createEventFromSuggestion(suggestion)
             }) {
                 Image(systemName: "plus.circle.fill")
                     .font(.title2)
@@ -467,6 +491,26 @@ struct CalendarTabView: View {
         .padding(.vertical, 4)
     }
     #endif
+
+    private func toggleSmartSuggestions() {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            withAnimation {
+                if showSmartSuggestions {
+                    // Hide the card
+                    showSmartSuggestions = false
+                } else {
+                    // Show the card - load if needed
+                    if smartSuggestionsData == nil && !isLoadingSuggestions {
+                        loadSmartSuggestions()
+                    } else {
+                        showSmartSuggestions = true
+                    }
+                }
+            }
+        }
+        #endif
+    }
 
     private func loadSmartSuggestions() {
         #if canImport(FoundationModels)
@@ -496,6 +540,114 @@ struct CalendarTabView: View {
         }
         #endif
     }
+
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    private func createEventFromSuggestion(_ suggestion: OnDeviceAIService.EventSuggestion) {
+        print("📅 Creating event from suggestion: \(suggestion.title)")
+
+        // Parse the suggested day and time into a Date
+        let targetDate = parseSuggestedDate(day: suggestion.suggestedDay, time: suggestion.suggestedTime)
+
+        // Default duration: 1 hour
+        let startDate = targetDate
+        let endDate = targetDate.addingTimeInterval(3600) // 1 hour
+
+        // Create the event using CalendarManager
+        calendarManager.createEvent(
+            title: suggestion.title,
+            startDate: startDate,
+            endDate: endDate,
+            location: nil,
+            notes: suggestion.reason
+        )
+
+        print("✅ Event created successfully: \(suggestion.title)")
+
+        // Remove this suggestion from the list
+        if let suggestions = smartSuggestionsData as? [OnDeviceAIService.EventSuggestion] {
+            smartSuggestionsData = suggestions.filter { $0.title != suggestion.title }
+            if (smartSuggestionsData as? [OnDeviceAIService.EventSuggestion])?.isEmpty ?? true {
+                showSmartSuggestions = false
+            }
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func parseSuggestedDate(day: String, time: String) -> Date {
+        let calendar = Calendar.current
+        let now = Date()
+
+        // Parse the day
+        var targetDate: Date
+        let dayLower = day.lowercased()
+
+        if dayLower.contains("today") {
+            targetDate = now
+        } else if dayLower.contains("tomorrow") {
+            targetDate = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        } else if dayLower.contains("monday") {
+            targetDate = nextWeekday(2, from: now) // Monday = 2
+        } else if dayLower.contains("tuesday") {
+            targetDate = nextWeekday(3, from: now) // Tuesday = 3
+        } else if dayLower.contains("wednesday") {
+            targetDate = nextWeekday(4, from: now) // Wednesday = 4
+        } else if dayLower.contains("thursday") {
+            targetDate = nextWeekday(5, from: now) // Thursday = 5
+        } else if dayLower.contains("friday") {
+            targetDate = nextWeekday(6, from: now) // Friday = 6
+        } else if dayLower.contains("saturday") {
+            targetDate = nextWeekday(7, from: now) // Saturday = 7
+        } else if dayLower.contains("sunday") {
+            targetDate = nextWeekday(1, from: now) // Sunday = 1
+        } else {
+            // Default to today
+            targetDate = now
+        }
+
+        // Parse the time (e.g., "9:00 AM", "2:00 PM")
+        let timeComponents = time.components(separatedBy: .whitespaces)
+        if let timeString = timeComponents.first {
+            let hourMinute = timeString.components(separatedBy: ":")
+            if hourMinute.count == 2,
+               var hour = Int(hourMinute[0]),
+               let minute = Int(hourMinute[1]) {
+
+                // Check for PM
+                if time.uppercased().contains("PM") && hour < 12 {
+                    hour += 12
+                } else if time.uppercased().contains("AM") && hour == 12 {
+                    hour = 0
+                }
+
+                // Set the time on target date
+                var components = calendar.dateComponents([.year, .month, .day], from: targetDate)
+                components.hour = hour
+                components.minute = minute
+
+                if let finalDate = calendar.date(from: components) {
+                    return finalDate
+                }
+            }
+        }
+
+        // Default: use target date with current time
+        return targetDate
+    }
+
+    @available(iOS 26.0, *)
+    private func nextWeekday(_ weekdayInt: Int, from date: Date) -> Date {
+        let calendar = Calendar.current
+        let currentWeekday = calendar.component(.weekday, from: date)
+        var daysToAdd = weekdayInt - currentWeekday
+
+        if daysToAdd <= 0 {
+            daysToAdd += 7
+        }
+
+        return calendar.date(byAdding: .day, value: daysToAdd, to: date) ?? date
+    }
+    #endif
 }
 
 // MARK: - Native iOS Calendar Header
@@ -599,18 +751,6 @@ struct iOSCalendarHeader: View {
                             }
                         }
                     }
-
-                    // Add Event button (right side, aligned with 2025 above)
-                    Button(action: {
-                        HapticManager.shared.light()
-                        calendarManager.showingAddEventFromCalendar = true
-                    }) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.blue)
-                    }
-                    .accessibilityLabel("Add Event")
-                    .accessibilityHint("Create a new calendar event")
                 }
             }
             .padding(.horizontal, 16)
