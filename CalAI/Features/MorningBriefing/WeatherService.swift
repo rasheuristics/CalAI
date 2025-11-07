@@ -74,6 +74,54 @@ class WeatherService: NSObject, ObservableObject {
         }
     }
 
+    /// Fetch weather for a specific location by name
+    func fetchWeather(for locationName: String, date: Date? = nil, completion: @escaping (Result<WeatherData, Error>) -> Void) {
+        print("🌦️ WeatherService: Fetching weather for location: \(locationName)")
+        isLoading = true
+        error = nil
+
+        // Use geocoding to convert location name to coordinates
+        let geocoder = CLGeocoder()
+        geocoder.geocodeAddressString(locationName) { [weak self] placemarks, error in
+            guard let self = self else { return }
+
+            if let error = error {
+                print("❌ Geocoding error: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion(.failure(error))
+                }
+                return
+            }
+
+            guard let placemark = placemarks?.first,
+                  let location = placemark.location else {
+                print("❌ No location found for: \(locationName)")
+                let error = NSError(domain: "WeatherService", code: 9, userInfo: [
+                    NSLocalizedDescriptionKey: "Could not find location: \(locationName)"
+                ])
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion(.failure(error))
+                }
+                return
+            }
+
+            print("✅ Geocoded \(locationName) to: \(location.coordinate.latitude), \(location.coordinate.longitude)")
+
+            // Store completion for later use
+            self.weatherCompletion = completion
+            self.requestedForecastDate = date
+
+            // Fetch weather for the geocoded location
+            if let date = date {
+                self.fetchWeatherForDate(location: location, date: date)
+            } else {
+                self.fetchWeather(for: location)
+            }
+        }
+    }
+
     /// Fetch weather for a specific date (up to 10 days in the future)
     func fetchWeatherForDate(_ date: Date, completion: @escaping (Result<WeatherData, Error>) -> Void) {
         // Check location authorization

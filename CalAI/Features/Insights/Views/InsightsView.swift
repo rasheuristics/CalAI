@@ -7,6 +7,7 @@ struct InsightsView: View {
     @StateObject private var viewModel = InsightsViewModel()
     @State private var showConflictSheet = false
     @State private var showHealthSheet = false
+    @State private var showConflictListView = false
     @State private var selectedConflict: InsightsScheduleConflict?
 
     var body: some View {
@@ -28,6 +29,11 @@ struct InsightsView: View {
                         // Logistics Analysis Card
                         if !viewModel.logisticsIssues.isEmpty {
                             logisticsCard
+                        }
+
+                        // Duplicates Card
+                        if !viewModel.duplicates.isEmpty {
+                            duplicatesCard
                         }
 
                         // Pattern Detection Card
@@ -59,6 +65,9 @@ struct InsightsView: View {
             }
             .sheet(isPresented: $showHealthSheet) {
                 ScheduleHealthDetailSheet(viewModel: viewModel)
+            }
+            .sheet(isPresented: $showConflictListView) {
+                ConflictListView(calendarManager: calendarManager, fontManager: fontManager)
             }
         }
     }
@@ -141,54 +150,64 @@ struct InsightsView: View {
 
     // MARK: - Conflicts Card
     private var conflictsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.red)
-                Text("Schedule Conflicts")
-                    .dynamicFont(size: 18, weight: .bold, fontManager: fontManager)
-                Spacer()
-                Text("\(viewModel.conflicts.count)")
-                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
-                    .foregroundColor(.red)
-            }
+        Button(action: {
+            showConflictListView = true
+        }) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.red)
+                    Text("Schedule Conflicts")
+                        .dynamicFont(size: 18, weight: .bold, fontManager: fontManager)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Text("\(viewModel.conflicts.count)")
+                        .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                        .foregroundColor(.red)
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.gray)
+                        .font(.caption)
+                }
 
             ForEach(viewModel.conflicts.prefix(3)) { conflict in
-                Button(action: {
-                    selectedConflict = conflict
-                    showConflictSheet = true
-                }) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(sourceColor(conflict.event1Source))
+                                    .frame(width: 8, height: 8)
                                 Text(conflict.event1Title)
                                     .dynamicFont(size: 14, weight: .semibold, fontManager: fontManager)
                                     .foregroundColor(.primary)
+                            }
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(sourceColor(conflict.event2Source))
+                                    .frame(width: 8, height: 8)
                                 Text(conflict.event2Title)
                                     .dynamicFont(size: 14, weight: .semibold, fontManager: fontManager)
                                     .foregroundColor(.primary)
                             }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(.gray)
                         }
-
-                        Text(conflict.timeDescription)
-                            .dynamicFont(size: 12, fontManager: fontManager)
-                            .foregroundColor(.secondary)
-
-                        HStack {
-                            Image(systemName: "clock.fill")
-                                .font(.caption)
-                                .foregroundColor(.red)
-                            Text("Overlap: \(conflict.overlapMinutes) min")
-                                .dynamicFont(size: 12, fontManager: fontManager)
-                                .foregroundColor(.red)
-                        }
+                        Spacer()
                     }
-                    .padding()
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.red.opacity(0.1)))
+
+                    Text(conflict.timeDescription)
+                        .dynamicFont(size: 12, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        Image(systemName: "clock.fill")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                        Text("Overlap: \(conflict.overlapMinutes) min")
+                            .dynamicFont(size: 12, fontManager: fontManager)
+                            .foregroundColor(.red)
+                    }
                 }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.red.opacity(0.1)))
             }
 
             if viewModel.conflicts.count > 3 {
@@ -197,9 +216,11 @@ struct InsightsView: View {
                     .foregroundColor(.secondary)
                     .padding(.top, 4)
             }
+            }
+            .padding()
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color(UIColor.secondarySystemGroupedBackground)))
         }
-        .padding()
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(UIColor.secondarySystemGroupedBackground)))
+        .buttonStyle(PlainButtonStyle())
     }
 
     // MARK: - Logistics Card
@@ -333,6 +354,75 @@ struct InsightsView: View {
         }
         .padding()
         .background(RoundedRectangle(cornerRadius: 16).fill(Color(UIColor.secondarySystemGroupedBackground)))
+    }
+
+    // MARK: - Duplicates Card
+    private var duplicatesCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "doc.on.doc.fill")
+                    .foregroundColor(.purple)
+                Text("Duplicate Events")
+                    .dynamicFont(size: 18, weight: .bold, fontManager: fontManager)
+                Spacer()
+                Text("\(viewModel.duplicates.count)")
+                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                    .foregroundColor(.purple)
+            }
+
+            ForEach(viewModel.duplicates) { duplicate in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(duplicate.eventTitle)
+                        .dynamicFont(size: 14, weight: .semibold, fontManager: fontManager)
+
+                    Text(duplicate.eventTime)
+                        .dynamicFont(size: 12, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 8) {
+                        Text("Appears on:")
+                            .dynamicFont(size: 12, fontManager: fontManager)
+                            .foregroundColor(.secondary)
+
+                        ForEach(duplicate.sources, id: \.self) { source in
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(sourceColor(source))
+                                    .frame(width: 8, height: 8)
+                                Text(source.rawValue)
+                                    .dynamicFont(size: 11, fontManager: fontManager)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    HStack {
+                        Image(systemName: "checkmark.circle")
+                            .font(.caption)
+                            .foregroundColor(.purple)
+                        Text("Match: \(duplicate.matchType) (\(Int(duplicate.confidence * 100))%)")
+                            .dynamicFont(size: 12, fontManager: fontManager)
+                            .foregroundColor(.purple)
+                    }
+                }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.purple.opacity(0.1)))
+            }
+        }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 16).fill(Color(UIColor.secondarySystemGroupedBackground)))
+    }
+
+    // MARK: - Helper Functions
+    private func sourceColor(_ source: CalendarSource) -> Color {
+        switch source {
+        case .google:
+            return .green
+        case .ios:
+            return .red
+        case .outlook:
+            return .blue
+        }
     }
 }
 

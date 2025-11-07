@@ -11,11 +11,14 @@ struct ContentView: View {
     @StateObject private var appearanceManager = AppearanceManager()
     @StateObject private var morningBriefingService = MorningBriefingService.shared
     @StateObject private var taskManager = EventTaskManager.shared
+    @StateObject private var insightsViewModel = InsightsViewModel()
     // PHASE 12 DISABLED
     // @StateObject private var postMeetingService = PostMeetingService.shared
     @State private var selectedTab: Int = 0
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("hasCompletedInitialization") private var hasCompletedInitialization = false
     @State private var showOnboarding = false
+    @State private var showInitialization = false
 
     // Computed property for active task count
     private var activeTaskCount: Int {
@@ -24,6 +27,11 @@ struct ContentView: View {
             count += eventTasks.tasks.filter { !$0.isCompleted }.count
         }
         return count
+    }
+
+    // Computed property for insights issue count (conflicts + duplicates)
+    private var insightsIssueCount: Int {
+        return insightsViewModel.conflicts.count + insightsViewModel.duplicates.count
     }
 
     var body: some View {
@@ -50,6 +58,7 @@ struct ContentView: View {
                         Text("Insights")
                     }
                     .tag(1)
+                    .badge(insightsIssueCount)
 
                 AITabView(voiceManager: voiceManager, aiManager: aiManager, calendarManager: calendarManager, fontManager: fontManager, appearanceManager: appearanceManager)
                     .tabItem {
@@ -93,6 +102,14 @@ struct ContentView: View {
                 voiceManager: voiceManager
             )
         }
+        .fullScreenCover(isPresented: $showInitialization) {
+            InitializationView(
+                calendarManager: calendarManager,
+                googleCalendarManager: googleCalendarManager,
+                outlookCalendarManager: outlookCalendarManager,
+                isInitialized: $hasCompletedInitialization
+            )
+        }
         .onAppear {
             print("========================================")
             print("🔴🔴🔴 CALAI APP LAUNCHED - CONSOLE IS WORKING! 🔴🔴🔴")
@@ -102,6 +119,9 @@ struct ContentView: View {
             if !hasCompletedOnboarding {
                 print("📋 First launch detected - showing onboarding")
                 showOnboarding = true
+            } else if !hasCompletedInitialization {
+                print("⏳ Onboarding completed but initialization needed")
+                showInitialization = true
             }
 
             // Perform secure storage migration if needed

@@ -2320,7 +2320,8 @@ struct EventDetailsTabView: View {
             location: updatedEvent.location,
             description: updatedEvent.description,
             calendarId: "primary-calendar", // Default calendar ID
-            organizer: nil
+            organizer: nil,
+            isAllDay: updatedEvent.isAllDay
         )
 
         calendarManager.outlookCalendarManager?.updateEvent(outlookEvent) { success, error in

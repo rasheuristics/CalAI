@@ -217,7 +217,7 @@ class ConversationalAIService {
             // For create: {"title": "string", "start_time": "ISO8601", "duration_minutes": number}
             // For modify: {"event_id": "string", "new_start_time": "ISO8601"}
             // For delete: {"event_id": "string"}
-            // For weather: {"date": "ISO8601"} (optional - omit for current weather, include for forecast like "tomorrow", "Saturday", "next Tuesday")
+            // For weather: {"date": "ISO8601", "location": "string"} (both optional - omit date for current weather, omit location for current device location. Examples: "weather in New York", "tomorrow's weather in Paris", "what's the temperature in Tokyo")
             // For create_task: {"title": "string", "description": "string", "priority": "high|medium|low", "due_date": "ISO8601", "duration_minutes": number, "project": "string", "tags": ["tag1", "tag2"], "event_id": "string" (optional - for event-related tasks)}
             // For list_tasks: {"filter": "all|pending|completed|today|this_week", "event_id": "string" (optional)}
             // For update_task: {"task_id": "string", "priority": "high|medium|low", "description": "string", etc.}

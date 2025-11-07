@@ -713,7 +713,8 @@ struct AddEventView: View {
             location: updatedEvent.location,
             description: updatedEvent.description,
             calendarId: "primary-calendar",
-            organizer: nil
+            organizer: nil,
+            isAllDay: updatedEvent.isAllDay
         )
 
         calendarManager.outlookCalendarManager?.updateEvent(outlookEvent) { success, error in

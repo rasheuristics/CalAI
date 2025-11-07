@@ -5,6 +5,7 @@ struct InboxView: View {
     @ObservedObject var fontManager: FontManager
     @ObservedObject var appearanceManager: AppearanceManager
     @ObservedObject var calendarManager: CalendarManager
+    @StateObject private var insightsViewModel = InsightsViewModel()
 
     @State private var selectedList: TaskList = .today
     @State private var showingAddTask = false
@@ -14,6 +15,9 @@ struct InboxView: View {
     @State private var showingScheduleSheet = false
     @State private var taskToSchedule: EventTask?
     @State private var eventIdForScheduling: String?
+
+    // Quick Insights Sheet state
+    @State private var showQuickInsights = false
 
     // AI Task Scheduling state
     @State private var showSchedulingRecommendations = false
@@ -61,17 +65,16 @@ struct InboxView: View {
                     }
                 }
 
-                #if canImport(FoundationModels)
-                if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(action: toggleSchedulingRecommendations) {
-                            Image(systemName: "sparkles")
-                                .font(.title3)
-                                .foregroundColor(.purple)
-                        }
+                // Quick Insights button - AI-powered conflict/duplicate preview
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        showQuickInsights = true
+                    }) {
+                        Image(systemName: "sparkles")
+                            .font(.title3)
+                            .foregroundColor(.purple)
                     }
                 }
-                #endif
 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
@@ -88,6 +91,18 @@ struct InboxView: View {
                     taskManager: taskManager,
                     fontManager: fontManager,
                     initialList: selectedList
+                )
+            }
+            .sheet(isPresented: $showQuickInsights) {
+                QuickInsightsSheet(
+                    viewModel: insightsViewModel,
+                    fontManager: fontManager,
+                    appearanceManager: appearanceManager,
+                    isPresented: $showQuickInsights,
+                    onViewFullInsights: {
+                        // This will be handled by ContentView via tab selection
+                        // For now, just close the sheet
+                    }
                 )
             }
             .sheet(isPresented: $showingTaskDetail) {
@@ -117,7 +132,8 @@ struct InboxView: View {
                 }
             }
             .onAppear {
-                // Don't auto-load recommendations - user will tap sparkles button
+                // Configure InsightsViewModel
+                insightsViewModel.configure(calendarManager: calendarManager)
             }
         }
     }
@@ -1029,6 +1045,32 @@ extension InboxView {
         }
     }
     #endif
+
+    // Universal smart suggestions that works on all iOS versions
+    func toggleUniversalSchedulingRecommendations() {
+        print("✨ Toggle scheduling recommendations tapped")
+
+        // For iOS 26+ with on-device AI, use the advanced version
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
+            toggleSchedulingRecommendations()
+            return
+        }
+        #endif
+
+        // For all other iOS versions, show a simple alert with AI assistant info
+        let alert = UIAlertController(
+            title: "Smart Task Scheduling",
+            message: "Use the AI Assistant tab to get intelligent task scheduling recommendations and priority suggestions powered by Claude.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootViewController = windowScene.windows.first?.rootViewController {
+            rootViewController.present(alert, animated: true)
+        }
+    }
 
     func toggleSchedulingRecommendations() {
         #if canImport(FoundationModels)

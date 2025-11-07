@@ -261,11 +261,20 @@ class OnDeviceAIService {
     private func formatEventsForPrompt(_ events: [UnifiedEvent]) -> String {
         guard !events.isEmpty else { return "  (none)" }
 
+        let detector = VideoMeetingDetector()
         return events.prefix(10).map { event in
             let formatter = DateFormatter()
             formatter.dateStyle = .short
             formatter.timeStyle = .short
-            return "  - '\(event.title)' (ID: \(event.id)) at \(formatter.string(from: event.startDate))"
+            let timeString = formatter.string(from: event.startDate)
+
+            // Detect if this is a video meeting
+            if let meeting = detector.detectMeeting(from: event) {
+                let platformName = meeting.platform.rawValue
+                return "  - '\(event.title)' (ID: \(event.id)) at \(timeString) - \(platformName) meeting"
+            }
+
+            return "  - '\(event.title)' (ID: \(event.id)) at \(timeString)"
         }.joined(separator: "\n")
     }
 
@@ -331,11 +340,19 @@ class OnDeviceAIService {
     private func formatEventsForBriefing(_ events: [UnifiedEvent]) -> String {
         guard !events.isEmpty else { return "  (No events scheduled)" }
 
+        let detector = VideoMeetingDetector()
         return events.sorted { $0.startDate < $1.startDate }.prefix(8).map { event in
             let formatter = DateFormatter()
             formatter.timeStyle = .short
             let time = formatter.string(from: event.startDate)
             let duration = formatDuration(from: event.startDate, to: event.endDate)
+
+            // Detect if this is a video meeting
+            if let meeting = detector.detectMeeting(from: event) {
+                let platformName = meeting.platform.rawValue
+                return "  - \(time): \(event.title) (\(duration)) - \(platformName) meeting"
+            }
+
             return "  - \(time): \(event.title) (\(duration))"
         }.joined(separator: "\n")
     }
@@ -699,17 +716,25 @@ class OnDeviceAIService {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
+        let detector = VideoMeetingDetector()
 
         return events.prefix(50).map { event in
             let dateStr = formatter.string(from: event.startDate)
             let location = event.location ?? "No location"
             let notes = event.description ?? "No notes"
+
+            // Detect video meeting platform
+            var meetingInfo = ""
+            if let meeting = detector.detectMeeting(from: event) {
+                meetingInfo = "\nMeeting Type: \(meeting.platform.rawValue) meeting"
+            }
+
             return """
             ID: \(event.id)
             Title: \(event.title)
             Date: \(dateStr)
             Location: \(location)
-            Notes: \(notes.prefix(100))...
+            Notes: \(notes.prefix(100))...\(meetingInfo)
             """
         }.joined(separator: "\n---\n")
     }

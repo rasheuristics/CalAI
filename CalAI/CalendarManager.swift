@@ -3,7 +3,7 @@ import EventKit
 import Combine
 import SwiftUI
 
-enum CalendarSource: String, Equatable, CaseIterable {
+enum CalendarSource: String, Equatable, CaseIterable, Codable {
     case ios
     case google
     case outlook
@@ -79,8 +79,6 @@ struct ConflictResult {
     }
 }
 
-// MARK: - Schedule Conflict Models
-
 // MARK: - Calendar Item Models
 
 struct GoogleCalendarItem: Identifiable, Hashable {
@@ -107,115 +105,6 @@ struct OutlookCalendarItem: Identifiable, Hashable {
             return Color(hex: colorHex) ?? .blue
         }
         return .blue
-    }
-}
-
-// MARK: - Schedule Conflict Models
-
-/// Represents a scheduling conflict between two or more events
-struct ScheduleConflict: Identifiable, Equatable {
-    let id: UUID
-    let conflictingEvents: [UnifiedEvent]
-    let overlapStart: Date
-    let overlapEnd: Date
-    let severity: ConflictSeverity
-
-    init(events: [UnifiedEvent], overlapStart: Date, overlapEnd: Date) {
-        self.id = UUID()
-        self.conflictingEvents = events
-        self.overlapStart = overlapStart
-        self.overlapEnd = overlapEnd
-        self.severity = ConflictSeverity.calculate(for: events, overlapDuration: overlapEnd.timeIntervalSince(overlapStart))
-    }
-
-    var overlapDuration: TimeInterval {
-        overlapEnd.timeIntervalSince(overlapStart)
-    }
-
-    var overlapDurationFormatted: String {
-        let hours = Int(overlapDuration) / 3600
-        let minutes = (Int(overlapDuration) % 3600) / 60
-
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
-        }
-    }
-
-    static func == (lhs: ScheduleConflict, rhs: ScheduleConflict) -> Bool {
-        lhs.id == rhs.id
-    }
-}
-
-/// Severity level of a scheduling conflict
-enum ConflictSeverity: String, CaseIterable {
-    case low = "Low"
-    case medium = "Medium"
-    case high = "High"
-    case critical = "Critical"
-
-    var color: String {
-        switch self {
-        case .low: return "yellow"
-        case .medium: return "orange"
-        case .high: return "red"
-        case .critical: return "purple"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .low: return "exclamationmark.circle"
-        case .medium: return "exclamationmark.triangle"
-        case .high: return "exclamationmark.octagon"
-        case .critical: return "exclamationmark.bubble"
-        }
-    }
-
-    /// Calculate severity based on event characteristics and overlap duration
-    static func calculate(for events: [UnifiedEvent], overlapDuration: TimeInterval) -> ConflictSeverity {
-        var score = 0
-
-        // More events = higher severity
-        if events.count >= 3 {
-            score += 2
-        } else if events.count == 2 {
-            score += 1
-        }
-
-        // Longer overlap = higher severity
-        let overlapMinutes = Int(overlapDuration) / 60
-        if overlapMinutes >= 60 {
-            score += 3
-        } else if overlapMinutes >= 30 {
-            score += 2
-        } else if overlapMinutes >= 15 {
-            score += 1
-        }
-
-        // All-day events are less severe
-        let hasAllDayEvent = events.contains { $0.isAllDay }
-        if hasAllDayEvent {
-            score -= 1
-        }
-
-        // Events from different sources suggest higher importance
-        let uniqueSources = Set(events.map { $0.source })
-        if uniqueSources.count >= 2 {
-            score += 1
-        }
-
-        // Map score to severity
-        if score >= 5 {
-            return .critical
-        } else if score >= 3 {
-            return .high
-        } else if score >= 1 {
-            return .medium
-        } else {
-            return .low
-        }
     }
 }
 
@@ -316,6 +205,7 @@ class CalendarManager: ObservableObject {
     private let deltaSyncManager = DeltaSyncManager.shared
     private let webhookManager = WebhookManager.shared
     private let conflictResolutionManager = ConflictResolutionManager.shared
+    private let duplicateEventDetector = DuplicateEventDetector()
     private var cancellables = Set<AnyCancellable>()
 
     // External calendar managers will be injected
@@ -1047,7 +937,10 @@ class CalendarManager: ObservableObject {
                 return true
             }
             .map { event in
-                UnifiedEvent(
+                // Extract and set video meeting URL if not already set
+                self.ensureVideoURLIsSet(for: event)
+
+                return UnifiedEvent(
                     id: event.eventIdentifier ?? UUID().uuidString,
                     title: event.title ?? "Untitled",
                     startDate: event.startDate,
@@ -1123,11 +1016,11 @@ class CalendarManager: ObservableObject {
                         endDate: event.endDate,
                         location: event.location,
                         description: event.description,
-                        isAllDay: false, // Outlook events default to not all-day
+                        isAllDay: event.isAllDay, // Use actual isAllDay value from Outlook
                         source: .outlook,
-                        organizer: nil, // Outlook events organizer can be added later
+                        organizer: event.organizer,
                         originalEvent: event,
-                        calendarId: nil, // TODO: Add calendar ID from Outlook event
+                        calendarId: event.calendarId,
                         calendarName: nil, // TODO: Add calendar name from Outlook event
                         calendarColor: nil
                     )
@@ -1157,7 +1050,22 @@ class CalendarManager: ObservableObject {
         print("💾 Added \(addedCachedCount) cached events as fallback")
 
         // Sort all events by start date
-        unifiedEvents = allEvents.sorted { $0.startDate < $1.startDate }
+        allEvents = allEvents.sorted { $0.startDate < $1.startDate }
+
+        // Detect and filter duplicate events
+        let duplicateGroups = duplicateEventDetector.detectDuplicates(in: allEvents)
+        if !duplicateGroups.isEmpty {
+            print("🔍 Detected \(duplicateGroups.count) duplicate event groups")
+            for group in duplicateGroups {
+                print("   - \(group.events.count) duplicates with confidence \(group.confidence): \(group.primaryEvent.title)")
+            }
+
+            // Filter out duplicates with confidence > 0.7
+            allEvents = duplicateEventDetector.filterDuplicates(from: allEvents)
+            print("✨ Filtered duplicates, \(allEvents.count) unique events remaining")
+        }
+
+        unifiedEvents = allEvents
         print("✅ Loaded \(unifiedEvents.count) unified events from all sources")
 
         // Schedule smart notifications for all upcoming events
@@ -1575,10 +1483,22 @@ class CalendarManager: ObservableObject {
 
         if let location = location {
             event.location = location
+
+            // Extract and set URL if location contains a video meeting link
+            if let videoURL = extractVideoMeetingURL(from: location) {
+                event.url = videoURL
+                print("🔗 Detected video meeting URL in location: \(videoURL.absoluteString)")
+            }
         }
 
         if let notes = notes {
             event.notes = notes
+
+            // Extract and set URL if notes contain a video meeting link (only if not already set)
+            if event.url == nil, let videoURL = extractVideoMeetingURL(from: notes) {
+                event.url = videoURL
+                print("🔗 Detected video meeting URL in notes: \(videoURL.absoluteString)")
+            }
         }
 
         // Add participants as attendees
@@ -1627,10 +1547,22 @@ class CalendarManager: ObservableObject {
 
         if let location = location {
             event.location = location
+
+            // Extract and set URL if location contains a video meeting link
+            if let videoURL = extractVideoMeetingURL(from: location) {
+                event.url = videoURL
+                print("🔗 Detected video meeting URL in location: \(videoURL.absoluteString)")
+            }
         }
 
         if let notes = notes {
             event.notes = notes
+
+            // Extract and set URL if notes contain a video meeting link (only if not already set)
+            if event.url == nil, let videoURL = extractVideoMeetingURL(from: notes) {
+                event.url = videoURL
+                print("🔗 Detected video meeting URL in notes: \(videoURL.absoluteString)")
+            }
         }
 
         print("📅 Event details: \(title) from \(startDate) to \(endDate) in \(calendar.title)")
@@ -2775,10 +2707,22 @@ class CalendarManager: ObservableObject {
 
         if let location = location {
             event.location = location
+
+            // Extract and set URL if location contains a video meeting link
+            if let videoURL = extractVideoMeetingURL(from: location) {
+                event.url = videoURL
+                print("🔗 Detected video meeting URL in location: \(videoURL.absoluteString)")
+            }
         }
 
         if let notes = notes {
             event.notes = notes
+
+            // Extract and set URL if notes contain a video meeting link (only if not already set)
+            if event.url == nil, let videoURL = extractVideoMeetingURL(from: notes) {
+                event.url = videoURL
+                print("🔗 Detected video meeting URL in notes: \(videoURL.absoluteString)")
+            }
         }
 
         // Parse recurring pattern and create recurrence rule
@@ -3389,6 +3333,75 @@ class CalendarManager: ObservableObject {
         for event in upcomingEvents {
             notificationManager.scheduleSmartNotifications(for: event)
         }
+    }
+
+    // MARK: - Video Meeting URL Extraction
+
+    /// Ensure EKEvent has video meeting URL set by extracting from location/notes if needed
+    private func ensureVideoURLIsSet(for event: EKEvent) {
+        // If URL is already set, nothing to do
+        if event.url != nil {
+            return
+        }
+
+        // Try to extract from location first
+        if let location = event.location, !location.isEmpty {
+            if let videoURL = extractVideoMeetingURL(from: location) {
+                event.url = videoURL
+                print("🔗 [MIGRATION] Set video URL from location for event: \(event.title ?? "Untitled")")
+                // Save the updated event
+                do {
+                    try eventStore.save(event, span: .thisEvent, commit: true)
+                } catch {
+                    print("⚠️ Failed to save updated event URL: \(error)")
+                }
+                return
+            }
+        }
+
+        // Try to extract from notes if not found in location
+        if let notes = event.notes, !notes.isEmpty {
+            if let videoURL = extractVideoMeetingURL(from: notes) {
+                event.url = videoURL
+                print("🔗 [MIGRATION] Set video URL from notes for event: \(event.title ?? "Untitled")")
+                // Save the updated event
+                do {
+                    try eventStore.save(event, span: .thisEvent, commit: true)
+                } catch {
+                    print("⚠️ Failed to save updated event URL: \(error)")
+                }
+                return
+            }
+        }
+    }
+
+    /// Extract video meeting URL from text (location or notes)
+    private func extractVideoMeetingURL(from text: String) -> URL? {
+        // Define patterns for common video meeting platforms
+        let patterns = [
+            // Zoom
+            "https?://[\\w.-]*zoom\\.us/j/[0-9?=&\\w-]+",
+            "https?://[\\w.-]*zoom\\.us/wc/join/[0-9?=&\\w-]+",
+            // Google Meet
+            "https?://meet\\.google\\.com/[a-z0-9-]+",
+            // Microsoft Teams
+            "https?://teams\\.microsoft\\.com/l/meetup-join/[\\w/%?=&\\-._~:@!$'()*+,;]+",
+            // Webex
+            "https?://[\\w.-]+\\.webex\\.com/[\\w./\\-?=&]+"
+        ]
+
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                let range = NSRange(text.startIndex..., in: text)
+                if let match = regex.firstMatch(in: text, range: range),
+                   let urlRange = Range(match.range, in: text) {
+                    let urlString = String(text[urlRange])
+                    return URL(string: urlString)
+                }
+            }
+        }
+
+        return nil
     }
 
     deinit {

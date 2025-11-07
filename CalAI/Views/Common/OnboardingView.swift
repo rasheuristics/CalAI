@@ -12,6 +12,7 @@ struct OnboardingView: View {
     @ObservedObject var voiceManager: VoiceManager
 
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("hasCompletedInitialization") private var hasCompletedInitialization = false
     @State private var currentPage = 0
     @Environment(\.dismiss) private var dismiss
 
@@ -170,6 +171,7 @@ struct OnboardingView: View {
     private func completeOnboarding() {
         HapticManager.shared.success()
         hasCompletedOnboarding = true
+        hasCompletedInitialization = false // Reset to show initialization screen
 
         // Initialize morning briefing now that onboarding is complete
         MorningBriefingService.shared.initializeAfterOnboarding()

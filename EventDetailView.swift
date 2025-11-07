@@ -63,15 +63,50 @@ struct EventDetailView: View {
                     // Location Section
                     if let location = event.location, !location.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 12) {
+                            HStack(alignment: .top, spacing: 12) {
                                 Image(systemName: "location.fill")
                                     .foregroundColor(.blue)
                                     .frame(width: 24)
 
-                                Text(location)
-                                    .dynamicFont(size: 17, fontManager: fontManager)
+                                ClickableTextView(location, fontSize: 17, fontManager: fontManager)
                             }
                         }
+                        .padding(.horizontal)
+                    }
+
+                    // Video Meeting Join Button
+                    if let videoMeeting = detectVideoMeeting() {
+                        Button(action: {
+                            openVideoMeeting(videoMeeting.url)
+                        }) {
+                            HStack {
+                                Image(systemName: videoMeeting.platform.icon)
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.white)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Join \(videoMeeting.platform.rawValue)")
+                                        .dynamicFont(size: 17, weight: .semibold, fontManager: fontManager)
+
+                                    if let meetingID = videoMeeting.meetingID {
+                                        Text("ID: \(meetingID)")
+                                            .dynamicFont(size: 13, fontManager: fontManager)
+                                            .opacity(0.9)
+                                    }
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "arrow.up.right")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(platformColor(for: videoMeeting.platform))
+                            .cornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
                         .padding(.horizontal)
                     }
 
@@ -171,8 +206,7 @@ struct EventDetailView: View {
                                     Text("Notes")
                                         .dynamicFont(size: 13, fontManager: fontManager)
                                         .foregroundColor(.secondary)
-                                    Text(notes)
-                                        .dynamicFont(size: 17, fontManager: fontManager)
+                                    ClickableTextView(notes, fontSize: 17, fontManager: fontManager)
                                 }
                             }
                         }
@@ -295,6 +329,19 @@ struct EventDetailView: View {
                             Text("Back")
                                 .dynamicFont(size: 17, fontManager: fontManager)
                         }
+                    }
+                }
+
+                // Join Meeting button (appears first if video meeting detected)
+                if let videoMeeting = detectVideoMeeting() {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: {
+                            openVideoMeeting(videoMeeting.url)
+                        }) {
+                            Image(systemName: videoMeeting.platform.icon)
+                                .font(.system(size: 17, weight: .medium))
+                        }
+                        .foregroundColor(platformColor(for: videoMeeting.platform))
                     }
                 }
 
@@ -686,6 +733,32 @@ struct EventDetailView: View {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+
+    // MARK: - Video Meeting Detection
+
+    private func detectVideoMeeting() -> VideoMeetingDetector.VideoMeeting? {
+        let detector = VideoMeetingDetector()
+        return detector.detectMeeting(from: event)
+    }
+
+    private func openVideoMeeting(_ url: URL) {
+        UIApplication.shared.open(url)
+    }
+
+    private func platformColor(for platform: VideoMeetingDetector.MeetingPlatform) -> Color {
+        switch platform {
+        case .zoom:
+            return Color.blue
+        case .googleMeet:
+            return Color.green
+        case .webex:
+            return Color.blue
+        case .microsoftTeams:
+            return Color.purple
+        case .unknown:
+            return Color.blue
+        }
     }
 
     // MARK: - Phase 4: AI Task Generation

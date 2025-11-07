@@ -13,6 +13,7 @@ struct CalendarTabView: View {
     @ObservedObject var fontManager: FontManager
     @ObservedObject var appearanceManager: AppearanceManager
     @ObservedObject var taskManager = EventTaskManager.shared // NEW: For time-blocking
+    @StateObject private var insightsViewModel = InsightsViewModel()
     @State private var selectedDate = Date()
     @State private var currentViewType: CalendarViewType = .day
     @State private var showingDatePicker = false
@@ -22,7 +23,14 @@ struct CalendarTabView: View {
     @State private var showingEditView = false
     @State private var selectedEventForShare: UnifiedEvent? = nil
     @State private var showingShareView = false
-    @State private var showingConflictList = false
+
+    // Video meeting confirmation dialog
+    @State private var showVideoMeetingConfirmation = false
+    @State private var pendingVideoMeetingEvent: UnifiedEvent? = nil
+    @State private var pendingVideoMeetingURL: URL? = nil
+
+    // Quick Insights Sheet state
+    @State private var showQuickInsights = false
 
     // AI Smart Suggestions state
     @State private var showSmartSuggestions = false
@@ -67,17 +75,6 @@ struct CalendarTabView: View {
                     .animation(.spring(response: 0.3, dampingFraction: 0.8), value: calendarManager.errorState)
                 }
 
-                // Conflict alert banner
-                if !calendarManager.detectedConflicts.isEmpty {
-                    ConflictAlertBanner(
-                        conflictCount: calendarManager.detectedConflicts.count,
-                        onTap: {
-                            showingConflictList = true
-                        }
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: calendarManager.detectedConflicts.count)
-                }
 
                 // Native iOS Calendar Header
                 iOSCalendarHeader(
@@ -126,9 +123,18 @@ struct CalendarTabView: View {
                                         onEventTap: { calendarEvent in
                                             // Only handle event taps (tasks are in Tasks tab)
                                             if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == calendarEvent.id }) {
-                                                print("📱 Opening EditEventView for: \(unifiedEvent.title)")
-                                                selectedEventForEdit = unifiedEvent
-                                                showingEditView = true
+                                                // Check if this is a video meeting
+                                                let detector = VideoMeetingDetector()
+                                                if let meeting = detector.detectMeeting(from: unifiedEvent) {
+                                                    print("🎥 Video meeting detected: \(meeting.platform.rawValue)")
+                                                    pendingVideoMeetingEvent = unifiedEvent
+                                                    pendingVideoMeetingURL = meeting.url
+                                                    showVideoMeetingConfirmation = true
+                                                } else {
+                                                    print("📱 Opening EditEventView for: \(unifiedEvent.title)")
+                                                    selectedEventForEdit = unifiedEvent
+                                                    showingEditView = true
+                                                }
                                             }
                                         }
                                     )
@@ -199,9 +205,18 @@ struct CalendarTabView: View {
                                 onEventTap: { calendarEvent in
                                     // Find the corresponding UnifiedEvent
                                     if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == calendarEvent.id }) {
-                                        print("📱 Opening EditEventView for: \(unifiedEvent.title)")
-                                        selectedEventForEdit = unifiedEvent
-                                        showingEditView = true
+                                        // Check if this is a video meeting
+                                        let detector = VideoMeetingDetector()
+                                        if let meeting = detector.detectMeeting(from: unifiedEvent) {
+                                            print("🎥 Video meeting detected: \(meeting.platform.rawValue)")
+                                            pendingVideoMeetingEvent = unifiedEvent
+                                            pendingVideoMeetingURL = meeting.url
+                                            showVideoMeetingConfirmation = true
+                                        } else {
+                                            print("📱 Opening EditEventView for: \(unifiedEvent.title)")
+                                            selectedEventForEdit = unifiedEvent
+                                            showingEditView = true
+                                        }
                                     }
                                 }
                             )
@@ -251,25 +266,63 @@ struct CalendarTabView: View {
                 )
             }
         }
-        .sheet(isPresented: $showingConflictList) {
-            ConflictListView(calendarManager: calendarManager, fontManager: fontManager)
+        .alert("Join Meeting?", isPresented: $showVideoMeetingConfirmation, presenting: pendingVideoMeetingEvent) { event in
+            Button("Yes") {
+                if let url = pendingVideoMeetingURL {
+                    print("✅ Opening video meeting: \(url.absoluteString)")
+                    UIApplication.shared.open(url)
+                }
+                // Clear pending data
+                pendingVideoMeetingEvent = nil
+                pendingVideoMeetingURL = nil
+            }
+            Button("No") {
+                print("❌ User declined to join meeting, opening EditEventView")
+                selectedEventForEdit = pendingVideoMeetingEvent
+                showingEditView = true
+                // Clear pending data
+                pendingVideoMeetingEvent = nil
+                pendingVideoMeetingURL = nil
+            }
+            Button("Cancel", role: .cancel) {
+                // Just dismiss the alert
+                pendingVideoMeetingEvent = nil
+                pendingVideoMeetingURL = nil
+            }
+        } message: { event in
+            if let detector = VideoMeetingDetector().detectMeeting(from: event) {
+                Text("Would you like to join the \(detector.platform.rawValue) meeting for '\(event.title)'?")
+            } else {
+                Text("Would you like to join the meeting for '\(event.title)'?")
+            }
         }
         .sheet(isPresented: $calendarManager.showingAddEventFromCalendar) {
             AddEventView(calendarManager: calendarManager, fontManager: fontManager)
         }
+        .sheet(isPresented: $showQuickInsights) {
+            QuickInsightsSheet(
+                viewModel: insightsViewModel,
+                fontManager: fontManager,
+                appearanceManager: appearanceManager,
+                isPresented: $showQuickInsights,
+                onViewFullInsights: {
+                    // This will be handled by ContentView via tab selection
+                    // For now, just close the sheet
+                }
+            )
+        }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            #if canImport(FoundationModels)
-            if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: toggleSmartSuggestions) {
-                        Image(systemName: "sparkles")
-                            .font(.title3)
-                            .foregroundColor(.purple)
-                    }
+            // Quick Insights button - AI-powered conflict/duplicate preview
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    showQuickInsights = true
+                }) {
+                    Image(systemName: "sparkles")
+                        .font(.title3)
+                        .foregroundColor(.purple)
                 }
             }
-            #endif
 
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: {
@@ -286,7 +339,8 @@ struct CalendarTabView: View {
             currentViewType = .day
             selectedDate = Date()
 
-            // Don't auto-load suggestions - user will tap sparkles button
+            // Configure InsightsViewModel
+            insightsViewModel.configure(calendarManager: calendarManager)
         }
         }
     }
@@ -491,6 +545,32 @@ struct CalendarTabView: View {
         .padding(.vertical, 4)
     }
     #endif
+
+    // Universal smart suggestions that works on all iOS versions
+    private func toggleUniversalSmartSuggestions() {
+        print("✨ Toggle smart suggestions tapped")
+
+        // For iOS 26+ with on-device AI, use the advanced version
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
+            toggleSmartSuggestions()
+            return
+        }
+        #endif
+
+        // For all other iOS versions, show a simple alert with AI assistant info
+        let alert = UIAlertController(
+            title: "Smart Suggestions",
+            message: "Use the AI Assistant tab to get intelligent event suggestions and schedule recommendations powered by Claude.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootViewController = windowScene.windows.first?.rootViewController {
+            rootViewController.present(alert, animated: true)
+        }
+    }
 
     private func toggleSmartSuggestions() {
         #if canImport(FoundationModels)
@@ -1301,14 +1381,46 @@ struct DayEventCard: View {
 
                     Spacer()
 
+                    // Video Meeting Join Button
+                    if let videoMeeting = detectVideoMeetingForEKEvent() {
+                        Button(action: {
+                            UIApplication.shared.open(videoMeeting.url)
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: videoMeeting.platform.icon)
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text("Join")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(platformColorForCard(videoMeeting.platform))
+                            .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     // Task Badge
                     TaskBadgeView(count: taskManager.getPendingTaskCount(for: event.eventIdentifier))
                 }
 
                 if let location = event.location, !location.isEmpty {
-                    Text(location)
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundColor(.gray)
+                    HStack(spacing: 6) {
+                        Button(action: {
+                            openInMaps(location: location)
+                        }) {
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
+
+                        Text(location)
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundColor(.gray)
+                            .lineLimit(1)
+                    }
                 }
             }
 
@@ -1414,6 +1526,73 @@ struct DayEventCard: View {
 
     private var isAllDay: Bool {
         return event.isAllDay
+    }
+
+    // Video Meeting Detection
+    private func detectVideoMeetingForEKEvent() -> VideoMeetingDetector.VideoMeeting? {
+        let detector = VideoMeetingDetector()
+
+        // Debug: Print event details
+        print("🔍 Checking event for video meeting: \(event.title ?? "Untitled")")
+        print("   Location: \(event.location ?? "nil")")
+        print("   Notes: \(event.notes ?? "nil")")
+        print("   URL: \(event.url?.absoluteString ?? "nil")")
+
+        // Convert EKEvent to UnifiedEvent for detection
+        let unifiedEvent = UnifiedEvent(
+            id: event.eventIdentifier ?? UUID().uuidString,
+            title: event.title ?? "Untitled",
+            startDate: event.startDate,
+            endDate: event.endDate,
+            location: event.location,
+            description: event.notes,
+            isAllDay: event.isAllDay,
+            source: .ios,
+            organizer: event.organizer?.name,
+            originalEvent: event,
+            calendarId: event.calendar?.calendarIdentifier,
+            calendarName: event.calendar?.title,
+            calendarColor: event.calendar?.cgColor != nil ? Color(event.calendar!.cgColor) : nil
+        )
+
+        let meeting = detector.detectMeeting(from: unifiedEvent)
+        if let meeting = meeting {
+            print("✅ Detected \(meeting.platform.rawValue) meeting: \(meeting.url)")
+        } else {
+            print("❌ No video meeting detected")
+        }
+
+        return meeting
+    }
+
+    private func openInMaps(location: String) {
+        // Encode location for URL
+        guard let encodedLocation = location.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            print("❌ Failed to encode location: \(location)")
+            return
+        }
+
+        // Create Maps URL with directions (daddr = destination address)
+        // This opens Maps with directions to the location, just like iOS Calendar
+        if let url = URL(string: "http://maps.apple.com/?daddr=\(encodedLocation)") {
+            print("📍 Opening Maps for location: \(location)")
+            UIApplication.shared.open(url)
+        }
+    }
+
+    private func platformColorForCard(_ platform: VideoMeetingDetector.MeetingPlatform) -> Color {
+        switch platform {
+        case .zoom:
+            return Color.blue
+        case .googleMeet:
+            return Color.green
+        case .webex:
+            return Color.blue
+        case .microsoftTeams:
+            return Color.purple
+        case .unknown:
+            return Color.blue
+        }
     }
 
     private enum SwipeDirection {
@@ -3434,6 +3613,7 @@ struct EventCardView: View {
     let lane: Int
     let hourHeight: CGFloat
     @ObservedObject var fontManager: FontManager
+    @ObservedObject var calendarManager: CalendarManager
     @ObservedObject private var colorManager = EventColorManager.shared
 
     @State private var dragOffset: CGFloat = 0
@@ -3481,10 +3661,15 @@ struct EventCardView: View {
                     .lineLimit(2)
 
                 if let location = event.location, !location.isEmpty {
-                    HStack {
-                        Image(systemName: "location")
-                            .foregroundColor(.secondary)
-                            .font(.caption2)
+                    HStack(spacing: 4) {
+                        Button(action: {
+                            openInMaps(location: location)
+                        }) {
+                            Image(systemName: "location.fill")
+                                .foregroundColor(.blue)
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .buttonStyle(.plain)
 
                         Text(location)
                             .dynamicFont(size: 14, fontManager: fontManager)
@@ -3622,6 +3807,21 @@ struct EventCardView: View {
         return formatter.string(from: date)
     }
 
+    private func openInMaps(location: String) {
+        // Encode location for URL
+        guard let encodedLocation = location.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            print("❌ Failed to encode location: \(location)")
+            return
+        }
+
+        // Create Maps URL with directions (daddr = destination address)
+        // This opens Maps with directions to the location, just like iOS Calendar
+        if let url = URL(string: "http://maps.apple.com/?daddr=\(encodedLocation)") {
+            print("📍 Opening Maps for location: \(location)")
+            UIApplication.shared.open(url)
+        }
+    }
+
     private func handleDragEnd(translation: CGFloat) {
         print("🎯 handleDragEnd called with translation: \(translation)")
 
@@ -3648,13 +3848,12 @@ struct EventCardView: View {
 
         print("📅 New dates calculated - Start: \(newStartDate), End: \(newEndDate)")
 
-        // Save the event to EventKit
+        // Save the event using CalendarManager's event store to avoid duplicates
         Task { @MainActor in
             do {
-                let eventStore = EKEventStore()
-
-                // Fetch the event from the store to ensure we have the latest version
-                guard let eventToUpdate = eventStore.event(withIdentifier: event.eventIdentifier) else {
+                // Use the CalendarManager's event store instead of creating a new one
+                // This prevents duplicate events from being created
+                guard let eventToUpdate = calendarManager.eventStore.event(withIdentifier: event.eventIdentifier) else {
                     print("❌ Could not fetch event from store")
                     return
                 }
@@ -3663,8 +3862,8 @@ struct EventCardView: View {
                 eventToUpdate.startDate = newStartDate
                 eventToUpdate.endDate = newEndDate
 
-                // Save with commit
-                try eventStore.save(eventToUpdate, span: .thisEvent, commit: true)
+                // Save with commit using CalendarManager's event store
+                try calendarManager.eventStore.save(eventToUpdate, span: .thisEvent, commit: true)
 
                 print("✅ Event '\(event.title ?? "Untitled")' successfully moved to new time: \(newStartDate)")
 
@@ -4027,70 +4226,14 @@ struct ConflictListView: View {
 }
 
 // MARK: - Conflict Resolution Types
-
-/// Types of resolution actions
-fileprivate enum ResolutionType: String, CaseIterable {
-    case reschedule = "Reschedule"
-    case decline = "Decline"
-    case shorten = "Shorten"
-    case markOptional = "Mark Optional"
-    case noAction = "Keep Both"
-
-    var icon: String {
-        switch self {
-        case .reschedule: return "calendar.badge.clock"
-        case .decline: return "xmark.circle"
-        case .shorten: return "arrow.down.right.and.arrow.up.left"
-        case .markOptional: return "questionmark.circle"
-        case .noAction: return "checkmark.circle"
-        }
-    }
-}
-
-/// Individual resolution suggestion
-fileprivate struct ResolutionSuggestion: Identifiable, Equatable {
-    let id: UUID
-    let type: ResolutionType
-    let title: String
-    let description: String
-    let targetEvent: UnifiedEvent?
-    let suggestedTime: Date?
-    let confidence: Double // 0.0 to 1.0
-
-    init(type: ResolutionType, title: String, description: String, targetEvent: UnifiedEvent? = nil, suggestedTime: Date? = nil, confidence: Double = 0.8) {
-        self.id = UUID()
-        self.type = type
-        self.title = title
-        self.description = description
-        self.targetEvent = targetEvent
-        self.suggestedTime = suggestedTime
-        self.confidence = confidence
-    }
-
-    static func == (lhs: ResolutionSuggestion, rhs: ResolutionSuggestion) -> Bool {
-        lhs.id == rhs.id
-    }
-}
-
-/// AI-generated suggestions for resolving conflicts (local version)
-fileprivate struct LocalConflictResolution: Identifiable {
-    let id: UUID
-    let conflict: ScheduleConflict
-    let suggestions: [ResolutionSuggestion]
-
-    init(conflict: ScheduleConflict, suggestions: [ResolutionSuggestion]) {
-        self.id = UUID()
-        self.conflict = conflict
-        self.suggestions = suggestions
-    }
-}
+// Note: Using types from EventConflict.swift (ResolutionType, ResolutionSuggestion, ConflictResolution)
 
 /// AI-powered conflict resolution suggestion generator (local version)
 fileprivate class LocalConflictResolutionAI {
     /// Generate rule-based suggestions for resolving a conflict
-    func generateSuggestions(for conflict: ScheduleConflict, allEvents: [UnifiedEvent], completion: @escaping (LocalConflictResolution) -> Void) {
+    func generateSuggestions(for conflict: ScheduleConflict, allEvents: [UnifiedEvent], completion: @escaping (ConflictResolution) -> Void) {
         guard conflict.conflictingEvents.count >= 2 else {
-            completion(LocalConflictResolution(conflict: conflict, suggestions: []))
+            completion(ConflictResolution(conflict: conflict, suggestions: []))
             return
         }
 
@@ -4139,7 +4282,7 @@ fileprivate class LocalConflictResolutionAI {
             confidence: 0.6
         ))
 
-        let resolution = LocalConflictResolution(conflict: conflict, suggestions: suggestions)
+        let resolution = ConflictResolution(conflict: conflict, suggestions: suggestions)
         DispatchQueue.main.async {
             completion(resolution)
         }

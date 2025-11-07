@@ -49,6 +49,7 @@ struct GraphEvent: Codable {
     let location: GraphLocation?
     let bodyPreview: String?
     let organizer: GraphRecipient?
+    let isAllDay: Bool?
 }
 
 struct GraphDateTime: Codable {
@@ -104,6 +105,7 @@ struct OutlookEvent: Identifiable, Codable {
     let description: String?
     let calendarId: String
     let organizer: String?
+    let isAllDay: Bool
 
     var duration: String {
         let formatter = DateFormatter()
@@ -973,7 +975,8 @@ class OutlookCalendarManager: ObservableObject {
                     location: "Bricco Trattoria 124 Hebron Avenue, Glastonbury",
                     description: "Monthly journal club meeting",
                     calendarId: selectedCalendar.id,
-                    organizer: "btessema@enticmd.com"
+                    organizer: "btessema@enticmd.com",
+                    isAllDay: false
                 ),
                 OutlookEvent(
                     id: "touch-point-1",
@@ -983,7 +986,8 @@ class OutlookCalendarManager: ObservableObject {
                     location: "Virtual Meeting",
                     description: "Regular touch point meeting",
                     calendarId: selectedCalendar.id,
-                    organizer: "btessema@enticmd.com"
+                    organizer: "btessema@enticmd.com",
+                    isAllDay: false
                 ),
                 OutlookEvent(
                     id: "go-live-meeting",
@@ -993,7 +997,8 @@ class OutlookCalendarManager: ObservableObject {
                     location: "Conference Room",
                     description: "Planning for go-live implementation",
                     calendarId: selectedCalendar.id,
-                    organizer: "btessema@enticmd.com"
+                    organizer: "btessema@enticmd.com",
+                    isAllDay: false
                 ),
                 OutlookEvent(
                     id: "vonage-meeting",
@@ -1003,7 +1008,8 @@ class OutlookCalendarManager: ObservableObject {
                     location: "Virtual Meeting",
                     description: "Partnership meeting",
                     calendarId: selectedCalendar.id,
-                    organizer: "btessema@enticmd.com"
+                    organizer: "btessema@enticmd.com",
+                    isAllDay: false
                 ),
                 OutlookEvent(
                     id: "oto-townhall",
@@ -1013,7 +1019,8 @@ class OutlookCalendarManager: ObservableObject {
                     location: "Medical Center",
                     description: "Department town hall meeting",
                     calendarId: selectedCalendar.id,
-                    organizer: "btessema@enticmd.com"
+                    organizer: "btessema@enticmd.com",
+                    isAllDay: false
                 )
             ]
         case "United States Holiday":
@@ -1026,7 +1033,8 @@ class OutlookCalendarManager: ObservableObject {
                     location: nil,
                     description: "Federal Holiday",
                     calendarId: selectedCalendar.id,
-                    organizer: nil
+                    organizer: nil,
+                    isAllDay: true
                 ),
                 OutlookEvent(
                     id: "thanksgiving",
@@ -1036,7 +1044,8 @@ class OutlookCalendarManager: ObservableObject {
                     location: nil,
                     description: "Federal Holiday",
                     calendarId: selectedCalendar.id,
-                    organizer: nil
+                    organizer: nil,
+                    isAllDay: true
                 )
             ]
         case "Birthdays":
@@ -1049,7 +1058,8 @@ class OutlookCalendarManager: ObservableObject {
                     location: nil,
                     description: "Birthday reminder",
                     calendarId: selectedCalendar.id,
-                    organizer: nil
+                    organizer: nil,
+                    isAllDay: true
                 )
             ]
         case "ENTIC time off":
@@ -1062,7 +1072,8 @@ class OutlookCalendarManager: ObservableObject {
                     location: nil,
                     description: "Scheduled vacation time",
                     calendarId: selectedCalendar.id,
-                    organizer: "hr@enticmd.com"
+                    organizer: "hr@enticmd.com",
+                    isAllDay: true
                 )
             ]
         default:
@@ -1076,7 +1087,8 @@ class OutlookCalendarManager: ObservableObject {
                     location: nil,
                     description: "Generic calendar event",
                     calendarId: selectedCalendar.id,
-                    organizer: selectedCalendar.owner
+                    organizer: selectedCalendar.owner,
+                    isAllDay: false
                 )
             ]
         }
@@ -1423,7 +1435,9 @@ class OutlookCalendarManager: ObservableObject {
         // Build enhanced endpoint with recurring events support
         let endpoint: String
         let baseQuery = "$select=subject,start,end,location,isAllDay,type,seriesMasterId,recurrence,bodyPreview"
-        let filterQuery = "$filter=start/dateTime ge '\(startTimeString)' and end/dateTime le '\(endTimeString)'"
+        // Use overlap-based filtering: event starts before range ends AND event ends after range starts
+        // This ensures we capture all events that overlap with our date range, including long events
+        let filterQuery = "$filter=start/dateTime lt '\(endTimeString)' and end/dateTime gt '\(startTimeString)'"
         let expandQuery = "$expand=instances"
         let fullQuery = "\(baseQuery)&\(filterQuery)&\(expandQuery)"
 
@@ -1475,6 +1489,11 @@ class OutlookCalendarManager: ObservableObject {
                     print("🔍 Debug - Raw API response: \(eventsData.value.count) events")
                     if eventsData.value.isEmpty {
                         print("🔍 Debug - API returned empty events array - calendar may be empty or permissions issue")
+                    } else {
+                        print("🔍 Debug - Event titles from API:")
+                        for (index, event) in eventsData.value.enumerated() {
+                            print("   \(index + 1). \(event.subject ?? "No title") - Start: \(event.start?.dateTime ?? "N/A"), End: \(event.end?.dateTime ?? "N/A")")
+                        }
                     }
 
                     let fetchedEvents = eventsData.value.compactMap { graphEvent -> OutlookEvent? in
@@ -1518,8 +1537,19 @@ class OutlookCalendarManager: ObservableObject {
                             location: graphEvent.location?.displayName,
                             description: graphEvent.bodyPreview,
                             calendarId: selectedCalendar.id,
-                            organizer: graphEvent.organizer?.emailAddress?.address
+                            organizer: graphEvent.organizer?.emailAddress?.address,
+                            isAllDay: graphEvent.isAllDay ?? false
                         )
+                    }
+
+                    print("📊 Successfully parsed \(fetchedEvents.count) out of \(eventsData.value.count) events from API")
+                    if fetchedEvents.count < eventsData.value.count {
+                        let skipped = eventsData.value.count - fetchedEvents.count
+                        print("⚠️ Skipped \(skipped) events due to parsing issues (missing dates)")
+                    }
+                    print("🔍 Parsed event titles:")
+                    for (index, event) in fetchedEvents.enumerated() {
+                        print("   \(index + 1). \(event.title) - \(event.startDate) to \(event.endDate)")
                     }
 
                     // SMART MERGE: Preserve events with pending updates, use fetched data for others
@@ -1845,7 +1875,8 @@ class OutlookCalendarManager: ObservableObject {
                         location: old.location,
                         description: old.description,
                         calendarId: old.calendarId,
-                        organizer: old.organizer
+                        organizer: old.organizer,
+                        isAllDay: old.isAllDay
                     )
                     updatedEvent = newEvent
                     self?.outlookEvents[index] = newEvent

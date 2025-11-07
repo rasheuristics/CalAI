@@ -26,6 +26,8 @@ struct EditEventView: View {
     @State private var errorMessage: String?
     @State private var successMessage: String?
     @State private var showingDeleteConfirmation = false
+    @State private var showingRecurringEditDialog = false
+    @State private var pendingEventUpdate: UnifiedEvent?
     @StateObject private var colorManager = EventColorManager.shared
 
     var body: some View {
@@ -83,6 +85,21 @@ struct EditEventView: View {
         } message: {
             Text("Are you sure you want to delete '\(title)'? This action cannot be undone.")
         }
+        .alert("Edit Recurring Event", isPresented: $showingRecurringEditDialog, presenting: pendingEventUpdate) { updatedEvent in
+            Button("This Event Only") {
+                saveEventWithSpan(updatedEvent, span: .thisEvent)
+                pendingEventUpdate = nil
+            }
+            Button("All Future Events") {
+                saveEventWithSpan(updatedEvent, span: .futureEvents)
+                pendingEventUpdate = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingEventUpdate = nil
+            }
+        } message: { _ in
+            Text("This is a recurring event. Do you want to edit only this occurrence or all future occurrences?")
+        }
         .overlay(
             Group {
                 if let successMessage = successMessage {
@@ -137,12 +154,24 @@ struct EditEventView: View {
             TextField("Title", text: $title)
                 .dynamicFont(size: 17, fontManager: fontManager)
 
+            // Show clickable link if location contains a URL
+            if !location.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Location")
+                        .dynamicFont(size: 13, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+
+                    ClickableTextView(location, fontSize: 15, fontManager: fontManager)
+                }
+                .padding(.vertical, 8)
+            }
+
             // Location field with search
             Button(action: {
                 showingLocationPicker = true
             }) {
                 HStack {
-                    Text("Location")
+                    Text(location.isEmpty ? "Location" : "Change Location")
                         .dynamicFont(size: 17, fontManager: fontManager)
                         .foregroundColor(.primary)
 
@@ -156,18 +185,9 @@ struct EditEventView: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.secondary)
                     } else {
-                        HStack(spacing: 4) {
-                            Image(systemName: "location.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(.blue)
-                            Text(location)
-                                .dynamicFont(size: 17, fontManager: fontManager)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.secondary)
-                        }
+                        Image(systemName: "pencil")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.blue)
                     }
                 }
             }
@@ -333,6 +353,12 @@ struct EditEventView: View {
 
     private var notesSection: some View {
         Section("Notes") {
+            // Show clickable link if notes contain a URL
+            if !notes.isEmpty {
+                ClickableTextView(notes, fontSize: 15, fontManager: fontManager)
+                    .padding(.vertical, 8)
+            }
+
             TextEditor(text: $notes)
                 .dynamicFont(size: 17, fontManager: fontManager)
                 .frame(minHeight: 100)
@@ -457,9 +483,6 @@ struct EditEventView: View {
     private func saveEvent() {
         guard !title.isEmpty else { return }
 
-        isLoading = true
-        errorMessage = nil
-
         let updatedEvent = UnifiedEvent(
             id: event.id,
             title: title,
@@ -476,7 +499,81 @@ struct EditEventView: View {
             calendarColor: event.calendarColor
         )
 
-        updateEventInCalendar(updatedEvent) { success, error in
+        // Check if this is a recurring event
+        if isRecurringEvent() {
+            // Show dialog to ask if user wants to edit this event or all future events
+            pendingEventUpdate = updatedEvent
+            showingRecurringEditDialog = true
+            return
+        }
+
+        // Not recurring, proceed with normal save
+        isLoading = true
+        errorMessage = nil
+        updateEventInCalendar(updatedEvent, span: .thisEvent) { success, error in
+            DispatchQueue.main.async {
+                isLoading = false
+
+                if success {
+                    print("✅ Event updated successfully, refreshing calendar and conflicts...")
+                    print("📊 Current conflict count BEFORE refresh: \(calendarManager.detectedConflicts.count)")
+
+                    // Save custom color to EventColorManager
+                    colorManager.setUseCustomColor(true, for: event.id)
+                    colorManager.setCustomColor(selectedColor, for: event.id)
+
+                    // Show success message
+                    withAnimation {
+                        successMessage = "Event updated successfully"
+                    }
+
+                    // Haptic feedback
+                    HapticManager.shared.success()
+
+                    // Dismiss after showing message
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        dismiss()
+                    }
+
+                    // Then refresh calendar data
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        print("🔄 Step 1: Refreshing all calendars...")
+                        calendarManager.refreshAllCalendars()
+
+                        // Wait for calendar to refresh, then reload unified events and re-detect conflicts
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            print("🔄 Step 2: Reloading unified events...")
+                            print("📊 Unified events count BEFORE reload: \(calendarManager.unifiedEvents.count)")
+                            calendarManager.loadAllUnifiedEvents()
+
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                print("📊 Unified events count AFTER reload: \(calendarManager.unifiedEvents.count)")
+                                print("🔄 Step 3: Re-detecting conflicts...")
+                                calendarManager.detectAllConflicts()
+                                print("📊 Current conflict count AFTER detect: \(calendarManager.detectedConflicts.count)")
+                            }
+                        }
+                    }
+                } else {
+                    errorMessage = error ?? "Failed to update event"
+                }
+            }
+        }
+    }
+
+    private func isRecurringEvent() -> Bool {
+        // Check if the original event is a recurring event
+        if let ekEvent = event.originalEvent as? EKEvent {
+            return ekEvent.hasRecurrenceRules
+        }
+        return false
+    }
+
+    private func saveEventWithSpan(_ updatedEvent: UnifiedEvent, span: EKSpan) {
+        isLoading = true
+        errorMessage = nil
+
+        updateEventInCalendar(updatedEvent, span: span) { success, error in
             DispatchQueue.main.async {
                 isLoading = false
 
@@ -739,10 +836,10 @@ struct EditEventView: View {
         }
     }
 
-    private func updateEventInCalendar(_ updatedEvent: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
+    private func updateEventInCalendar(_ updatedEvent: UnifiedEvent, span: EKSpan, completion: @escaping (Bool, String?) -> Void) {
         switch updatedEvent.source {
         case .ios:
-            updateIOSEvent(updatedEvent, completion: completion)
+            updateIOSEvent(updatedEvent, span: span, completion: completion)
         case .google:
             updateGoogleEvent(updatedEvent, completion: completion)
         case .outlook:
@@ -750,7 +847,7 @@ struct EditEventView: View {
         }
     }
 
-    private func updateIOSEvent(_ updatedEvent: UnifiedEvent, completion: @escaping (Bool, String?) -> Void) {
+    private func updateIOSEvent(_ updatedEvent: UnifiedEvent, span: EKSpan, completion: @escaping (Bool, String?) -> Void) {
         guard let ekEvent = updatedEvent.originalEvent as? EKEvent else {
             completion(false, "Could not find original iOS event")
             return
@@ -788,8 +885,10 @@ struct EditEventView: View {
         // We'll store attachment data separately if needed
 
         do {
-            try calendarManager.eventStore.save(ekEvent, span: .thisEvent)
-            print("✅ Successfully updated iOS event: \(updatedEvent.title)")
+            // Use the provided span parameter
+            try calendarManager.eventStore.save(ekEvent, span: span)
+            let spanDescription = span == .thisEvent ? "this event only" : "all future events"
+            print("✅ Successfully updated iOS event (\(spanDescription)): \(updatedEvent.title)")
             completion(true, nil)
         } catch {
             print("❌ Failed to update iOS event: \(error)")
@@ -825,7 +924,8 @@ struct EditEventView: View {
             location: updatedEvent.location,
             description: updatedEvent.description,
             calendarId: "primary-calendar", // Default calendar ID
-            organizer: nil
+            organizer: nil,
+            isAllDay: updatedEvent.isAllDay
         )
 
         calendarManager.outlookCalendarManager?.updateEvent(outlookEvent) { success, error in

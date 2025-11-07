@@ -34,7 +34,7 @@ struct ScheduleConflict: Identifiable, Equatable {
         }
     }
 
-    static func == (lhs: EventConflict, rhs: EventConflict) -> Bool {
+    static func == (lhs: ScheduleConflict, rhs: ScheduleConflict) -> Bool {
         lhs.id == rhs.id
     }
 }

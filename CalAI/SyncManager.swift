@@ -274,7 +274,7 @@ class SyncManager: ObservableObject {
 
     // MARK: - Conflict Resolution
 
-    func resolveConflicts(for event: UnifiedEvent) -> ConflictResolution {
+    func resolveConflicts(for event: UnifiedEvent) -> SyncConflictResolution {
         // Check for conflicts with existing events
         let existingEvents = coreDataManager.fetchEvents(for: event.source)
 
@@ -319,7 +319,7 @@ struct CalendarSyncError: Identifiable {
     }
 }
 
-enum ConflictResolution {
+enum SyncConflictResolution {
     case useLocal(reason: String)
     case useRemote(reason: String)
     case merge(strategy: MergeStrategy)

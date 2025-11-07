@@ -983,6 +983,14 @@ class AIManager: ObservableObject {
         case "weather":
             print("🌦️ Processing weather intent...")
 
+            // Check if there's a location parameter
+            let weatherLocation = action.parameters["location"]?.stringValue
+            if let location = weatherLocation {
+                print("📍 Weather location parameter: \(location)")
+            } else {
+                print("📍 No location parameter - using current location")
+            }
+
             // Check if there's a date parameter for forecast
             let weatherDate: Date?
             if let dateStr = action.parameters["date"]?.stringValue {
@@ -1000,23 +1008,30 @@ class AIManager: ObservableObject {
                     case .success(let weatherData):
                         print("✅ Weather fetched successfully: \(weatherData.temperatureFormatted)")
 
-                        // Build a natural weather response with date context
+                        // Build a natural weather response with date and location context
                         var weatherMessage: String
                         if let date = weatherDate {
                             let calendar = Calendar.current
                             let formatter = DateFormatter()
 
                             if calendar.isDateInToday(date) {
-                                weatherMessage = "Today's weather: "
+                                weatherMessage = "Today's weather"
                             } else if calendar.isDateInTomorrow(date) {
-                                weatherMessage = "Tomorrow's forecast: "
+                                weatherMessage = "Tomorrow's forecast"
                             } else {
                                 formatter.dateStyle = .full
                                 formatter.timeStyle = .none
-                                weatherMessage = "Weather for \(formatter.string(from: date)): "
+                                weatherMessage = "Weather for \(formatter.string(from: date))"
                             }
                         } else {
-                            weatherMessage = "It's currently "
+                            weatherMessage = "It's currently"
+                        }
+
+                        // Add location context
+                        if let location = weatherLocation {
+                            weatherMessage += " in \(location): "
+                        } else {
+                            weatherMessage += " "
                         }
 
                         weatherMessage += weatherData.temperatureFormatted
@@ -1054,6 +1069,8 @@ class AIManager: ObservableObject {
                             errorMessage += "Please enable location access in Settings to get weather information."
                         } else if nsError.code == 8 {
                             errorMessage += "I can only provide forecasts up to 10 days in the future."
+                        } else if nsError.code == 9 {
+                            errorMessage += "I couldn't find that location. Please try a different location name."
                         } else {
                             errorMessage += error.localizedDescription
                         }
@@ -1067,9 +1084,14 @@ class AIManager: ObservableObject {
                 }
 
                 // Call appropriate weather service method
-                if let date = weatherDate {
+                if let location = weatherLocation {
+                    // Use specific location
+                    WeatherService.shared.fetchWeather(for: location, date: weatherDate, completion: fetchCompletion)
+                } else if let date = weatherDate {
+                    // Use current location with date
                     WeatherService.shared.fetchWeatherForDate(date, completion: fetchCompletion)
                 } else {
+                    // Use current location, current time
                     WeatherService.shared.fetchCurrentWeather(completion: fetchCompletion)
                 }
             }
@@ -3107,8 +3129,16 @@ class AIManager: ObservableObject {
     private func handleWeather(transcript: String, completion: @escaping (AICalendarResponse) -> Void) async {
         print("🌦️ Handling weather query: \(transcript)")
 
-        // Extract date from transcript if present
+        // Extract location and date from transcript if present
+        let weatherLocation = extractWeatherLocation(from: transcript)
         let weatherDate = extractWeatherDate(from: transcript)
+
+        if let location = weatherLocation {
+            print("📍 Extracted weather location: \(location)")
+        } else {
+            print("📍 No location found - using current device location")
+        }
+
         if let date = weatherDate {
             print("📅 Extracted weather date: \(date)")
         } else {
@@ -3127,23 +3157,30 @@ class AIManager: ObservableObject {
                 case .success(let weatherData):
                     print("✅ Weather fetched successfully: \(weatherData.temperatureFormatted)")
 
-                    // Build a natural weather response with date context
+                    // Build a natural weather response with date and location context
                     var weatherMessage: String
                     if let date = weatherDate {
                         let calendar = Calendar.current
                         let formatter = DateFormatter()
 
                         if calendar.isDateInToday(date) {
-                            weatherMessage = "Today's weather: "
+                            weatherMessage = "Today's weather"
                         } else if calendar.isDateInTomorrow(date) {
-                            weatherMessage = "Tomorrow's forecast: "
+                            weatherMessage = "Tomorrow's forecast"
                         } else {
                             formatter.dateStyle = .full
                             formatter.timeStyle = .none
-                            weatherMessage = "Weather for \(formatter.string(from: date)): "
+                            weatherMessage = "Weather for \(formatter.string(from: date))"
                         }
                     } else {
-                        weatherMessage = "It's currently "
+                        weatherMessage = "It's currently"
+                    }
+
+                    // Add location context
+                    if let location = weatherLocation {
+                        weatherMessage += " in \(location): "
+                    } else {
+                        weatherMessage += " "
                     }
 
                     weatherMessage += weatherData.temperatureFormatted
@@ -3182,6 +3219,8 @@ class AIManager: ObservableObject {
                         errorMessage += "Please enable location access in Settings to get weather information."
                     } else if nsError.code == 8 {
                         errorMessage += "I can only provide forecasts up to 10 days in the future."
+                    } else if nsError.code == 9 {
+                        errorMessage += "I couldn't find that location. Please try a different location name."
                     } else {
                         errorMessage += error.localizedDescription
                     }
@@ -3196,9 +3235,14 @@ class AIManager: ObservableObject {
             }
 
             // Call appropriate weather service method
-            if let date = weatherDate {
+            if let location = weatherLocation {
+                // Use specific location
+                WeatherService.shared.fetchWeather(for: location, date: weatherDate, completion: fetchCompletion)
+            } else if let date = weatherDate {
+                // Use current location with date
                 WeatherService.shared.fetchWeatherForDate(date, completion: fetchCompletion)
             } else {
+                // Use current location, current time
                 WeatherService.shared.fetchCurrentWeather(completion: fetchCompletion)
             }
         }
@@ -3240,6 +3284,43 @@ class AIManager: ObservableObject {
                     }
                     daysToAdd += 7 // Add another week for "next"
                     return calendar.date(byAdding: .day, value: daysToAdd, to: now)
+                }
+            }
+        }
+
+        return nil
+    }
+
+    // Extract location from weather query transcript
+    private func extractWeatherLocation(from text: String) -> String? {
+        let lowercased = text.lowercased()
+
+        // Common patterns: "weather in [location]", "weather for [location]", "[location] weather"
+        let patterns = [
+            "weather in ([a-z\\s,]+?)(?:\\?|$|tomorrow|today|this|next)",
+            "weather for ([a-z\\s,]+?)(?:\\?|$|tomorrow|today|this|next)",
+            "forecast (?:in|for) ([a-z\\s,]+?)(?:\\?|$|tomorrow|today|this|next)",
+            "temperature in ([a-z\\s,]+?)(?:\\?|$|tomorrow|today|this|next)",
+            "(?:how|what).+in ([a-z\\s,]+?)(?:\\?|$)",
+        ]
+
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+               match.numberOfRanges > 1,
+               let locationRange = Range(match.range(at: 1), in: text) {
+                let location = String(text[locationRange])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: ".,!?"))
+
+                // Filter out common non-location words
+                let stopWords = ["the", "a", "an", "be", "like", "going", "to", "is", "it", "will", "today", "tomorrow"]
+                let words = location.split(separator: " ").filter { !stopWords.contains(String($0).lowercased()) }
+
+                if !words.isEmpty {
+                    let cleanedLocation = words.joined(separator: " ")
+                    print("📍 Extracted location: '\(cleanedLocation)'")
+                    return cleanedLocation
                 }
             }
         }

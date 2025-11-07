@@ -13,6 +13,7 @@ class InsightsViewModel: ObservableObject {
     @Published var freeTimeBlocks = 0
 
     @Published var conflicts: [InsightsScheduleConflict] = []
+    @Published var duplicates: [InsightsDuplicateEvent] = []
     @Published var logisticsIssues: [InsightsLogisticsIssue] = []
     @Published var patterns: [InsightsSchedulePattern] = []
     @Published var recommendations: [InsightsAIRecommendation] = []
@@ -56,16 +57,25 @@ class InsightsViewModel: ObservableObject {
                 event.startDate >= startOfDay && event.startDate < endOfDay
             }
 
-            // Calculate basic metrics
+            // Get events for next 7 days (for conflicts and duplicates)
+            let sevenDaysOut = Calendar.current.date(byAdding: .day, value: 7, to: startOfDay)!
+            let next7DaysEvents = calendarManager.unifiedEvents.filter { event in
+                event.startDate >= startOfDay && event.startDate < sevenDaysOut
+            }
+
+            // Calculate basic metrics (still today only for health score)
             eventsToday = todayEvents.count
             scheduledHours = calculateScheduledHours(todayEvents)
             totalTravelTime = calculateTravelTime(todayEvents)
             freeTimeBlocks = calculateFreeTimeBlocks(todayEvents)
 
-            // Detect conflicts
-            conflicts = detectConflicts(todayEvents)
+            // Detect conflicts (next 7 days)
+            conflicts = detectConflicts(next7DaysEvents)
 
-            // Analyze logistics
+            // Detect duplicates (next 7 days)
+            duplicates = detectDuplicates(next7DaysEvents)
+
+            // Analyze logistics (today only)
             logisticsIssues = analyzeLogistics(todayEvents)
 
             // Detect patterns (use last 7 days)
@@ -116,6 +126,8 @@ class InsightsViewModel: ObservableObject {
                         event2Title: event2.title,
                         event1Time: "\(dateFormatter.string(from: event1.startDate)) - \(dateFormatter.string(from: event1.endDate))",
                         event2Time: "\(dateFormatter.string(from: event2.startDate)) - \(dateFormatter.string(from: event2.endDate))",
+                        event1Source: event1.source,
+                        event2Source: event2.source,
                         overlapMinutes: overlapMinutes,
                         timeDescription: "Both events occur on \(formatDate(event1.startDate))",
                         resolutionOptions: [
@@ -133,10 +145,59 @@ class InsightsViewModel: ObservableObject {
         return conflicts
     }
 
+    // MARK: - Duplicate Detection
+    private func detectDuplicates(_ events: [UnifiedEvent]) -> [InsightsDuplicateEvent] {
+        var duplicateList: [InsightsDuplicateEvent] = []
+
+        // Use DuplicateEventDetector
+        let duplicateDetector = DuplicateEventDetector()
+        let duplicateGroups = duplicateDetector.detectDuplicates(in: events)
+
+        // Convert to Insights model
+        for group in duplicateGroups where group.confidence >= 0.7 {
+            // Get all calendar sources for this duplicate group
+            let sources = Array(Set(group.events.map { $0.source }))
+
+            // Only show if it appears on multiple calendars
+            if sources.count >= 2 {
+                let primaryEvent = group.primaryEvent
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateStyle = .short
+                dateFormatter.timeStyle = .short
+
+                let duplicate = InsightsDuplicateEvent(
+                    id: UUID().uuidString,
+                    eventTitle: primaryEvent.title,
+                    eventTime: "\(dateFormatter.string(from: primaryEvent.startDate)) - \(dateFormatter.string(from: primaryEvent.endDate))",
+                    sources: sources,
+                    confidence: group.confidence,
+                    matchType: matchTypeString(from: group.matchType)
+                )
+                duplicateList.append(duplicate)
+            }
+        }
+
+        return duplicateList
+    }
+
+    private func matchTypeString(from matchType: DuplicateEventDetector.DuplicateGroup.MatchType) -> String {
+        switch matchType {
+        case .exact: return "exact"
+        case .strong: return "strong"
+        case .moderate: return "moderate"
+        case .weak: return "weak"
+        }
+    }
+
     // MARK: - Logistics Analysis
     private func analyzeLogistics(_ events: [UnifiedEvent]) -> [InsightsLogisticsIssue] {
         var issues: [InsightsLogisticsIssue] = []
         let sortedEvents = events.sorted { $0.startDate < $1.startDate }
+
+        // Guard against empty or single event arrays
+        guard sortedEvents.count > 1 else {
+            return []
+        }
 
         for i in 0..<sortedEvents.count - 1 {
             let currentEvent = sortedEvents[i]
@@ -303,6 +364,12 @@ class InsightsViewModel: ObservableObject {
         // Recommend breaks if too many back-to-back meetings
         let sortedEvents = events.sorted { $0.startDate < $1.startDate }
         var backToBackCount = 0
+
+        // Guard against empty or single event arrays
+        guard sortedEvents.count > 1 else {
+            return
+        }
+
         for i in 0..<sortedEvents.count - 1 {
             if sortedEvents[i + 1].startDate == sortedEvents[i].endDate {
                 backToBackCount += 1
@@ -432,6 +499,11 @@ class InsightsViewModel: ObservableObject {
         let sortedEvents = events.sorted { $0.startDate < $1.startDate }
         var totalTravelMinutes: Double = 0
 
+        // Guard against empty or single event arrays
+        guard sortedEvents.count > 1 else {
+            return 0
+        }
+
         for i in 0..<sortedEvents.count - 1 {
             let currentEvent = sortedEvents[i]
             let nextEvent = sortedEvents[i + 1]
@@ -459,11 +531,13 @@ class InsightsViewModel: ObservableObject {
             freeBlocks += 1
         }
 
-        // Check gaps between events
-        for i in 0..<sortedEvents.count - 1 {
-            let gapMinutes = sortedEvents[i + 1].startDate.timeIntervalSince(sortedEvents[i].endDate) / 60
-            if gapMinutes >= 60 {
-                freeBlocks += 1
+        // Check gaps between events (only if we have multiple events)
+        if sortedEvents.count > 1 {
+            for i in 0..<sortedEvents.count - 1 {
+                let gapMinutes = sortedEvents[i + 1].startDate.timeIntervalSince(sortedEvents[i].endDate) / 60
+                if gapMinutes >= 60 {
+                    freeBlocks += 1
+                }
             }
         }
 
