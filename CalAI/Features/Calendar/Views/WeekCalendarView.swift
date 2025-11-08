@@ -16,118 +16,148 @@ struct WeekCalendarView: View {
     var body: some View {
         GeometryReader { geometry in
             HStack(spacing: 0) {
-                // Time labels column
-                VStack(spacing: 0) {
-                    // Header spacer for day names
-                    Rectangle()
-                        .fill(Color.clear)
-                        .frame(height: 44)
+                timeLabelsColumn
+                weekScrollView(geometry: geometry)
+            }
+        }
+    }
 
-                    // Hour labels
-                    ForEach(displayHours, id: \.self) { hour in
-                        HStack {
-                            formattedHourView(hour)
-                            Spacer()
-                        }
-                        .frame(height: hourHeight * zoomScale)
-                    }
+    private var timeLabelsColumn: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.clear)
+                .frame(height: 44)
+
+            ForEach(displayHours, id: \.self) { hour in
+                HStack {
+                    formattedHourView(hour)
+                    Spacer()
                 }
-                .frame(width: 50)
-                .background(Color(.systemBackground))
+                .frame(height: hourHeight * zoomScale)
+            }
+        }
+        .frame(width: 50)
+        .background(Color(.systemBackground))
+    }
 
-                // Week days scroll view
-                ScrollViewReader { proxy in
-                    ScrollView(.vertical) {
-                    VStack(spacing: 0) {
-                        // Day headers
-                        HStack(spacing: 0) {
-                            ForEach(weekDays, id: \.self) { day in
-                                DayHeaderCell(date: day)
-                                    .frame(maxWidth: .infinity)
-                                    .background(Color(.systemGray6))
-                                    .onTapGesture {
-                                        print("👆 Day header tapped: \(day)")
-                                        selectedDate = day
-                                        scrollToStartTime(proxy: proxy)
-                                    }
+    private func weekScrollView(geometry: GeometryProxy) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                VStack(spacing: 0) {
+                    dayHeadersView(proxy: proxy)
+                    weekGridView(geometry: geometry)
+                }
+                .onAppear {
+                    scrollToStartTime(proxy: proxy)
+                }
+            }
+        }
+        .simultaneousGesture(
+            MagnificationGesture()
+                .onChanged { value in
+                    zoomScale = max(0.5, min(3.0, value))
+                }
+        )
+    }
 
-                                if day != weekDays.last {
-                                    Rectangle()
-                                        .fill(Color(.systemGray4))
-                                        .frame(width: 1)
-                                }
-                            }
-                        }
-                        .frame(height: 44)
-                        .background(Color(.systemGray6))
-
-                        // Week grid with events
-                        ZStack(alignment: .topLeading) {
-                            // Background grid
-                            VStack(spacing: 0) {
-                                ForEach(displayHours, id: \.self) { hour in
-                                    HStack(spacing: 0) {
-                                        ForEach(0..<7) { dayIndex in
-                                            Rectangle()
-                                                .fill(Color.clear)
-                                                .frame(maxWidth: .infinity)
-                                                .overlay(
-                                                    Rectangle()
-                                                        .fill(Color(.systemGray5))
-                                                        .frame(height: 1),
-                                                    alignment: .top
-                                                )
-
-                                            if dayIndex < 6 {
-                                                Rectangle()
-                                                    .fill(Color(.systemGray4))
-                                                    .frame(width: 1)
-                                            }
-                                        }
-                                    }
-                                    .frame(height: hourHeight * zoomScale)
-                                    .id("hour-\(hour)")
-                                }
-                            }
-
-                            // Events overlay
-                            ForEach(Array(weekDays.enumerated()), id: \.offset) { dayIndex, day in
-                                let dayEvents = eventsForDay(day)
-                                ForEach(dayEvents, id: \.eventIdentifier) { event in
-                                    WeekEventView(
-                                        event: event,
-                                        hourHeight: hourHeight * zoomScale,
-                                        dayWidth: (geometry.size.width - 50) / 7,
-                                        isDragging: draggedEvent?.eventIdentifier == event.eventIdentifier,
-                                        onDragChanged: { value in
-                                            handleDragChanged(event: event, value: value, dayWidth: (geometry.size.width - 50) / 7)
-                                        },
-                                        onDragEnded: { value in
-                                            handleDragEnded(event: event, value: value, dayWidth: (geometry.size.width - 50) / 7, originalDayIndex: dayIndex)
-                                        }
-                                    )
-                                    .offset(
-                                        x: CGFloat(dayIndex) * ((geometry.size.width - 50) / 7) + (draggedEvent?.eventIdentifier == event.eventIdentifier ? dragOffset.width : 0),
-                                        y: eventOffset(for: event) + (draggedEvent?.eventIdentifier == event.eventIdentifier ? dragOffset.height : 0)
-                                    )
-                                }
-                            }
-                        }
-                        .frame(height: CGFloat(displayHours.count) * hourHeight * zoomScale)
-                    }
-                    .onAppear {
+    private func dayHeadersView(proxy: ScrollViewProxy) -> some View {
+        HStack(spacing: 0) {
+            ForEach(weekDays, id: \.self) { day in
+                DayHeaderCell(date: day)
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.systemGray6))
+                    .onTapGesture {
+                        print("👆 Day header tapped: \(day)")
+                        selectedDate = day
                         scrollToStartTime(proxy: proxy)
                     }
+
+                if day != weekDays.last {
+                    Rectangle()
+                        .fill(Color(.systemGray4))
+                        .frame(width: 1)
                 }
+            }
+        }
+        .frame(height: 44)
+        .background(Color(.systemGray6))
+    }
+
+    private func weekGridView(geometry: GeometryProxy) -> some View {
+        ZStack(alignment: .topLeading) {
+            backgroundGrid
+            eventsOverlay(geometry: geometry)
+        }
+        .frame(height: CGFloat(displayHours.count) * hourHeight * zoomScale)
+    }
+
+    private var backgroundGrid: some View {
+        VStack(spacing: 0) {
+            ForEach(displayHours, id: \.self) { hour in
+                HStack(spacing: 0) {
+                    ForEach(0..<7) { dayIndex in
+                        gridCell(dayIndex: dayIndex)
+                    }
                 }
-                .simultaneousGesture(
-                    MagnificationGesture()
-                        .onChanged { value in
-                            zoomScale = max(0.5, min(3.0, value))
-                        }
+                .frame(height: hourHeight * zoomScale)
+                .id("hour-\(hour)")
+            }
+        }
+    }
+
+    private func gridCell(dayIndex: Int) -> some View {
+        Group {
+            Rectangle()
+                .fill(Color.clear)
+                .frame(maxWidth: .infinity)
+                .overlay(
+                    Rectangle()
+                        .fill(Color(.systemGray5))
+                        .frame(height: 1),
+                    alignment: .top
+                )
+
+            if dayIndex < 6 {
+                Rectangle()
+                    .fill(Color(.systemGray4))
+                    .frame(width: 1)
+            }
+        }
+    }
+
+    private func eventsOverlay(geometry: GeometryProxy) -> some View {
+        let calculatedDayWidth = (geometry.size.width - 50) / 7
+
+        return ForEach(Array(weekDays.enumerated()), id: \.offset) { dayIndex, day in
+            let dayEvents = eventsForDay(day)
+            ForEach(dayEvents, id: \.eventIdentifier) { event in
+                eventView(
+                    event: event,
+                    dayIndex: dayIndex,
+                    dayWidth: calculatedDayWidth
                 )
             }
         }
+    }
+
+    private func eventView(event: EKEvent, dayIndex: Int, dayWidth: CGFloat) -> some View {
+        let isEventDragging = draggedEvent?.eventIdentifier == event.eventIdentifier
+        let xOffset = CGFloat(dayIndex) * dayWidth + (isEventDragging ? dragOffset.width : 0)
+        let yOffset = eventOffset(for: event) + (isEventDragging ? dragOffset.height : 0)
+
+        return WeekEventView(
+            event: event,
+            hourHeight: hourHeight * zoomScale,
+            dayWidth: dayWidth,
+            isDragging: isEventDragging,
+            onDragChanged: { value in
+                handleDragChanged(event: event, value: value, dayWidth: dayWidth)
+            },
+            onDragEnded: { value in
+                handleDragEnded(event: event, value: value, dayWidth: dayWidth, originalDayIndex: dayIndex)
+            }
+        )
+        .offset(x: xOffset, y: yOffset)
     }
 
     private var weekDays: [Date] {

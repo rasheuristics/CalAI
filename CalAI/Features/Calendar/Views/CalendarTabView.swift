@@ -2740,11 +2740,13 @@ struct CompressedDayTimelineView: View {
     @ViewBuilder
     private func allDayEventCard(event: ClampedEvent, width: CGFloat) -> some View {
         let isMultiDay = !calendar.isDate(event.originalEvent.start, inSameDayAs: event.originalEvent.end)
+        let eventColor = isMultiDay ? Color.orange : Color.green
+        let accessibilityText = "\(isMultiDay ? "Multi-day" : "All day") event: \(event.title ?? "Untitled Event")\(event.eventLocation.map { ", at \($0)" } ?? "")"
 
         HStack(spacing: 8) {
             // Multi-day indicator
             Rectangle()
-                .fill(isMultiDay ? Color.orange : Color.green)
+                .fill(eventColor)
                 .frame(width: 4)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -2772,25 +2774,27 @@ struct CompressedDayTimelineView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(width: width, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.white.opacity(0.15))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill((isMultiDay ? Color.orange : Color.green).opacity(0.15))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke((isMultiDay ? Color.orange : Color.green).opacity(0.6), lineWidth: 1.5)
-                )
-                .shadow(color: (isMultiDay ? Color.orange : Color.green).opacity(0.3), radius: 8, x: 0, y: 4)
-        )
-        .accessibilityLabel("\(isMultiDay ? "Multi-day" : "All day") event: \(event.title ?? "Untitled Event")\(event.eventLocation.map { ", at \($0)" } ?? "")")
+        .background(allDayEventBackground(color: eventColor))
+        .accessibilityLabel(accessibilityText)
         .onTapGesture {
             // Call the tap callback to open event management view
             onEventTap?(event.originalEvent)
             print("👆 All-day event tapped: \(event.title ?? "Untitled")")
         }
+    }
+
+    private func allDayEventBackground(color: Color) -> some View {
+        RoundedRectangle(cornerRadius: 12)
+            .fill(Color.white.opacity(0.15))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(color.opacity(0.15))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(color.opacity(0.6), lineWidth: 1.5)
+            )
+            .shadow(color: color.opacity(0.3), radius: 8, x: 0, y: 4)
     }
 
     @ViewBuilder

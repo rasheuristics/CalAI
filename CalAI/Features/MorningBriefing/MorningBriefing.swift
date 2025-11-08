@@ -244,3 +244,62 @@ struct DayAnalyzer {
         return suggestions
     }
 }
+
+// MARK: - Shared Weather Storage
+
+/// Shared storage for weather data between app and widget
+class SharedWeatherStorage {
+    static let shared = SharedWeatherStorage()
+
+    private let groupIdentifier = "group.com.rasheuristics.calendarweaver"
+    private let weatherKey = "shared.weather.data"
+    private let lastUpdateKey = "shared.weather.lastUpdate"
+
+    private var userDefaults: UserDefaults? {
+        UserDefaults(suiteName: groupIdentifier)
+    }
+
+    private init() {}
+
+    /// Save weather data to shared storage
+    func saveWeather(_ weatherData: WeatherData) {
+        guard let userDefaults = userDefaults else {
+            print("❌ SharedWeatherStorage: Failed to access shared UserDefaults")
+            return
+        }
+
+        do {
+            let encoder = JSONEncoder()
+            let data = try encoder.encode(weatherData)
+            userDefaults.set(data, forKey: weatherKey)
+            userDefaults.set(Date(), forKey: lastUpdateKey)
+            userDefaults.synchronize()
+            print("✅ SharedWeatherStorage: Weather data saved successfully")
+        } catch {
+            print("❌ SharedWeatherStorage: Failed to encode weather data: \(error)")
+        }
+    }
+
+    /// Load weather data from shared storage
+    func loadWeather() -> WeatherData? {
+        guard let userDefaults = userDefaults else {
+            print("❌ SharedWeatherStorage: Failed to access shared UserDefaults")
+            return nil
+        }
+
+        guard let data = userDefaults.data(forKey: weatherKey) else {
+            print("⚠️ SharedWeatherStorage: No weather data found")
+            return nil
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            let weatherData = try decoder.decode(WeatherData.self, from: data)
+            print("✅ SharedWeatherStorage: Weather data loaded successfully")
+            return weatherData
+        } catch {
+            print("❌ SharedWeatherStorage: Failed to decode weather data: \(error)")
+            return nil
+        }
+    }
+}

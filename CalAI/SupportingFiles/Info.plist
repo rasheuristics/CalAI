@@ -20,6 +20,14 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
+			<string>CalAI</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>calai</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
 			<string>GoogleSignIn</string>
 			<key>CFBundleURLSchemes</key>
 			<array>

@@ -19,6 +19,7 @@ struct ContentView: View {
     @AppStorage("hasCompletedInitialization") private var hasCompletedInitialization = false
     @State private var showOnboarding = false
     @State private var showInitialization = false
+    @State private var showMorningBriefing = false
 
     // Computed property for active task count
     private var activeTaskCount: Int {
@@ -110,6 +111,24 @@ struct ContentView: View {
                 isInitialized: $hasCompletedInitialization
             )
         }
+        .sheet(isPresented: $showMorningBriefing) {
+            NavigationView {
+                MorningBriefingScreen()
+                    .environmentObject(calendarManager)
+                    .environmentObject(taskManager)
+                    .environmentObject(fontManager)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Done") {
+                                showMorningBriefing = false
+                            }
+                        }
+                    }
+            }
+        }
+        .onOpenURL { url in
+            handleDeepLink(url)
+        }
         .onAppear {
             print("========================================")
             print("🔴🔴🔴 CALAI APP LAUNCHED - CONSOLE IS WORKING! 🔴🔴🔴")
@@ -158,6 +177,23 @@ struct ContentView: View {
         //         )
         //     }
         // }
+    }
+
+    private func handleDeepLink(_ url: URL) {
+        print("🔗 Deep link received: \(url)")
+
+        guard url.scheme == "calai" else {
+            print("⚠️ Invalid URL scheme: \(url.scheme ?? "nil")")
+            return
+        }
+
+        switch url.host {
+        case "morning-briefing":
+            print("📅 Opening Morning Briefing")
+            showMorningBriefing = true
+        default:
+            print("⚠️ Unknown deep link host: \(url.host ?? "nil")")
+        }
     }
 
     private func setupiOS26TabBar() {
