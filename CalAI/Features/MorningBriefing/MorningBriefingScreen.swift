@@ -11,6 +11,8 @@ struct MorningBriefingScreen: View {
     @State private var todayEvents: [UnifiedEvent] = []
     @State private var todayTasks: [EventTask] = []
     @State private var greeting: String = ""
+    @State private var showAddEvent: Bool = false
+    @State private var showAddTask: Bool = false
 
     var body: some View {
         ScrollView {
@@ -130,13 +132,17 @@ struct MorningBriefingScreen: View {
                                 icon: "calendar.badge.plus",
                                 title: "Add Event",
                                 color: .blue
-                            )
+                            ) {
+                                showAddEvent = true
+                            }
 
                             QuickActionButton(
                                 icon: "checkmark.circle.badge.plus",
                                 title: "Add Task",
                                 color: .green
-                            )
+                            ) {
+                                showAddTask = true
+                            }
 
                             QuickActionButton(
                                 icon: "arrow.clockwise",
@@ -156,6 +162,19 @@ struct MorningBriefingScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             loadBriefingData()
+        }
+        .sheet(isPresented: $showAddEvent) {
+            AddEventView(calendarManager: calendarManager, fontManager: fontManager, eventToEdit: nil)
+        }
+        .sheet(isPresented: $showAddTask) {
+            StandaloneTaskSheet(
+                taskManager: taskManager,
+                fontManager: fontManager,
+                initialList: .inbox,
+                linkedEventId: nil,
+                editingTask: nil,
+                eventIdForEditing: nil
+            )
         }
     }
 
@@ -198,11 +217,15 @@ struct MorningBriefingScreen: View {
     }
 
     private func fetchWeatherForWidget() {
+        print("🔴 fetchWeatherForWidget() called")
         WeatherService.shared.fetchCurrentWeather { result in
+            print("🔴 Weather fetch completed with result")
             switch result {
             case .success(let weatherData):
-                print("✅ Weather fetched successfully, saving to shared storage...")
+                print("✅ Weather fetched successfully: \(weatherData.temperatureFormatted), \(weatherData.condition)")
+                print("✅ Saving to shared storage...")
                 SharedWeatherStorage.shared.saveWeather(weatherData)
+                print("✅ Weather saved!")
             case .failure(let error):
                 print("❌ Failed to fetch weather: \(error.localizedDescription)")
             }

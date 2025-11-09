@@ -1,4 +1,6 @@
 import SwiftUI
+import CoreLocation
+import UserNotifications
 
 struct SettingsTabView: View {
     @ObservedObject var calendarManager: CalendarManager
@@ -21,6 +23,8 @@ struct SettingsTabView: View {
     @State private var defaultWorkCalendar = UserDefaults.standard.string(forKey: "defaultWorkCalendar") ?? "Outlook"
     @State private var defaultPersonalCalendar = UserDefaults.standard.string(forKey: "defaultPersonalCalendar") ?? "iOS"
     @State private var defaultFallbackCalendar = UserDefaults.standard.string(forKey: "defaultFallbackCalendar") ?? "iOS"
+    @State private var hasLocationPermission: Bool = false
+    @State private var hasNotificationPermission: Bool = false
 
     private var sizeCategory: ContentSizeCategory {
         switch fontManager.currentFontSize {
@@ -205,11 +209,20 @@ struct SettingsTabView: View {
                     )
 
                     PermissionRow(
-                        title: "Speech Recognition",
-                        systemImage: "waveform",
-                        status: voiceManager.hasRecordingPermission ? .granted : .notGranted,
+                        title: "Location Access",
+                        systemImage: "location.fill",
+                        status: hasLocationPermission ? .granted : .notGranted,
                         action: {
-                            // Voice manager handles this automatically
+                            requestLocationPermission()
+                        }
+                    )
+
+                    PermissionRow(
+                        title: "Notification Access",
+                        systemImage: "bell.badge.fill",
+                        status: hasNotificationPermission ? .granted : .notGranted,
+                        action: {
+                            requestNotificationPermission()
                         }
                     )
                 }
@@ -692,8 +705,46 @@ struct SettingsTabView: View {
             .sheet(isPresented: $outlookCalendarManager.showCredentialInput) {
                 OutlookCredentialInputView(outlookCalendarManager: outlookCalendarManager)
             }
+            .onAppear {
+                checkPermissions()
+            }
         }
         .navigationViewStyle(.stack)
+    }
+
+    // MARK: - Permission Methods
+
+    private func checkPermissions() {
+        checkLocationPermission()
+        checkNotificationPermission()
+    }
+
+    private func checkLocationPermission() {
+        let status = CLLocationManager.authorizationStatus()
+        hasLocationPermission = (status == .authorizedWhenInUse || status == .authorizedAlways)
+    }
+
+    private func checkNotificationPermission() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                hasNotificationPermission = (settings.authorizationStatus == .authorized)
+            }
+        }
+    }
+
+    private func requestLocationPermission() {
+        // Open app settings for the user to grant location permission
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
+    }
+
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+            DispatchQueue.main.async {
+                hasNotificationPermission = granted
+            }
+        }
     }
 }
 
