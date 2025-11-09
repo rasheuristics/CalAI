@@ -139,17 +139,24 @@ class OnDeviceAIService {
     /// - Parameters:
     ///   - transcript: The user's spoken/typed command
     ///   - calendarEvents: The user's calendar events for context
+    ///   - conversationHistory: Previous conversation turns for context
     /// - Returns: An AIAction with intent, parameters, and response message
     func processCommand(
         _ transcript: String,
-        calendarEvents: [UnifiedEvent]
+        calendarEvents: [UnifiedEvent],
+        conversationHistory: [ConversationTurn] = []
     ) async throws -> AIAction {
 
         print("🤖 OnDeviceAI: Processing '\(transcript)'")
         print("✅ FoundationModels framework is available")
+        print("💬 Conversation history: \(conversationHistory.count) turns")
 
         // Use Foundation Models API (iOS 26+)
-        let prompt = buildPrompt(transcript: transcript, events: calendarEvents)
+        let prompt = buildPrompt(
+            transcript: transcript,
+            events: calendarEvents,
+            conversationHistory: conversationHistory
+        )
         print("📝 Prompt length: \(prompt.count) characters")
 
         do {
@@ -203,17 +210,24 @@ class OnDeviceAIService {
     /// - Parameters:
     ///   - transcript: The user's spoken/typed command
     ///   - calendarEvents: The user's calendar events for context
+    ///   - conversationHistory: Previous conversation turns for context
     ///   - onPartialResponse: Callback for each partial response chunk
     /// - Returns: Complete AIAction when streaming finishes
     func processCommandStreaming(
         _ transcript: String,
         calendarEvents: [UnifiedEvent],
+        conversationHistory: [ConversationTurn] = [],
         onPartialResponse: @escaping (String) -> Void
     ) async throws -> AIAction {
         print("🤖 OnDeviceAI: Processing with streaming '\(transcript)'")
         print("✅ FoundationModels framework is available")
+        print("💬 Conversation history: \(conversationHistory.count) turns")
 
-        let prompt = buildPrompt(transcript: transcript, events: calendarEvents)
+        let prompt = buildPrompt(
+            transcript: transcript,
+            events: calendarEvents,
+            conversationHistory: conversationHistory
+        )
         print("📝 Prompt length: \(prompt.count) characters")
 
         do {
@@ -286,8 +300,12 @@ class OnDeviceAIService {
 
     // MARK: - Prompt Building
 
-    /// Build the complete prompt with calendar context for Foundation Models
-    private func buildPrompt(transcript: String, events: [UnifiedEvent]) -> String {
+    /// Build the complete prompt with calendar context and conversation history for Foundation Models
+    private func buildPrompt(
+        transcript: String,
+        events: [UnifiedEvent],
+        conversationHistory: [ConversationTurn] = []
+    ) -> String {
         let now = Date()
         let calendar = Calendar.current
 
@@ -295,10 +313,32 @@ class OnDeviceAIService {
         let todayEvents = events.filter { calendar.isDateInToday($0.startDate) }
         let upcomingEvents = events.filter { $0.startDate > now }.sorted { $0.startDate < $1.startDate }.prefix(5)
 
+        // Format conversation history
+        var conversationContext = ""
+        if !conversationHistory.isEmpty {
+            conversationContext = """
+
+            CONVERSATION HISTORY (Last \(conversationHistory.count) turns):
+            \(conversationHistory.map { $0.formattedForPrompt }.joined(separator: "\n---\n"))
+
+            """
+        }
+
+        // Extract context from last turn
+        var contextInfo = ""
+        if let lastContext = conversationHistory.last?.context, lastContext.hasContent {
+            contextInfo = """
+
+            CURRENT CONTEXT:
+            \(lastContext.formattedForPrompt)
+
+            """
+        }
+
         return """
         Today's date: \(now.formatted(.dateTime.year().month().day()))
         Current time: \(now.formatted(.dateTime.hour().minute()))
-
+\(conversationContext)\(contextInfo)
         User's upcoming events today (\(todayEvents.count)):
         \(formatEventsForPrompt(Array(todayEvents)))
 

@@ -99,6 +99,7 @@ class AIManager: ObservableObject {
     private let conversationalAI: ConversationalAIService
     private var enhancedConversationalAI: EnhancedConversationalAI?
     private let intentClassifier: IntentClassifier
+    private let sessionManager = ConversationSessionManager.shared
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -116,6 +117,7 @@ class AIManager: ObservableObject {
         self.enhancedConversationalAI = EnhancedConversationalAI(aiService: self.conversationalAI)
         print("✅ Enhanced Conversational AI with memory enabled (OpenAI backend)")
         print("✅ Apple Intents-based classification enabled for task vs event detection")
+        print("✅ Multi-turn conversation session manager initialized")
     }
 
     // MARK: - Enhanced Conversational Processing
@@ -140,10 +142,22 @@ class AIManager: ObservableObject {
                 // Check if on-device AI is available (iOS 26+)
                 if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
                     print("🤖 Using on-device AI with streaming")
+
+                    // Get conversation history
+                    let history = sessionManager.getConversationHistory()
+
                     let action = try await OnDeviceAIService.shared.processCommandStreaming(
                         transcript,
                         calendarEvents: calendarEvents,
+                        conversationHistory: history,
                         onPartialResponse: onPartialResponse
+                    )
+
+                    // Add turn to conversation session
+                    sessionManager.addTurn(
+                        userMessage: transcript,
+                        assistantMessage: action.message,
+                        context: self.extractContext(from: action)
                     )
 
                     // Convert AIAction to AICalendarResponse
@@ -3528,6 +3542,43 @@ class AIManager: ObservableObject {
     }
 
     // MARK: - Helper Methods
+
+    /// Extract conversation context from AIAction for multi-turn tracking
+    @available(iOS 26.0, *)
+    private func extractContext(from action: OnDeviceAIService.AIAction) -> TurnContext {
+        var context = TurnContext()
+
+        context.lastIntent = action.intent
+
+        // Extract event references
+        if let eventIds = action.referencedEventIds, let firstId = eventIds.first {
+            context.lastMentionedEventId = firstId
+        }
+
+        if let title = action.title {
+            context.lastMentionedEventTitle = title
+        }
+
+        if let location = action.location {
+            context.lastMentionedLocation = location
+        }
+
+        // Extract date/time references
+        if let startDate = action.startDate {
+            context.lastMentionedDate = startDate
+        }
+
+        if let endDate = action.endDate {
+            context.lastMentionedTime = endDate
+        }
+
+        // Track pending action if clarification needed
+        if action.needsClarification {
+            context.pendingAction = action.clarificationQuestion
+        }
+
+        return context
+    }
 
     private func parseFlexibleISO8601Date(_ dateString: String) -> Date? {
         // Try standard ISO8601 with timezone first
