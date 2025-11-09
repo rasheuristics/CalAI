@@ -897,7 +897,7 @@ class OnDeviceAIService {
     }
 
     @Generable
-    struct ConversationTurn {
+    struct ConversationTurnResponse {
         @Guide(description: "What the user said")
         let userMessage: String
 

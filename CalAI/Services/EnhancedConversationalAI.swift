@@ -10,7 +10,7 @@ class EnhancedConversationalAI {
 
     // MARK: - Types
 
-    struct ConversationTurn: Codable {
+    struct EnhancedConversationTurn: Codable {
         let id: UUID
         let timestamp: Date
         let userMessage: String
@@ -40,7 +40,7 @@ class EnhancedConversationalAI {
 
     // MARK: - Properties
 
-    private var conversationHistory: [ConversationTurn] = []
+    private var conversationHistory: [EnhancedConversationTurn] = []
     private let maxHistoryLength = 10
     private var currentContext: [String: String] = [:]
 
@@ -163,7 +163,7 @@ class EnhancedConversationalAI {
         }
 
         // Store conversation turn
-        let turn = ConversationTurn(
+        let turn = EnhancedConversationTurn(
             userMessage: message,
             assistantResponse: action.message,
             intent: action.intent,
