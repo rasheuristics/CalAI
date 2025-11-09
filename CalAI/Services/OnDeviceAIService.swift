@@ -338,7 +338,7 @@ class OnDeviceAIService {
         return """
         Today's date: \(now.formatted(.dateTime.year().month().day()))
         Current time: \(now.formatted(.dateTime.hour().minute()))
-\(conversationContext)\(contextInfo)
+        \(conversationContext)\(contextInfo)
         User's upcoming events today (\(todayEvents.count)):
         \(formatEventsForPrompt(Array(todayEvents)))
 
