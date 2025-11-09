@@ -120,6 +120,65 @@ class AIManager: ObservableObject {
 
     // MARK: - Enhanced Conversational Processing
 
+    /// Process a command with streaming response for real-time feedback
+    func processConversationalCommandStreaming(
+        _ transcript: String,
+        calendarEvents: [UnifiedEvent],
+        onPartialResponse: @escaping (String) -> Void,
+        completion: @escaping (AICalendarResponse) -> Void
+    ) {
+        guard !isProcessing else {
+            print("⚠️ AI is already processing a request - ignoring duplicate")
+            return
+        }
+
+        print("🌊 Processing with streaming: \(transcript)")
+        isProcessing = true
+
+        Task {
+            do {
+                // Check if on-device AI is available (iOS 26+)
+                if #available(iOS 26.0, *), Config.aiProcessingMode == .onDevice {
+                    print("🤖 Using on-device AI with streaming")
+                    let action = try await OnDeviceAIService.shared.processCommandStreaming(
+                        transcript,
+                        calendarEvents: calendarEvents,
+                        onPartialResponse: onPartialResponse
+                    )
+
+                    // Convert AIAction to AICalendarResponse
+                    let response = AICalendarResponse(
+                        message: action.message,
+                        command: nil,
+                        eventResults: nil,
+                        shouldContinueListening: action.shouldContinueListening
+                    )
+
+                    await MainActor.run {
+                        self.isProcessing = false
+                        completion(response)
+                    }
+                } else {
+                    // Fall back to non-streaming for cloud-based AI
+                    print("⚠️ Streaming not available for current AI mode, using standard processing")
+                    await MainActor.run {
+                        self.isProcessing = false
+                    }
+                    processConversationalCommand(transcript, calendarEvents: calendarEvents, completion: completion)
+                }
+            } catch {
+                print("❌ Streaming error: \(error)")
+                await MainActor.run {
+                    self.isProcessing = false
+                    completion(AICalendarResponse(
+                        message: "I encountered an error while processing your request. Please try again.",
+                        command: nil
+                    ))
+                }
+            }
+        }
+    }
+
     func processConversationalCommand(
         _ transcript: String,
         calendarEvents: [UnifiedEvent],

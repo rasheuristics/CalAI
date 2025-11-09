@@ -422,6 +422,8 @@ struct AITabView: View {
     @State private var selectedActionCategory: CommandCategory?
     @State private var textEditorHeight: CGFloat = 40
     @State private var isTextInputActive: Bool = false
+    @State private var streamingResponse: String = ""
+    @State private var isStreaming: Bool = false
 
     // AI Pattern Insights
     @State private var aiPatterns: SmartSchedulingService.CalendarPatterns?
@@ -460,11 +462,16 @@ struct AITabView: View {
 
             // Conversation Area
             if showConversationWindow {
-                ConversationScrollView(conversationHistory: $conversationHistory, onRefresh: clearConversation)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .onTapGesture {
-                        dismissKeyboard()
-                    }
+                ConversationScrollView(
+                    conversationHistory: $conversationHistory,
+                    streamingResponse: $streamingResponse,
+                    isStreaming: $isStreaming,
+                    onRefresh: clearConversation
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .onTapGesture {
+                    dismissKeyboard()
+                }
             } else {
                 // Large empty space for conversation
                 VStack {
@@ -821,9 +828,35 @@ struct AITabView: View {
             conversationHistory.append(userMessage)
         }
 
-        // Use enhanced conversational AI with memory (OpenAI backend)
-        aiManager.processConversationalCommand(transcript, calendarEvents: calendarManager.unifiedEvents) { response in
-            self.handleAIResponse(response)
+        // Check if streaming is available (iOS 26+ with on-device AI)
+        if #available(iOS 26.0, *), Config.aiProcessingMode == .onDevice {
+            // Use streaming for real-time response
+            print("🌊 Using streaming response")
+            isStreaming = true
+            streamingResponse = ""
+
+            aiManager.processConversationalCommandStreaming(
+                transcript,
+                calendarEvents: calendarManager.unifiedEvents,
+                onPartialResponse: { partialText in
+                    // Update streaming response in real-time
+                    DispatchQueue.main.async {
+                        self.streamingResponse += partialText
+                    }
+                },
+                completion: { response in
+                    DispatchQueue.main.async {
+                        self.isStreaming = false
+                        self.handleAIResponse(response)
+                        self.streamingResponse = ""
+                    }
+                }
+            )
+        } else {
+            // Use standard processing for cloud-based AI or older iOS
+            aiManager.processConversationalCommand(transcript, calendarEvents: calendarManager.unifiedEvents) { response in
+                self.handleAIResponse(response)
+            }
         }
     }
 
@@ -1101,6 +1134,8 @@ private struct ActionButton: View {
 
 private struct ConversationScrollView: View {
     @Binding var conversationHistory: [ConversationItem]
+    @Binding var streamingResponse: String
+    @Binding var isStreaming: Bool
     var onRefresh: () -> Void
 
     var body: some View {
@@ -1109,6 +1144,12 @@ private struct ConversationScrollView: View {
                 LazyVStack(spacing: 12) {
                     ForEach(conversationHistory) { item in
                         ConversationBubble(item: item)
+                    }
+
+                    // Show streaming response bubble
+                    if isStreaming && !streamingResponse.isEmpty {
+                        StreamingBubble(text: streamingResponse)
+                            .id("streaming")
                     }
                 }
                 .padding()
@@ -1119,12 +1160,66 @@ private struct ConversationScrollView: View {
                         }
                     }
                 }
+                .onChange(of: streamingResponse) { _ in
+                    if isStreaming {
+                        withAnimation {
+                            proxy.scrollTo("streaming", anchor: .bottom)
+                        }
+                    }
+                }
             }
             .refreshable {
                 onRefresh()
             }
         }
         .frame(maxHeight: .infinity)
+    }
+}
+
+private struct StreamingBubble: View {
+    let text: String
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "brain.head.profile")
+                        .font(.caption)
+                        .foregroundColor(.purple)
+                    Text("AI Assistant")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    // Animated typing indicator
+                    HStack(spacing: 2) {
+                        ForEach(0..<3) { index in
+                            Circle()
+                                .fill(Color.purple)
+                                .frame(width: 4, height: 4)
+                                .opacity(0.5)
+                                .animation(
+                                    Animation.easeInOut(duration: 0.6)
+                                        .repeatForever()
+                                        .delay(Double(index) * 0.2),
+                                    value: text.count
+                                )
+                        }
+                    }
+                }
+
+                Text(text)
+                    .font(.body)
+                    .foregroundColor(.primary)
+            }
+            .padding(12)
+            .background(Color.purple.opacity(0.1))
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.purple.opacity(0.3), lineWidth: 1)
+            )
+            Spacer()
+        }
     }
 }
 

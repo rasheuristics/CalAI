@@ -197,6 +197,84 @@ class OnDeviceAIService {
         }
     }
 
+    // MARK: - Streaming Response
+
+    /// Process a command with streaming response for real-time feedback
+    /// - Parameters:
+    ///   - transcript: The user's spoken/typed command
+    ///   - calendarEvents: The user's calendar events for context
+    ///   - onPartialResponse: Callback for each partial response chunk
+    /// - Returns: Complete AIAction when streaming finishes
+    func processCommandStreaming(
+        _ transcript: String,
+        calendarEvents: [UnifiedEvent],
+        onPartialResponse: @escaping (String) -> Void
+    ) async throws -> AIAction {
+        print("🤖 OnDeviceAI: Processing with streaming '\(transcript)'")
+        print("✅ FoundationModels framework is available")
+
+        let prompt = buildPrompt(transcript: transcript, events: calendarEvents)
+        print("📝 Prompt length: \(prompt.count) characters")
+
+        do {
+            print("🔄 Starting streaming response...")
+
+            // For streaming with FoundationModels, we need to simulate streaming
+            // since the API doesn't support true streaming with structured output yet
+            // We'll use the standard respond and then simulate streaming by chunking the response
+
+            // First get the complete response
+            let response = try await session.respond(
+                to: prompt,
+                generating: AIAction.self
+            )
+
+            let action = response.content
+            print("✅ OnDeviceAI: Got complete response, now streaming it")
+
+            // Simulate streaming by breaking the message into chunks
+            let message = action.message
+            let chunkSize = 5 // words per chunk
+            let words = message.split(separator: " ")
+
+            var currentChunk = ""
+            for (index, word) in words.enumerated() {
+                currentChunk += String(word) + " "
+
+                // Send chunk every chunkSize words or at the end
+                if (index + 1) % chunkSize == 0 || index == words.count - 1 {
+                    onPartialResponse(currentChunk)
+                    currentChunk = ""
+
+                    // Small delay to simulate streaming
+                    try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                }
+            }
+
+            print("✅ Streaming simulation complete")
+            return action
+
+        } catch {
+            print("❌ OnDeviceAI streaming error: \(error)")
+            let nsError = error as NSError
+            var errorMessage = "On-device AI streaming error: \(error.localizedDescription)"
+
+            if nsError.domain == "FoundationModels" || nsError.domain.contains("Language") {
+                errorMessage += "\n\n💡 This usually means:\n"
+                errorMessage += "• Apple Intelligence is not enabled\n"
+                errorMessage += "• Device doesn't support Apple Intelligence\n"
+                errorMessage += "• Running on iOS Simulator (not supported)\n\n"
+                errorMessage += "Go to Settings > Apple Intelligence & Siri to enable."
+            }
+
+            throw NSError(
+                domain: "OnDeviceAI",
+                code: 503,
+                userInfo: [NSLocalizedDescriptionKey: errorMessage]
+            )
+        }
+    }
+
     // Convert @Generable AIAction to the expected return type with parameters dictionary
     private func convertToReturnType(_ action: AIAction) -> AIAction {
         // The @Generable version uses individual fields, but we need to return
