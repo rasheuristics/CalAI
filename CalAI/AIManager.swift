@@ -138,7 +138,7 @@ class AIManager: ObservableObject {
         Task {
             do {
                 // Check if on-device AI is available (iOS 26+)
-                if #available(iOS 26.0, *), Config.aiProcessingMode == .onDevice {
+                if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
                     print("🤖 Using on-device AI with streaming")
                     let action = try await OnDeviceAIService.shared.processCommandStreaming(
                         transcript,

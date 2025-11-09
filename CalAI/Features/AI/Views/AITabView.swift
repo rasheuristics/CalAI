@@ -829,7 +829,7 @@ struct AITabView: View {
         }
 
         // Check if streaming is available (iOS 26+ with on-device AI)
-        if #available(iOS 26.0, *), Config.aiProcessingMode == .onDevice {
+        if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
             // Use streaming for real-time response
             print("🌊 Using streaming response")
             isStreaming = true
