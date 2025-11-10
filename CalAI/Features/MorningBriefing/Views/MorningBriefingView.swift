@@ -3,6 +3,7 @@ import AVFoundation
 
 /// View displaying the daily morning briefing
 struct MorningBriefingView: View {
+    @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var fontManager: FontManager
     @ObservedObject var briefingService = MorningBriefingService.shared
     @StateObject private var voiceReader = VoiceReader()
@@ -12,6 +13,8 @@ struct MorningBriefingView: View {
     @State private var weatherAlertMessage = ""
     @State private var aiPatterns: SmartSchedulingService.CalendarPatterns?
     @State private var aiEnhancedMessage: String? = nil
+    @State private var selectedEvent: UnifiedEvent?
+    @State private var showEventDetail = false
 
     var body: some View {
         NavigationView {
@@ -87,6 +90,15 @@ struct MorningBriefingView: View {
                 }
             } message: {
                 Text(weatherAlertMessage)
+            }
+            .sheet(isPresented: $showEventDetail) {
+                if let event = selectedEvent {
+                    EventDetailView(
+                        calendarManager: calendarManager,
+                        fontManager: fontManager,
+                        event: event
+                    )
+                }
             }
         }
     }
@@ -277,6 +289,9 @@ struct MorningBriefingView: View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(events) { event in
                 eventCard(event)
+                    .onTapGesture {
+                        handleEventTap(event)
+                    }
             }
         }
         .padding(.horizontal)
@@ -453,6 +468,14 @@ struct MorningBriefingView: View {
         }
     }
 
+    private func handleEventTap(_ briefingEvent: BriefingEvent) {
+        // Find the corresponding UnifiedEvent from calendarManager
+        if let unifiedEvent = calendarManager.unifiedEvents.first(where: { $0.id == briefingEvent.id }) {
+            selectedEvent = unifiedEvent
+            showEventDetail = true
+        }
+    }
+
     private func toggleVoiceReadout() {
         if voiceReader.isSpeaking {
             voiceReader.stop()
@@ -549,5 +572,8 @@ class VoiceReader: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
 // MARK: - Preview
 
 #Preview {
-    MorningBriefingView(fontManager: FontManager())
+    MorningBriefingView(
+        calendarManager: CalendarManager(),
+        fontManager: FontManager()
+    )
 }

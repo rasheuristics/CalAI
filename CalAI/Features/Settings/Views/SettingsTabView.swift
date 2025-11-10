@@ -259,7 +259,7 @@ struct SettingsTabView: View {
                         }
                     }
 
-                    NavigationLink(destination: MorningBriefingView(fontManager: fontManager)) {
+                    NavigationLink(destination: MorningBriefingView(calendarManager: calendarManager, fontManager: fontManager)) {
                         HStack {
                             Image(systemName: "newspaper.fill")
                                 .foregroundColor(.blue)
