@@ -405,6 +405,8 @@ class AIManager: ObservableObject {
     private let sessionManager = ConversationSessionManager.shared
     // TODO: Uncomment when ContextualMemoryManager is added to Xcode project
     // private let memoryManager = ContextualMemoryManager.shared
+    // TODO: Uncomment when InterruptionManager is added to Xcode project
+    // private let interruptionManager = InterruptionManager.shared
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -1015,6 +1017,85 @@ class AIManager: ObservableObject {
     /// Learn from event patterns
     func learnFromEventCreation(_ event: UnifiedEvent) {
         memoryManager.observeEventPattern(from: event)
+    }
+    */
+
+    // MARK: - Interruption & Resumption Handling
+
+    /// Track conversation state for potential interruptions
+    // TODO: Uncomment when InterruptionManager is added to Xcode project
+    /*
+    func trackConversationState(
+        phase: ConversationPhase,
+        userInput: String,
+        aiResponse: String? = nil,
+        pendingCommand: CalendarCommand? = nil,
+        sessionId: String
+    ) {
+        // Convert CalendarCommand to snapshot format if present
+        var pendingSnapshot: PendingCommandSnapshot? = nil
+        if let cmd = pendingCommand {
+            var missingFields: [String] = []
+            if cmd.title == nil { missingFields.append("title") }
+            if cmd.startDate == nil { missingFields.append("start time") }
+
+            pendingSnapshot = PendingCommandSnapshot(
+                commandType: cmd.type.rawValue,
+                title: cmd.title,
+                startDate: cmd.startDate,
+                endDate: cmd.endDate,
+                location: cmd.location,
+                notes: cmd.notes,
+                missingFields: missingFields
+            )
+        }
+
+        interruptionManager.updateConversationState(
+            phase: phase,
+            lastUserInput: userInput,
+            lastAIResponse: aiResponse,
+            pendingCommand: pendingSnapshot,
+            contextMessages: conversationContext,
+            needsClarification: conversationState == .needsMoreInfo,
+            clarificationQuestion: aiResponse,
+            sessionId: sessionId
+        )
+    }
+
+    /// Check if there's an interrupted conversation to resume
+    func checkForResumableConversation() -> String? {
+        interruptionManager.checkForResumableConversation()
+        return interruptionManager.generateResumptionPrompt()
+    }
+
+    /// Resume an interrupted conversation with full context
+    func resumeInterruptedConversation() -> (context: String, snapshot: ConversationSnapshot)? {
+        guard let snapshot = interruptionManager.resumeConversation() else {
+            return nil
+        }
+
+        let contextualResumption = interruptionManager.generateContextualResumption()
+        return (context: contextualResumption, snapshot: snapshot)
+    }
+
+    /// User chose to dismiss the resumption suggestion
+    func dismissResumption() {
+        interruptionManager.dismissResumption()
+    }
+
+    /// Start tracking a new conversation session
+    func startConversationTracking(sessionId: String) {
+        interruptionManager.startConversation(sessionId: sessionId)
+    }
+
+    /// Record user interaction to reset inactivity timer
+    func recordUserInteraction() {
+        interruptionManager.recordUserInteraction()
+    }
+
+    /// End conversation tracking
+    func endConversationTracking() {
+        interruptionManager.endConversation()
     }
     */
 
