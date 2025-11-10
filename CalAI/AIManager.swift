@@ -4429,14 +4429,32 @@ class AIManager: ObservableObject {
         case .success(let entities, _):
             // Complete information - create immediately
             if let title = entities.title, let time = entities.time {
+                // Calculate end date from duration
+                let endDate = entities.duration != nil ? time.addingTimeInterval(entities.duration!) : time.addingTimeInterval(3600)
+
                 let command = CalendarCommand(
-                    type: .create,
+                    type: .createEvent,
                     title: title,
                     startDate: time,
-                    endDate: entities.endTime,
+                    endDate: endDate,
                     location: entities.location,
-                    notes: entities.notes,
-                    attendees: entities.attendeeNames.map { $0 }
+                    notes: nil,
+                    participants: entities.attendeeNames.isEmpty ? nil : entities.attendeeNames,
+                    queryStartDate: nil,
+                    queryEndDate: nil,
+                    eventId: nil,
+                    searchQuery: nil,
+                    calendarSource: nil,
+                    newStartDate: nil,
+                    newEndDate: nil,
+                    newLocation: nil,
+                    newTitle: nil,
+                    durationMinutes: entities.duration != nil ? Int(entities.duration! / 60) : nil,
+                    recurringPattern: nil,
+                    attendeeEmails: entities.attendees.isEmpty ? nil : entities.attendees,
+                    isAllDay: entities.isAllDay,
+                    reminder: nil,
+                    priority: entities.isUrgent ? "high" : nil
                 )
                 completion(AICalendarResponse(message: "Creating \(title)...", command: command))
             } else {
@@ -4465,7 +4483,17 @@ class AIManager: ObservableObject {
             message = "You have \(filteredEvents.count) events \(timeHint)."
         }
 
-        let eventResults = filteredEvents.map { EventResult(event: $0, action: "show") }
+        let eventResults = filteredEvents.map { event in
+            EventResult(
+                id: event.id,
+                title: event.title,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                location: event.location,
+                source: event.source.rawValue,
+                color: nil
+            )
+        }
         completion(AICalendarResponse(message: message, eventResults: eventResults))
     }
 
