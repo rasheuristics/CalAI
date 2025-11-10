@@ -135,9 +135,9 @@ struct CalendarTabView: View {
                                                     pendingVideoMeetingURL = meeting.url
                                                     showVideoMeetingConfirmation = true
                                                 } else {
-                                                    print("📱 Opening EditEventView for: \(unifiedEvent.title)")
-                                                    selectedEventForEdit = unifiedEvent
-                                                    showingEditView = true
+                                                    print("📱 Opening EventDetailView for: \(unifiedEvent.title)")
+                                                    selectedEventForDetail = unifiedEvent
+                                                    showEventDetail = true
                                                 }
                                             }
                                         }
@@ -217,9 +217,9 @@ struct CalendarTabView: View {
                                             pendingVideoMeetingURL = meeting.url
                                             showVideoMeetingConfirmation = true
                                         } else {
-                                            print("📱 Opening EditEventView for: \(unifiedEvent.title)")
-                                            selectedEventForEdit = unifiedEvent
-                                            showingEditView = true
+                                            print("📱 Opening EventDetailView for: \(unifiedEvent.title)")
+                                            selectedEventForDetail = unifiedEvent
+                                            showEventDetail = true
                                         }
                                     }
                                 }
@@ -247,7 +247,6 @@ struct CalendarTabView: View {
             if let event = selectedEventForDetail {
                 EventDetailView(
                     calendarManager: calendarManager,
-                    fontManager: fontManager,
                     event: event
                 )
             }
