@@ -4439,22 +4439,7 @@ class AIManager: ObservableObject {
                     endDate: endDate,
                     location: entities.location,
                     notes: nil,
-                    participants: entities.attendeeNames.isEmpty ? nil : entities.attendeeNames,
-                    queryStartDate: nil,
-                    queryEndDate: nil,
-                    eventId: nil,
-                    searchQuery: nil,
-                    calendarSource: nil,
-                    newStartDate: nil,
-                    newEndDate: nil,
-                    newLocation: nil,
-                    newTitle: nil,
-                    durationMinutes: entities.duration != nil ? Int(entities.duration! / 60) : nil,
-                    recurringPattern: nil,
-                    attendeeEmails: entities.attendees.isEmpty ? nil : entities.attendees,
-                    isAllDay: entities.isAllDay,
-                    reminder: nil,
-                    priority: entities.isUrgent ? "high" : nil
+                    participants: entities.attendeeNames.isEmpty ? nil : entities.attendeeNames
                 )
                 completion(AICalendarResponse(message: "Creating \(title)...", command: command))
             } else {
