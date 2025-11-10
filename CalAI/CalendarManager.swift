@@ -373,18 +373,23 @@ class CalendarManager: ObservableObject {
         if let saved = UserDefaults.standard.array(forKey: "approvedConflicts") as? [String] {
             approvedConflicts = Set(saved)
         }
-        // Clean up expired deleted event records on startup
-        cleanupExpiredDeletedEvents()
         // Inject self into sync manager
         syncManager.calendarManager = self
-        // Setup advanced sync asynchronously to avoid blocking main thread
-        setupAdvancedSyncAsync()
-        // Listen for event time updates from drag-and-drop
-        setupEventUpdateListener()
-        // Listen for iOS calendar changes for real-time sync
-        setupCalendarChangeNotification()
-        // Start periodic sync timer
-        startPeriodicSync()
+
+        // Defer heavy initialization to avoid blocking app launch
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            // Clean up expired deleted event records on startup
+            self.cleanupExpiredDeletedEvents()
+            // Setup advanced sync asynchronously to avoid blocking main thread
+            self.setupAdvancedSyncAsync()
+            // Listen for event time updates from drag-and-drop
+            self.setupEventUpdateListener()
+            // Listen for iOS calendar changes for real-time sync
+            self.setupCalendarChangeNotification()
+            // Start periodic sync timer
+            self.startPeriodicSync()
+        }
     }
 
     // MARK: - Deleted Events Persistence

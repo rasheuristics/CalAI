@@ -16,28 +16,36 @@ struct CalAIApp: App {
         WindowGroup {
             ContentView()
                 .onAppear {
-                    guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
-                          let plist = NSDictionary(contentsOfFile: path),
-                          let clientId = plist["CLIENT_ID"] as? String else {
-                        print("❌ GoogleService-Info.plist not found or missing CLIENT_ID")
-                        return
+                    // Defer Google Sign-In setup to avoid blocking UI
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+                              let plist = NSDictionary(contentsOfFile: path),
+                              let clientId = plist["CLIENT_ID"] as? String else {
+                            print("❌ GoogleService-Info.plist not found or missing CLIENT_ID")
+                            return
+                        }
+
+                        print("🔍 Bundle ID from app: \(Bundle.main.bundleIdentifier ?? "unknown")")
+                        print("🔍 Client ID from plist: \(clientId)")
+                        if let bundleId = plist["BUNDLE_ID"] as? String {
+                            print("🔍 Bundle ID from plist: \(bundleId)")
+                        }
+
+                        let configuration = GIDConfiguration(clientID: clientId)
+
+                        DispatchQueue.main.async {
+                            GIDSignIn.sharedInstance.configuration = configuration
+                            print("✅ Google Sign-In configured")
+                        }
                     }
 
-                    print("🔍 Bundle ID from app: \(Bundle.main.bundleIdentifier ?? "unknown")")
-                    print("🔍 Client ID from plist: \(clientId)")
-                    if let bundleId = plist["BUNDLE_ID"] as? String {
-                        print("🔍 Bundle ID from plist: \(bundleId)")
+                    // Defer manager initialization to avoid blocking UI
+                    DispatchQueue.main.async {
+                        // Initialize managers (but don't request permissions yet)
+                        // Permissions will be requested during onboarding
+                        let _ = SmartNotificationManager.shared
+                        let _ = TravelTimeManager.shared
                     }
-
-                    let configuration = GIDConfiguration(clientID: clientId)
-
-                    GIDSignIn.sharedInstance.configuration = configuration
-                    print("✅ Google Sign-In configured")
-
-                    // Initialize managers (but don't request permissions yet)
-                    // Permissions will be requested during onboarding
-                    let _ = SmartNotificationManager.shared
-                    let _ = TravelTimeManager.shared
                 }
                 .onOpenURL { url in
                     print("🔵 App received URL: \(url)")

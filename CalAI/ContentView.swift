@@ -152,19 +152,24 @@ struct ContentView: View {
             calendarManager.googleCalendarManager = googleCalendarManager
             calendarManager.outlookCalendarManager = outlookCalendarManager
 
-            // Configure Morning Briefing Service
-            print("🔴 About to configure MorningBriefingService...")
-            morningBriefingService.configure(calendarManager: calendarManager)
-            print("🔴 MorningBriefingService configuration completed")
-
-            // PHASE 12 DISABLED - PostMeetingService Configuration
-            // postMeetingService.configure(calendarManager: calendarManager, aiManager: aiManager)
-
-            // Only request calendar access if onboarding is completed
-            if hasCompletedOnboarding {
-                calendarManager.requestCalendarAccess()
-            }
+            // Setup UI immediately for fast launch
             setupiOS26TabBar()
+
+            // Defer non-UI initialization to avoid blocking launch
+            DispatchQueue.main.async {
+                // Configure Morning Briefing Service
+                print("🔴 About to configure MorningBriefingService...")
+                morningBriefingService.configure(calendarManager: calendarManager)
+                print("🔴 MorningBriefingService configuration completed")
+
+                // PHASE 12 DISABLED - PostMeetingService Configuration
+                // postMeetingService.configure(calendarManager: calendarManager, aiManager: aiManager)
+
+                // Only request calendar access if onboarding is completed
+                if hasCompletedOnboarding {
+                    calendarManager.requestCalendarAccess()
+                }
+            }
         }
         // PHASE 12 DISABLED - Post-Meeting Summary Sheet
         // .sheet(isPresented: $postMeetingService.showPostMeetingSummary) {
