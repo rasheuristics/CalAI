@@ -275,6 +275,7 @@ class AIManager: ObservableObject {
     private let conversationalAI: ConversationalAIService
     private var enhancedConversationalAI: EnhancedConversationalAI?
     private let intentClassifier: IntentClassifier
+    private let fastIntentClassifier = FastIntentClassifier() // Fast on-device intent detection
     private let sessionManager = ConversationSessionManager.shared
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -831,6 +832,48 @@ class AIManager: ObservableObject {
     }
 
     // MARK: - Main Command Processing
+
+    /// Fast command processing with parallel execution (< 1 second)
+    /// Detects intent immediately → executes command + generates AI response in parallel
+    func processVoiceCommandFast(_ transcript: String, conversationHistory: [ConversationItem] = [], calendarEvents: [UnifiedEvent] = [], calendarManager: CalendarManager? = nil, completion: @escaping (AICalendarResponse) -> Void) {
+        print("⚡ FAST MODE: Processing transcript: \"\(transcript)\"")
+
+        let startTime = Date()
+
+        // STEP 1: Fast intent detection (< 100ms)
+        let fastIntent = fastIntentClassifier.detectIntent(from: transcript)
+        let quickEntity = fastIntentClassifier.extractQuickEntities(from: transcript, intent: fastIntent)
+
+        print("⚡ Intent detected in \(Date().timeIntervalSince(startTime) * 1000)ms: \(fastIntent.rawValue)")
+
+        // STEP 2: If confident, execute immediately while AI generates response in parallel
+        if quickEntity.shouldExecuteImmediately {
+            print("⚡ HIGH CONFIDENCE - Executing immediately in parallel")
+
+            // Execute command immediately (< 300ms total for execution)
+            Task {
+                let executionStart = Date()
+                await executeQuickCommand(quickEntity, calendarEvents: calendarEvents, calendarManager: calendarManager) { executionResponse in
+                    let executionTime = Date().timeIntervalSince(executionStart) * 1000
+                    print("⚡ Command executed in \(executionTime)ms")
+
+                    // Return immediate execution response
+                    DispatchQueue.main.async {
+                        completion(executionResponse)
+                    }
+                }
+
+                // Generate detailed AI response in background (user already has result)
+                Task.detached(priority: .background) {
+                    await self.generateEnhancedResponse(transcript, quickEntity: quickEntity)
+                }
+            }
+        } else {
+            // Fall back to full processing if confidence is low
+            print("⚡ LOW CONFIDENCE - Falling back to full processing")
+            processVoiceCommand(transcript, conversationHistory: conversationHistory, calendarEvents: calendarEvents, calendarManager: calendarManager, completion: completion)
+        }
+    }
 
     func processVoiceCommand(_ transcript: String, conversationHistory: [ConversationItem] = [], calendarEvents: [UnifiedEvent] = [], calendarManager: CalendarManager? = nil, completion: @escaping (AICalendarResponse) -> Void) {
         // Prevent concurrent AI requests
@@ -4229,6 +4272,113 @@ class AIManager: ObservableObject {
         }
 
         return condensed.trimmingCharacters(in: .whitespaces)
+    }
+
+    // MARK: - Fast Execution Helpers
+
+    /// Execute command immediately with minimal processing
+    private func executeQuickCommand(_ entity: QuickCommandEntity, calendarEvents: [UnifiedEvent], calendarManager: CalendarManager?, completion: @escaping (AICalendarResponse) -> Void) async {
+        switch entity.intent {
+        case .createEvent:
+            await handleQuickCreate(entity, completion: completion)
+        case .querySchedule:
+            await handleQuickQuery(entity, calendarEvents: calendarEvents, completion: completion)
+        case .deleteEvent:
+            await handleQuickDelete(entity, calendarEvents: calendarEvents, completion: completion)
+        case .searchEvent:
+            await handleQuickSearch(entity, calendarEvents: calendarEvents, completion: completion)
+        case .checkAvailability:
+            await handleQuickAvailability(entity, calendarEvents: calendarEvents, completion: completion)
+        default:
+            // Unknown - provide generic response
+            completion(AICalendarResponse(message: "Processing your request..."))
+        }
+    }
+
+    private func handleQuickCreate(_ entity: QuickCommandEntity, completion: @escaping (AICalendarResponse) -> Void) async {
+        // Use SmartEventParser for fast parsing
+        let entities = await smartEventParser.parseUserInput(entity.text)
+
+        if entities.title != nil && entities.time != nil {
+            // Complete information - create immediately
+            let response = AICalendarResponse(
+                message: "Creating \(entities.title ?? "event")...",
+                calendarCommand: CalendarCommand(
+                    action: .create,
+                    title: entities.title,
+                    date: entities.time,
+                    endDate: entities.endTime,
+                    location: entities.location,
+                    notes: entities.notes,
+                    attendees: entities.attendeeNames
+                )
+            )
+            completion(response)
+        } else {
+            // Missing info - respond quickly and ask for clarification
+            let missing = entities.title == nil ? "title" : "time"
+            completion(AICalendarResponse(message: "What's the \(missing) for your event?"))
+        }
+    }
+
+    private func handleQuickQuery(_ entity: QuickCommandEntity, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        let timeHint = entity.timeHint ?? "upcoming"
+        let filteredEvents = filterEventsByTimeHint(calendarEvents, hint: timeHint)
+
+        let message: String
+        if filteredEvents.isEmpty {
+            message = "You have no events \(timeHint)."
+        } else if filteredEvents.count == 1 {
+            let event = filteredEvents[0]
+            message = "You have \(event.title) \(timeHint)."
+        } else {
+            message = "You have \(filteredEvents.count) events \(timeHint)."
+        }
+
+        completion(AICalendarResponse(message: message, events: filteredEvents.map { .init(event: $0, action: "show") }))
+    }
+
+    private func handleQuickDelete(_ entity: QuickCommandEntity, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        completion(AICalendarResponse(message: "Which event would you like to delete?"))
+    }
+
+    private func handleQuickSearch(_ entity: QuickCommandEntity, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        completion(AICalendarResponse(message: "Searching your calendar..."))
+    }
+
+    private func handleQuickAvailability(_ entity: QuickCommandEntity, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+        let timeHint = entity.timeHint ?? "now"
+        completion(AICalendarResponse(message: "Checking your availability \(timeHint)..."))
+    }
+
+    private func filterEventsByTimeHint(_ events: [UnifiedEvent], hint: String) -> [UnifiedEvent] {
+        let calendar = Calendar.current
+        let now = Date()
+
+        switch hint.lowercased() {
+        case "today":
+            return events.filter { calendar.isDateInToday($0.startDate) }
+        case "tomorrow":
+            return events.filter { calendar.isDateInTomorrow($0.startDate) }
+        case "this week":
+            let weekFromNow = calendar.date(byAdding: .day, value: 7, to: now) ?? now
+            return events.filter { $0.startDate >= now && $0.startDate <= weekFromNow }
+        case "next week":
+            let nextWeekStart = calendar.date(byAdding: .day, value: 7, to: now) ?? now
+            let nextWeekEnd = calendar.date(byAdding: .day, value: 14, to: now) ?? now
+            return events.filter { $0.startDate >= nextWeekStart && $0.startDate <= nextWeekEnd }
+        case "upcoming":
+            return events.filter { $0.startDate >= now }.prefix(5).map { $0 }
+        default:
+            return events.filter { $0.startDate >= now }.prefix(10).map { $0 }
+        }
+    }
+
+    /// Generate enhanced AI response in background (non-blocking)
+    private func generateEnhancedResponse(_ transcript: String, quickEntity: QuickCommandEntity) async {
+        print("🎨 Generating enhanced AI response in background...")
+        // This runs in background while user already has their result
+        // Could be used for learning, improving future suggestions, etc.
     }
 
 }

@@ -828,8 +828,19 @@ struct AITabView: View {
             conversationHistory.append(userMessage)
         }
 
-        // Check if streaming is available (iOS 26+ with on-device AI)
-        if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
+        // Check if fast response mode is enabled (default: on)
+        if Config.fastResponseMode {
+            // ⚡ FAST MODE: Ultra-fast command execution (< 1 second)
+            print("⚡ Using FAST response mode")
+            aiManager.processVoiceCommandFast(
+                transcript,
+                conversationHistory: conversationHistory,
+                calendarEvents: calendarManager.unifiedEvents,
+                calendarManager: calendarManager
+            ) { response in
+                self.handleAIResponse(response)
+            }
+        } else if #available(iOS 26.0, *), Config.aiProvider == .onDevice {
             // Use streaming for real-time response
             print("🌊 Using streaming response")
             isStreaming = true

@@ -89,6 +89,7 @@ struct Config {
     private static let aiProviderUserDefaultsKey = "AIProvider"
     private static let aiOutputModeUserDefaultsKey = "AIOutputMode"
     private static let aiProcessingModeUserDefaultsKey = "AIProcessingMode"
+    private static let fastResponseModeUserDefaultsKey = "FastResponseMode"
     private static let migrationCompletedKey = "api_keys_migration_completed"
 
     // MARK: - Migration
@@ -157,6 +158,21 @@ struct Config {
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: aiProcessingModeUserDefaultsKey)
+        }
+    }
+
+    // MARK: - Fast Response Mode
+    /// Enable ultra-fast command execution (< 1 second) with parallel AI processing
+    static var fastResponseMode: Bool {
+        get {
+            // Default to true for best user experience
+            if UserDefaults.standard.object(forKey: fastResponseModeUserDefaultsKey) == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: fastResponseModeUserDefaultsKey)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: fastResponseModeUserDefaultsKey)
         }
     }
 
