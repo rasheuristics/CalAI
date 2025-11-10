@@ -1256,11 +1256,14 @@ class CalendarManager: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             self.loadAllUnifiedEvents()
             // Generate proactive suggestions after events are loaded
-            self.generateProactiveSuggestions()
+            // TODO: Uncomment when ProactiveSuggestionsManager is added to Xcode project
+            // self.generateProactiveSuggestions()
         }
     }
 
     /// Generate proactive suggestions based on current calendar state
+    // TODO: Uncomment when ProactiveSuggestionsManager is added to Xcode project
+    /*
     func generateProactiveSuggestions() {
         print("🤖 Triggering proactive suggestions analysis...")
         proactiveSuggestionsManager.analyzeCalendarAndGenerateSuggestions(
@@ -1268,6 +1271,7 @@ class CalendarManager: ObservableObject {
             travelTimeManager: travelTimeManager
         )
     }
+    */
 
     func loadOfflineEvents() {
         print("📱 Loading offline events from cache...")
