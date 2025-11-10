@@ -407,6 +407,8 @@ class AIManager: ObservableObject {
     // private let memoryManager = ContextualMemoryManager.shared
     // TODO: Uncomment when InterruptionManager is added to Xcode project
     // private let interruptionManager = InterruptionManager.shared
+    // TODO: Uncomment when AmbientContextManager is added to Xcode project
+    // private let ambientContext = AmbientContextManager.shared
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -1096,6 +1098,108 @@ class AIManager: ObservableObject {
     /// End conversation tracking
     func endConversationTracking() {
         interruptionManager.endConversation()
+    }
+    */
+
+    // MARK: - Ambient Context Integration
+
+    /// Augment AI query with ambient context awareness
+    // TODO: Uncomment when AmbientContextManager is added to Xcode project
+    /*
+    func augmentQueryWithAmbientContext(_ query: String) -> String {
+        let contextInfo = ambientContext.generateAIContext()
+        if contextInfo.isEmpty {
+            return query
+        }
+
+        // Prepend ambient context to query
+        return contextInfo + "\nUser request: " + query
+    }
+
+    /// Check if a feature should be enabled based on current context
+    func shouldEnableFeature(_ feature: String) -> Bool {
+        return ambientContext.shouldEnableFeature(feature)
+    }
+
+    /// Get context-aware suggestions
+    func getContextualSuggestions() -> [String] {
+        return ambientContext.getSuggestedActions()
+    }
+
+    /// Adapt response mode based on current activity
+    func getAdaptiveResponseMode() -> String {
+        guard let context = ambientContext.currentContext else {
+            return "normal"
+        }
+
+        // Driving - voice only, brief responses
+        if context.activityContext == .driving {
+            return "voice_brief"
+        }
+
+        // In meeting - silent, notifications only
+        if context.inMeeting {
+            return "silent"
+        }
+
+        // Low battery - text only to save power
+        if context.batteryLevel < 0.2 && !context.isCharging {
+            return "text_only"
+        }
+
+        // Heavy activity - defer non-urgent
+        if context.activityContext == .running || context.activityContext == .cycling {
+            return "defer"
+        }
+
+        // Normal
+        return "normal"
+    }
+
+    /// Provide context-specific smart defaults for event creation
+    func getSmartDefaults(for eventType: String) -> [String: Any] {
+        guard let context = ambientContext.currentContext else {
+            return [:]
+        }
+
+        var defaults: [String: Any] = [:]
+
+        // Location-based defaults
+        switch context.locationContext {
+        case .work:
+            defaults["calendar"] = "Work"
+            if context.timeContext == .morning {
+                defaults["duration"] = 60 // 1 hour meetings at work
+            }
+        case .home:
+            defaults["calendar"] = "Personal"
+            defaults["duration"] = 30 // Shorter personal events
+        default:
+            break
+        }
+
+        // Time-based defaults
+        if context.hasImminentMeeting {
+            // Suggest scheduling after current meeting
+            if let minutes = context.minutesUntilNextMeeting {
+                defaults["suggested_time"] = "after_next_meeting"
+                defaults["earliest_start_minutes"] = minutes + 60
+            }
+        }
+
+        // Workload-based defaults
+        if context.workloadContext == .heavy || context.workloadContext == .overloaded {
+            defaults["suggest_reschedule"] = true
+            defaults["warning"] = "Heavy schedule today - consider tomorrow?"
+        }
+
+        return defaults
+    }
+
+    /// Setup ambient context with calendar manager
+    func setupAmbientContext(calendarManager: CalendarManager) {
+        ambientContext.setCalendarManager(calendarManager)
+        ambientContext.updateContext()
     }
     */
 
