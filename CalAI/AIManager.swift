@@ -4423,27 +4423,31 @@ class AIManager: ObservableObject {
 
     private func handleQuickCreate(_ entity: QuickCommandEntity, completion: @escaping (AICalendarResponse) -> Void) async {
         // Use SmartEventParser for fast parsing
-        let entities = await smartEventParser.parseUserInput(entity.text)
+        let parseResult = smartEventParser.parse(entity.text)
 
-        if entities.title != nil && entities.time != nil {
+        switch parseResult {
+        case .success(let entities, _):
             // Complete information - create immediately
-            let response = AICalendarResponse(
-                message: "Creating \(entities.title ?? "event")...",
-                calendarCommand: CalendarCommand(
-                    action: .create,
-                    title: entities.title,
-                    date: entities.time,
+            if let title = entities.title, let time = entities.time {
+                let command = CalendarCommand(
+                    type: .create,
+                    title: title,
+                    startDate: time,
                     endDate: entities.endTime,
                     location: entities.location,
                     notes: entities.notes,
-                    attendees: entities.attendeeNames
+                    attendees: entities.attendeeNames.map { $0 }
                 )
-            )
-            completion(response)
-        } else {
-            // Missing info - respond quickly and ask for clarification
-            let missing = entities.title == nil ? "title" : "time"
-            completion(AICalendarResponse(message: "What's the \(missing) for your event?"))
+                completion(AICalendarResponse(message: "Creating \(title)...", command: command))
+            } else {
+                completion(AICalendarResponse(message: "What's the title and time for your event?", needsMoreInfo: true))
+            }
+
+        case .needsClarification(_, let question):
+            completion(AICalendarResponse(message: question, needsMoreInfo: true))
+
+        case .failure(let error):
+            completion(AICalendarResponse(message: error))
         }
     }
 
@@ -4461,7 +4465,8 @@ class AIManager: ObservableObject {
             message = "You have \(filteredEvents.count) events \(timeHint)."
         }
 
-        completion(AICalendarResponse(message: message, events: filteredEvents.map { .init(event: $0, action: "show") }))
+        let eventResults = filteredEvents.map { EventResult(event: $0, action: "show") }
+        completion(AICalendarResponse(message: message, eventResults: eventResults))
     }
 
     private func handleQuickDelete(_ entity: QuickCommandEntity, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
