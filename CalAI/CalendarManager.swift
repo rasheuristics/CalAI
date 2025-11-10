@@ -267,8 +267,8 @@ class CalendarManager: ObservableObject {
     @Published var selectedGoogleCalendarForInfo: GoogleCalendarItem? = nil
     @Published var selectedOutlookCalendarForInfo: OutlookCalendarItem? = nil
 
-    // Proactive suggestions
-    let proactiveSuggestionsManager = ProactiveSuggestionsManager.shared
+    // Proactive suggestions (TODO: Uncomment when ProactiveSuggestionsManager is added to Xcode project)
+    // let proactiveSuggestionsManager = ProactiveSuggestionsManager.shared
 
     // UserDefaults key for persistence
     private let deletedEventsKey = "com.calai.deletedEventIds"
