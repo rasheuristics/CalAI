@@ -10,14 +10,29 @@ import SwiftUI
 import MapKit
 import EventKit
 
+// MARK: - Location Annotation
+struct LocationAnnotation: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+    let title: String
+}
+
 struct EventDetailView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var calendarManager: CalendarManager
+    @ObservedObject var fontManager: FontManager
 
     let event: UnifiedEvent
     @State private var showingOptions = false
     @State private var showingDeleteConfirmation = false
+    @State private var showingManagementView = false
+    @State private var selectedManagementTab: EventManagementTab = .edit
     @State private var region: MKCoordinateRegion?
+    @State private var locationAnnotation: LocationAnnotation?
+
+    enum EventManagementTab {
+        case edit, share, tasks
+    }
 
     var body: some View {
         NavigationView {
@@ -39,16 +54,21 @@ struct EventDetailView: View {
                             locationCard(location: location)
                         }
 
-                        // Alerts
-                        alertsCard
+                        // Alerts (only for iOS events with originalEvent)
+                        if event.source == .ios, let ekEvent = event.originalEvent as? EKEvent {
+                            if ekEvent.hasAlarms {
+                                alertsCard(alarms: ekEvent.alarms ?? [])
+                            }
+                        }
 
                         // Notes
-                        if let notes = event.notes, !notes.isEmpty {
+                        if let notes = event.description, !notes.isEmpty {
                             notesCard(notes: notes)
                         }
 
-                        // Attendees
-                        if let attendees = event.attendees, !attendees.isEmpty {
+                        // Attendees (only for iOS events)
+                        if event.source == .ios, let ekEvent = event.originalEvent as? EKEvent,
+                           let attendees = ekEvent.attendees, !attendees.isEmpty {
                             attendeesCard(attendees: attendees)
                         }
                     }
@@ -92,6 +112,14 @@ struct EventDetailView: View {
             .sheet(isPresented: $showingOptions) {
                 optionsSheet
             }
+            .sheet(isPresented: $showingManagementView) {
+                EventManagementViewWrapper(
+                    calendarManager: calendarManager,
+                    fontManager: fontManager,
+                    event: event,
+                    initialTab: selectedManagementTab
+                )
+            }
         }
     }
 
@@ -101,7 +129,7 @@ struct EventDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             // Color bar
             Rectangle()
-                .fill(Color(event.color ?? .systemBlue))
+                .fill(event.displayColor)
                 .frame(height: 4)
 
             // Title
@@ -173,15 +201,15 @@ struct EventDetailView: View {
             // Timeline bar
             VStack(spacing: 0) {
                 Circle()
-                    .fill(Color(event.color ?? .systemBlue))
+                    .fill(event.displayColor)
                     .frame(width: 8, height: 8)
 
                 Rectangle()
-                    .fill(Color(event.color ?? .systemBlue))
+                    .fill(event.displayColor)
                     .frame(width: 2)
 
                 Circle()
-                    .fill(Color(event.color ?? .systemBlue))
+                    .fill(event.displayColor)
                     .frame(width: 8, height: 8)
             }
             .frame(height: 60)
@@ -202,7 +230,7 @@ struct EventDetailView: View {
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(event.color ?? .systemBlue).opacity(0.15))
+            .background(event.displayColor.opacity(0.15))
             .cornerRadius(6)
 
             Spacer()
@@ -225,10 +253,10 @@ struct EventDetailView: View {
 
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(Color(event.color ?? .systemBlue))
+                        .fill(event.displayColor)
                         .frame(width: 10, height: 10)
 
-                    Text(event.source.displayName)
+                    Text(event.fullCalendarLabel)
                         .font(.system(size: 17))
                 }
             }
@@ -268,15 +296,17 @@ struct EventDetailView: View {
             .padding()
 
             // Map preview
-            if region != nil {
-                Map(coordinateRegion: .constant(region!))
-                    .frame(height: 180)
-                    .cornerRadius(10)
-                    .padding(.horizontal)
-                    .padding(.bottom)
-                    .onTapGesture {
-                        openInMaps(location: location)
-                    }
+            if let region = region, let annotation = locationAnnotation {
+                Map(coordinateRegion: .constant(region), annotationItems: [annotation]) { location in
+                    MapMarker(coordinate: location.coordinate, tint: event.displayColor)
+                }
+                .frame(height: 180)
+                .cornerRadius(10)
+                .padding(.horizontal)
+                .padding(.bottom)
+                .onTapGesture {
+                    openInMaps(location: location)
+                }
             } else {
                 // Placeholder map
                 ZStack {
@@ -310,49 +340,55 @@ struct EventDetailView: View {
 
     // MARK: - Alerts Card
 
-    private var alertsCard: some View {
+    private func alertsCard(alarms: [EKAlarm]) -> some View {
         VStack(spacing: 0) {
-            HStack {
-                Image(systemName: "bell")
-                    .foregroundColor(.blue)
-                    .frame(width: 30)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Alert")
-                        .font(.system(size: 15))
-                        .foregroundColor(.secondary)
-
-                    Text("At time of event")
-                        .font(.system(size: 17))
+            ForEach(Array(alarms.prefix(3).enumerated()), id: \.offset) { index, alarm in
+                if index > 0 {
+                    Divider()
+                        .padding(.leading, 50)
                 }
 
-                Spacer()
-            }
-            .padding()
+                HStack {
+                    Image(systemName: "bell")
+                        .foregroundColor(.blue)
+                        .frame(width: 30)
 
-            Divider()
-                .padding(.leading, 50)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(index == 0 ? "Alert" : "Alert \(index + 1)")
+                            .font(.system(size: 15))
+                            .foregroundColor(.secondary)
 
-            HStack {
-                Image(systemName: "bell")
-                    .foregroundColor(.blue)
-                    .frame(width: 30)
+                        Text(formatAlarm(alarm))
+                            .font(.system(size: 17))
+                    }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Second Alert")
-                        .font(.system(size: 15))
-                        .foregroundColor(.secondary)
-
-                    Text("15 minutes before")
-                        .font(.system(size: 17))
+                    Spacer()
                 }
-
-                Spacer()
+                .padding()
             }
-            .padding()
         }
         .background(Color(.secondarySystemGroupedBackground))
         .cornerRadius(10)
+    }
+
+    private func formatAlarm(_ alarm: EKAlarm) -> String {
+        if let absoluteDate = alarm.absoluteDate {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            return formatter.string(from: absoluteDate)
+        } else {
+            let offset = alarm.relativeOffset
+            let minutes = Int(-offset / 60)
+            if minutes == 0 {
+                return "At time of event"
+            } else if minutes < 60 {
+                return "\(minutes) minute\(minutes == 1 ? "" : "s") before"
+            } else {
+                let hours = minutes / 60
+                return "\(hours) hour\(hours == 1 ? "" : "s") before"
+            }
+        }
     }
 
     // MARK: - Notes Card
@@ -381,7 +417,7 @@ struct EventDetailView: View {
 
     // MARK: - Attendees Card
 
-    private func attendeesCard(attendees: [UnifiedAttendee]) -> some View {
+    private func attendeesCard(attendees: [EKParticipant]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "person.2")
@@ -395,37 +431,43 @@ struct EventDetailView: View {
                 Spacer()
             }
 
-            ForEach(attendees, id: \.emailAddress) { attendee in
-                HStack(spacing: 12) {
-                    // Avatar placeholder
-                    Circle()
-                        .fill(Color.blue.opacity(0.2))
-                        .frame(width: 32, height: 32)
-                        .overlay {
-                            Text(String(attendee.name?.prefix(1) ?? "?"))
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.blue)
-                        }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(attendee.name ?? attendee.emailAddress ?? "Unknown")
-                            .font(.system(size: 17))
-
-                        if let email = attendee.emailAddress {
-                            Text(email)
-                                .font(.system(size: 13))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    Spacer()
-                }
-                .padding(.leading, 42)
+            ForEach(Array(attendees.enumerated()), id: \.offset) { index, attendee in
+                attendeeRow(attendee: attendee)
             }
         }
         .padding()
         .background(Color(.secondarySystemGroupedBackground))
         .cornerRadius(10)
+    }
+
+    private func attendeeRow(attendee: EKParticipant) -> some View {
+        let initial = attendee.name?.prefix(1).uppercased() ?? "?"
+        let displayName = attendee.name ?? "Unknown"
+        let displayEmail = attendee.url.absoluteString
+
+        return HStack(spacing: 12) {
+            // Avatar placeholder
+            Circle()
+                .fill(Color.blue.opacity(0.2))
+                .frame(width: 32, height: 32)
+                .overlay {
+                    Text(initial)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.blue)
+                }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName)
+                    .font(.system(size: 17))
+
+                Text(displayEmail)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.leading, 42)
     }
 
     // MARK: - Delete Button
@@ -451,23 +493,26 @@ struct EventDetailView: View {
             List {
                 Button(action: {
                     showingOptions = false
-                    // TODO: Implement edit
+                    selectedManagementTab = .edit
+                    showingManagementView = true
                 }) {
                     Label("Edit", systemImage: "pencil")
                 }
 
                 Button(action: {
                     showingOptions = false
-                    shareEvent()
+                    selectedManagementTab = .share
+                    showingManagementView = true
                 }) {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }
 
                 Button(action: {
                     showingOptions = false
-                    // TODO: Implement convert to task
+                    selectedManagementTab = .tasks
+                    showingManagementView = true
                 }) {
-                    Label("Convert to Task", systemImage: "checkmark.circle")
+                    Label("Tasks", systemImage: "sparkles")
                 }
             }
             .navigationTitle("Options")
@@ -532,9 +577,14 @@ struct EventDetailView: View {
         geocoder.geocodeAddressString(location) { placemarks, error in
             if let placemark = placemarks?.first,
                let location = placemark.location {
+                let coordinate = location.coordinate
                 region = MKCoordinateRegion(
-                    center: location.coordinate,
+                    center: coordinate,
                     span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                )
+                locationAnnotation = LocationAnnotation(
+                    coordinate: coordinate,
+                    title: event.title
                 )
             }
         }
@@ -584,8 +634,115 @@ struct EventDetailView: View {
     }
 
     private func deleteEvent() {
-        calendarManager.deleteEvent(eventId: event.id, source: event.source)
+        calendarManager.deleteEvent(event)
         dismiss()
+    }
+}
+
+// MARK: - EventManagementView Wrapper
+
+struct EventManagementViewWrapper: View {
+    @ObservedObject var calendarManager: CalendarManager
+    @ObservedObject var fontManager: FontManager
+    let event: UnifiedEvent
+    let initialTab: EventDetailView.EventManagementTab
+
+    @State private var selectedTab: EventManagementView.EventTab
+
+    init(calendarManager: CalendarManager, fontManager: FontManager, event: UnifiedEvent, initialTab: EventDetailView.EventManagementTab) {
+        self.calendarManager = calendarManager
+        self.fontManager = fontManager
+        self.event = event
+        self.initialTab = initialTab
+
+        // Convert EventManagementTab to EventManagementView.EventTab
+        switch initialTab {
+        case .edit:
+            _selectedTab = State(initialValue: .edit)
+        case .share:
+            _selectedTab = State(initialValue: .share)
+        case .tasks:
+            _selectedTab = State(initialValue: .tasks)
+        }
+    }
+
+    var body: some View {
+        EventManagementViewWithTab(
+            calendarManager: calendarManager,
+            fontManager: fontManager,
+            event: event,
+            initialTab: selectedTab
+        )
+    }
+}
+
+// Custom EventManagementView that accepts initial tab
+struct EventManagementViewWithTab: View {
+    @ObservedObject var calendarManager: CalendarManager
+    @ObservedObject var fontManager: FontManager
+    @Environment(\.dismiss) private var dismiss
+
+    let event: UnifiedEvent
+    let initialTab: EventManagementView.EventTab
+
+    @State private var selectedTab: EventManagementView.EventTab
+    @State private var triggerSave: Bool = false
+
+    init(calendarManager: CalendarManager, fontManager: FontManager, event: UnifiedEvent, initialTab: EventManagementView.EventTab) {
+        self.calendarManager = calendarManager
+        self.fontManager = fontManager
+        self.event = event
+        self.initialTab = initialTab
+        _selectedTab = State(initialValue: initialTab)
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Tab Picker
+                Picker("View", selection: $selectedTab) {
+                    ForEach(EventManagementView.EventTab.allCases, id: \.self) { tab in
+                        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding()
+
+                // Tab Content
+                TabView(selection: $selectedTab) {
+                    // Tasks Tab
+                    EventTasksTabView(event: event, fontManager: fontManager)
+                        .tag(EventManagementView.EventTab.tasks)
+
+                    // Edit Tab
+                    EditEventView(
+                        calendarManager: calendarManager,
+                        fontManager: fontManager,
+                        event: event,
+                        triggerSave: $triggerSave
+                    )
+                    .tag(EventManagementView.EventTab.edit)
+
+                    // Share Tab
+                    EventShareTabView(
+                        event: event,
+                        calendarManager: calendarManager,
+                        fontManager: fontManager
+                    )
+                    .tag(EventManagementView.EventTab.share)
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+            }
+            .navigationTitle(event.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        triggerSave.toggle()
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -594,20 +751,21 @@ struct EventDetailView: View {
 #Preview {
     EventDetailView(
         calendarManager: CalendarManager(),
+        fontManager: FontManager(),
         event: UnifiedEvent(
             id: "preview",
             title: "Team Standup",
             startDate: Date(),
             endDate: Date().addingTimeInterval(1800),
             location: "Conference Room A",
-            notes: "Discuss project progress and blockers",
-            source: .iOS,
-            color: .systemBlue,
-            attendees: [
-                UnifiedAttendee(name: "John Doe", emailAddress: "john@example.com", status: .accepted),
-                UnifiedAttendee(name: "Jane Smith", emailAddress: "jane@example.com", status: .tentative)
-            ],
-            isAllDay: false
+            description: "Discuss project progress and blockers",
+            isAllDay: false,
+            source: .ios,
+            organizer: "John Doe",
+            originalEvent: NSObject(),
+            calendarId: "preview-calendar",
+            calendarName: "Work",
+            calendarColor: .blue
         )
     )
 }

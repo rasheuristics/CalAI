@@ -247,6 +247,7 @@ struct CalendarTabView: View {
             if let event = selectedEventForDetail {
                 EventDetailView(
                     calendarManager: calendarManager,
+                    fontManager: fontManager,
                     event: event
                 )
             }
