@@ -403,6 +403,8 @@ class AIManager: ObservableObject {
     private let intentClassifier: IntentClassifier
     private let fastIntentClassifier = FastIntentClassifier() // Fast on-device intent detection
     private let sessionManager = ConversationSessionManager.shared
+    // TODO: Uncomment when ContextualMemoryManager is added to Xcode project
+    // private let memoryManager = ContextualMemoryManager.shared
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -956,6 +958,65 @@ class AIManager: ObservableObject {
             "[\(index + 1)] \(msg)"
         }.joined(separator: "\n") + "\n"
     }
+
+    // MARK: - Contextual Memory Integration
+
+    /// Enhance AI query with learned context and preferences
+    // TODO: Uncomment when ContextualMemoryManager is added to Xcode project
+    /*
+    private func augmentQueryWithMemory(_ query: String) -> String {
+        let memoryContext = memoryManager.generateContextForAI(query: query)
+        if memoryContext.isEmpty {
+            return query
+        }
+        return memoryContext + "\nUser query: " + query
+    }
+
+    /// Store important conversation outcomes in memory
+    private func storeConversationOutcome(_ transcript: String, response: AICalendarResponse) {
+        // Store successful command patterns
+        if let command = response.command {
+            memoryManager.storeConversationMemory(
+                type: .conversationContext,
+                content: "User said '\(transcript)' → \(command.type.rawValue)",
+                importance: .medium,
+                metadata: ["command_type": command.type.rawValue]
+            )
+        }
+
+        // Store preferences based on successful interactions
+        if let command = response.command, command.type == .createEvent {
+            if let title = command.title {
+                // Learn meeting type preferences
+                if title.lowercased().contains("standup") {
+                    memoryManager.learnPreference(category: "meeting", key: "has_standups", value: "true")
+                } else if title.lowercased().contains("1:1") || title.lowercased().contains("one-on-one") {
+                    memoryManager.learnPreference(category: "meeting", key: "has_1on1s", value: "true")
+                }
+            }
+
+            // Learn time preferences
+            if let startDate = command.startDate {
+                let hour = Calendar.current.component(.hour, from: startDate)
+                memoryManager.learnPreference(
+                    category: "time",
+                    key: "prefers_morning_meetings",
+                    value: hour < 12 ? "true" : "false"
+                )
+            }
+
+            // Learn location preferences
+            if let location = command.location, !location.isEmpty {
+                memoryManager.learnPreference(category: "location", key: "frequent_location", value: location)
+            }
+        }
+    }
+
+    /// Learn from event patterns
+    func learnFromEventCreation(_ event: UnifiedEvent) {
+        memoryManager.observeEventPattern(from: event)
+    }
+    */
 
     // MARK: - Main Command Processing
 

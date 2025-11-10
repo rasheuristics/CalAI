@@ -2128,6 +2128,24 @@ class CalendarManager: ObservableObject {
             try eventStore.save(event, span: .thisEvent)
             print("✅ Event saved successfully")
             loadEvents()
+
+            // Learn from this event creation for contextual memory
+            // TODO: Uncomment when ContextualMemoryManager is added to Xcode project
+            /*
+            let unifiedEvent = UnifiedEvent(
+                id: event.eventIdentifier,
+                title: event.title,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                location: event.location,
+                notes: event.notes,
+                source: .iOS,
+                color: event.calendar.cgColor,
+                attendees: [],
+                isAllDay: event.isAllDay
+            )
+            ContextualMemoryManager.shared.observeEventPattern(from: unifiedEvent)
+            */
         } catch {
             print("❌ Error creating event: \(error)")
         }
