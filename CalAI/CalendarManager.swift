@@ -267,6 +267,9 @@ class CalendarManager: ObservableObject {
     @Published var selectedGoogleCalendarForInfo: GoogleCalendarItem? = nil
     @Published var selectedOutlookCalendarForInfo: OutlookCalendarItem? = nil
 
+    // Proactive suggestions
+    let proactiveSuggestionsManager = ProactiveSuggestionsManager.shared
+
     // UserDefaults key for persistence
     private let deletedEventsKey = "com.calai.deletedEventIds"
     private let deletionExpirationDays = 30
@@ -1252,7 +1255,18 @@ class CalendarManager: ObservableObject {
         // Update unified events after a delay to allow external fetches to complete
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             self.loadAllUnifiedEvents()
+            // Generate proactive suggestions after events are loaded
+            self.generateProactiveSuggestions()
         }
+    }
+
+    /// Generate proactive suggestions based on current calendar state
+    func generateProactiveSuggestions() {
+        print("🤖 Triggering proactive suggestions analysis...")
+        proactiveSuggestionsManager.analyzeCalendarAndGenerateSuggestions(
+            events: unifiedEvents,
+            travelTimeManager: travelTimeManager
+        )
     }
 
     func loadOfflineEvents() {
