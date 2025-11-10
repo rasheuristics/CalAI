@@ -715,7 +715,19 @@ struct SettingsTabView: View {
     // MARK: - Permission Methods
 
     private func checkPermissions() {
+        // Refresh calendar access status (this checks current status without prompting)
+        calendarManager.requestCalendarAccess()
+
+        // Google and Outlook managers' isSignedIn properties are already @Published
+        // and will automatically update the UI when they change
+
+        // VoiceManager's hasRecordingPermission is already @Published and updates automatically
+        // It's checked in the init() method
+
+        // Check location permission
         checkLocationPermission()
+
+        // Check notification permission
         checkNotificationPermission()
     }
 

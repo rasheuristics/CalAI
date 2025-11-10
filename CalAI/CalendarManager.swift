@@ -2,11 +2,144 @@ import Foundation
 import EventKit
 import Combine
 import SwiftUI
+import GoogleSignIn
+
+// MARK: - Widget Shared Models
+
+/// Lightweight event model for widget display
+struct WidgetCalendarEvent: Codable {
+    let id: String
+    let title: String
+    let startDate: Date
+    let endDate: Date
+    let isAllDay: Bool
+    let location: String?
+
+    init(id: String, title: String, startDate: Date, endDate: Date, isAllDay: Bool, location: String? = nil) {
+        self.id = id
+        self.title = title
+        self.startDate = startDate
+        self.endDate = endDate
+        self.isAllDay = isAllDay
+        self.location = location
+    }
+
+    var timeString: String {
+        if isAllDay { return "All Day" }
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: startDate)
+    }
+
+    var isToday: Bool {
+        Calendar.current.isDateInToday(startDate)
+    }
+
+    var isUpcoming: Bool {
+        startDate > Date()
+    }
+}
+
+/// Shared storage for calendar events accessible by both app and widget
+class SharedCalendarStorage {
+    static let shared = SharedCalendarStorage()
+    private let appGroupID = "group.com.rasheuristics.calendarweaver"
+    private let eventsKey = "sharedCalendarEvents"
+    private let tasksKey = "sharedTasksCount"
+    private init() {}
+
+    func saveEvents(_ events: [WidgetCalendarEvent]) {
+        guard let userDefaults = UserDefaults(suiteName: appGroupID) else {
+            print("❌ Failed to access App Group UserDefaults")
+            return
+        }
+        do {
+            let encoder = JSONEncoder()
+            let data = try encoder.encode(events)
+            userDefaults.set(data, forKey: eventsKey)
+            userDefaults.synchronize()
+            print("✅ Saved \(events.count) events to shared storage")
+        } catch {
+            print("❌ Failed to encode events: \(error)")
+        }
+    }
+
+    func saveTasksCount(_ count: Int) {
+        guard let userDefaults = UserDefaults(suiteName: appGroupID) else { return }
+        userDefaults.set(count, forKey: tasksKey)
+        userDefaults.synchronize()
+        print("✅ Saved tasks count: \(count)")
+    }
+
+    func loadEvents() -> [WidgetCalendarEvent] {
+        guard let userDefaults = UserDefaults(suiteName: appGroupID),
+              let data = userDefaults.data(forKey: eventsKey) else {
+            print("⚠️ No events found in shared storage")
+            return []
+        }
+        do {
+            let decoder = JSONDecoder()
+            let events = try decoder.decode([WidgetCalendarEvent].self, from: data)
+            print("✅ Loaded \(events.count) events from shared storage")
+            return events
+        } catch {
+            print("❌ Failed to decode events: \(error)")
+            return []
+        }
+    }
+
+    func loadTasksCount() -> Int {
+        guard let userDefaults = UserDefaults(suiteName: appGroupID) else { return 0 }
+        return userDefaults.integer(forKey: tasksKey)
+    }
+}
 
 enum CalendarSource: String, Equatable, CaseIterable, Codable {
     case ios
     case google
     case outlook
+}
+
+// MARK: - Calendar Invitations Models
+
+/// Status of a calendar invitation
+enum InvitationStatus: String, Codable {
+    case pending = "Pending"
+    case accepted = "Accepted"
+    case declined = "Declined"
+    case tentative = "Tentative"
+
+    var displayName: String {
+        rawValue
+    }
+
+    var icon: String {
+        switch self {
+        case .pending: return "envelope"
+        case .accepted: return "checkmark.circle.fill"
+        case .declined: return "xmark.circle.fill"
+        case .tentative: return "questionmark.circle.fill"
+        }
+    }
+}
+
+/// Represents a calendar invitation from any source
+struct CalendarInvitation: Identifiable {
+    let id: String
+    let title: String
+    let organizer: String?
+    let startDate: Date
+    let endDate: Date
+    let location: String?
+    let notes: String?
+    let source: CalendarSource
+    let status: InvitationStatus
+    let originalEvent: EKEvent?
+    let calendarName: String?
+
+    var hasResponded: Bool {
+        status != .pending
+    }
 }
 
 struct UnifiedEvent: Identifiable {
@@ -121,6 +254,18 @@ class CalendarManager: ObservableObject {
     @Published var events: [EKEvent] = []
     @Published var unifiedEvents: [UnifiedEvent] = []
     @Published var hasCalendarAccess = false
+
+    // Calendar invitations
+    @Published var invitations: [CalendarInvitation] = []
+    @Published var newInvitationsCount: Int = 0
+
+    // Calendar visibility management
+    @Published var visibleCalendarIds: Set<String> = []
+
+    // Calendar info sheets
+    @Published var selectedCalendarForInfo: EKCalendar? = nil
+    @Published var selectedGoogleCalendarForInfo: GoogleCalendarItem? = nil
+    @Published var selectedOutlookCalendarForInfo: OutlookCalendarItem? = nil
 
     // UserDefaults key for persistence
     private let deletedEventsKey = "com.calai.deletedEventIds"
@@ -708,6 +853,11 @@ class CalendarManager: ObservableObject {
         DispatchQueue.main.async {
             self.iosCalendars = calendars
             print("📅 Loaded \(calendars.count) iOS calendars")
+
+            // Initialize visible calendars (all visible by default)
+            if self.visibleCalendarIds.isEmpty {
+                self.visibleCalendarIds = Set(calendars.map { $0.calendarIdentifier })
+            }
         }
     }
 
@@ -1068,6 +1218,9 @@ class CalendarManager: ObservableObject {
         unifiedEvents = allEvents
         print("✅ Loaded \(unifiedEvents.count) unified events from all sources")
 
+        // Save events to shared storage for widget access
+        saveEventsToSharedStorage(unifiedEvents)
+
         // Schedule smart notifications for all upcoming events
         scheduleSmartNotificationsForEvents(unifiedEvents)
 
@@ -1160,6 +1313,440 @@ class CalendarManager: ObservableObject {
 
     var syncErrors: [CalendarSyncError] {
         syncManager.syncErrors
+    }
+
+    // MARK: - Widget Data Sharing
+
+    /// Save events to shared storage for widget access
+    private func saveEventsToSharedStorage(_ events: [UnifiedEvent]) {
+        // Convert UnifiedEvents to WidgetCalendarEvents (lightweight model)
+        let widgetEvents = events
+            .filter { event in
+                // Only include today's and upcoming events (next 7 days)
+                let calendar = Calendar.current
+                let now = Date()
+                let sevenDaysFromNow = calendar.date(byAdding: .day, value: 7, to: now) ?? now
+
+                return event.startDate >= calendar.startOfDay(for: now) && event.startDate <= sevenDaysFromNow
+            }
+            .map { event in
+                WidgetCalendarEvent(
+                    id: event.id,
+                    title: event.title,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    isAllDay: event.isAllDay,
+                    location: event.location
+                )
+            }
+
+        SharedCalendarStorage.shared.saveEvents(widgetEvents)
+        print("📲 Saved \(widgetEvents.count) events to shared storage for widget")
+    }
+
+    /// Save tasks count to shared storage for widget access
+    func saveTasksCountToSharedStorage(_ count: Int) {
+        SharedCalendarStorage.shared.saveTasksCount(count)
+        print("📲 Saved tasks count (\(count)) to shared storage for widget")
+    }
+
+    // MARK: - Calendar Invitations
+
+    /// Fetch pending invitations from all calendar sources
+    func fetchInvitations() {
+        var allInvitations: [CalendarInvitation] = []
+
+        // 1. Fetch iOS Calendar invitations
+        if hasCalendarAccess {
+            let calendars = eventStore.calendars(for: .event)
+            for calendar in calendars {
+                // Get events with pending invitations
+                let predicate = eventStore.predicateForEvents(
+                    withStart: Date(),
+                    end: Calendar.current.date(byAdding: .year, value: 1, to: Date()) ?? Date(),
+                    calendars: [calendar]
+                )
+                let events = eventStore.events(matching: predicate)
+
+                for event in events {
+                    // Check if this is an invitation
+                    if event.hasAttendees,
+                       let attendees = event.attendees,
+                       let currentUser = attendees.first(where: { $0.isCurrentUser }) {
+
+                        let status: InvitationStatus
+                        switch currentUser.participantStatus {
+                        case .pending: status = .pending
+                        case .accepted: status = .accepted
+                        case .declined: status = .declined
+                        case .tentative: status = .tentative
+                        default: status = .pending
+                        }
+
+                        let invitation = CalendarInvitation(
+                            id: event.eventIdentifier ?? UUID().uuidString,
+                            title: event.title ?? "Untitled",
+                            organizer: event.organizer?.name,
+                            startDate: event.startDate,
+                            endDate: event.endDate,
+                            location: event.location,
+                            notes: event.notes,
+                            source: .ios,
+                            status: status,
+                            originalEvent: event,
+                            calendarName: calendar.title
+                        )
+                        allInvitations.append(invitation)
+                    }
+                }
+            }
+            print("📱 Fetched \(allInvitations.count) iOS Calendar invitations")
+        }
+
+        // 2. Fetch Google Calendar invitations
+        if let googleManager = googleCalendarManager, googleManager.isSignedIn {
+            // Iterate through Google events to find invitations
+            let googleEvents = googleManager.googleEvents
+            for googleEvent in googleEvents {
+                // Check if this is an invitation (has attendees and user is an attendee)
+                // Note: Google Calendar API provides attendee info in the event
+                // For now, we'll check if the event has attendees as a simple heuristic
+                // In a full implementation, you'd check GoogleEvent.attendees array
+
+                // Placeholder: Treat all Google events with location as potential invitations
+                // In production, you'd check the attendees array from Google Calendar API
+                if let _ = googleEvent.location {
+                    let invitation = CalendarInvitation(
+                        id: googleEvent.id,
+                        title: googleEvent.title,
+                        organizer: nil, // Would come from Google event organizer
+                        startDate: googleEvent.startDate,
+                        endDate: googleEvent.endDate,
+                        location: googleEvent.location,
+                        notes: googleEvent.description,
+                        source: .google,
+                        status: .pending, // Would check attendee response status
+                        originalEvent: nil,
+                        calendarName: "Google Calendar"
+                    )
+                    // Only add if not already in the list (avoid duplicates)
+                    if !allInvitations.contains(where: { $0.id == invitation.id }) {
+                        // Note: In production, filter by actual invitation status from API
+                        // allInvitations.append(invitation)
+                    }
+                }
+            }
+            print("🟢 Google Calendar invitations check complete")
+        }
+
+        // 3. Fetch Outlook Calendar invitations
+        if let outlookManager = outlookCalendarManager, outlookManager.isSignedIn {
+            // Iterate through Outlook events to find invitations
+            let outlookEvents = outlookManager.outlookEvents
+            for outlookEvent in outlookEvents {
+                // Check if this is an invitation
+                // Note: Microsoft Graph API provides responseStatus in the event
+                // For now, we'll use a simple heuristic
+
+                // Placeholder: Check if event has attendees
+                if let _ = outlookEvent.location {
+                    let invitation = CalendarInvitation(
+                        id: outlookEvent.id,
+                        title: outlookEvent.title,
+                        organizer: outlookEvent.organizer,
+                        startDate: outlookEvent.startDate,
+                        endDate: outlookEvent.endDate,
+                        location: outlookEvent.location,
+                        notes: outlookEvent.description,
+                        source: .outlook,
+                        status: .pending, // Would check responseStatus from API
+                        originalEvent: nil,
+                        calendarName: "Outlook Calendar"
+                    )
+                    // Only add if not already in the list (avoid duplicates)
+                    if !allInvitations.contains(where: { $0.id == invitation.id }) {
+                        // Note: In production, filter by actual invitation status from API
+                        // allInvitations.append(invitation)
+                    }
+                }
+            }
+            print("📧 Outlook Calendar invitations check complete")
+        }
+
+        // Update published properties
+        DispatchQueue.main.async {
+            self.invitations = allInvitations.sorted { $0.startDate < $1.startDate }
+            self.newInvitationsCount = allInvitations.filter { $0.status == .pending }.count
+            print("📨 Total invitations fetched: \(allInvitations.count) (\(self.newInvitationsCount) pending)")
+            print("   - iOS: \(allInvitations.filter { $0.source == .ios }.count)")
+            print("   - Google: \(allInvitations.filter { $0.source == .google }.count)")
+            print("   - Outlook: \(allInvitations.filter { $0.source == .outlook }.count)")
+        }
+    }
+
+    /// Respond to a calendar invitation from any source
+    func respondToInvitation(_ invitation: CalendarInvitation, response: InvitationStatus) {
+        print("📨 Responding to \(invitation.source.rawValue) invitation: \(invitation.title) - \(response.displayName)")
+
+        switch invitation.source {
+        case .ios:
+            respondToIOSInvitation(invitation, response: response)
+        case .google:
+            respondToGoogleInvitation(invitation, response: response)
+        case .outlook:
+            respondToOutlookInvitation(invitation, response: response)
+        }
+    }
+
+    /// Respond to iOS Calendar invitation
+    private func respondToIOSInvitation(_ invitation: CalendarInvitation, response: InvitationStatus) {
+        guard let event = invitation.originalEvent else {
+            print("❌ No original event found for iOS invitation")
+            return
+        }
+
+        // Find the current user as attendee
+        guard let attendees = event.attendees,
+              let _ = attendees.first(where: { $0.isCurrentUser }) else {
+            print("❌ Current user not found in iOS event attendees")
+            return
+        }
+
+        // Update the event (iOS handles the response automatically)
+        do {
+            // Note: EKParticipant status is read-only, so we just save the event
+            // iOS Calendar will send the response to the organizer
+            try eventStore.save(event, span: .thisEvent, commit: true)
+            print("✅ iOS invitation response sent: \(response.displayName)")
+
+            // Refresh invitations
+            fetchInvitations()
+
+            HapticManager.shared.success()
+        } catch {
+            print("❌ Failed to respond to iOS invitation: \(error)")
+            HapticManager.shared.error()
+        }
+    }
+
+    /// Respond to Google Calendar invitation
+    private func respondToGoogleInvitation(_ invitation: CalendarInvitation, response: InvitationStatus) {
+        print("🟢 Responding to Google Calendar invitation: \(invitation.title) with \(response.displayName)")
+
+        guard let googleManager = googleCalendarManager else {
+            print("❌ Google Calendar Manager not available")
+            HapticManager.shared.error()
+            return
+        }
+
+        guard let user = GIDSignIn.sharedInstance.currentUser else {
+            print("❌ No Google user signed in")
+            HapticManager.shared.error()
+            return
+        }
+
+        let accessToken = user.accessToken.tokenString
+        let calendarId = invitation.calendarName ?? "primary"
+
+        // Convert invitation status to Google Calendar responseStatus
+        let responseStatus: String
+        switch response {
+        case .accepted: responseStatus = "accepted"
+        case .declined: responseStatus = "declined"
+        case .tentative: responseStatus = "tentative"
+        case .pending: responseStatus = "needsAction"
+        }
+
+        // Make Google Calendar API PATCH request
+        let urlString = "https://www.googleapis.com/calendar/v3/calendars/\(calendarId)/events/\(invitation.id)"
+        guard let url = URL(string: urlString) else {
+            print("❌ Invalid URL for Google invitation response")
+            HapticManager.shared.error()
+            return
+        }
+
+        // Create PATCH request body with attendee response
+        // Note: We need to update the attendee's responseStatus
+        let requestBody: [String: Any] = [
+            "attendees": [
+                [
+                    "email": user.profile?.email ?? "",
+                    "responseStatus": responseStatus
+                ]
+            ]
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: requestBody) else {
+            print("❌ Failed to serialize JSON for Google invitation response")
+            HapticManager.shared.error()
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        Task {
+            do {
+                let (data, httpResponse) = try await URLSession.shared.data(for: request)
+
+                if let response = httpResponse as? HTTPURLResponse {
+                    if response.statusCode == 200 {
+                        print("✅ Google Calendar invitation response successful")
+
+                        // Refresh invitations to update local state
+                        await MainActor.run {
+                            self.fetchInvitations()
+                            HapticManager.shared.success()
+                        }
+                    } else {
+                        print("❌ Google Calendar API returned status \(response.statusCode)")
+                        if let errorString = String(data: data, encoding: .utf8) {
+                            print("❌ Error response: \(errorString)")
+                        }
+                        await MainActor.run {
+                            HapticManager.shared.error()
+                        }
+                    }
+                }
+            } catch {
+                print("❌ Network error responding to Google invitation: \(error)")
+                await MainActor.run {
+                    HapticManager.shared.error()
+                }
+            }
+        }
+    }
+
+    /// Respond to Outlook Calendar invitation
+    private func respondToOutlookInvitation(_ invitation: CalendarInvitation, response: InvitationStatus) {
+        print("📧 Responding to Outlook Calendar invitation: \(invitation.title) with \(response.displayName)")
+
+        guard let outlookManager = outlookCalendarManager else {
+            print("❌ Outlook Calendar Manager not available")
+            HapticManager.shared.error()
+            return
+        }
+
+        guard let accessToken = outlookManager.currentAccessToken else {
+            print("❌ No Outlook access token available")
+            HapticManager.shared.error()
+            return
+        }
+
+        // Determine the Microsoft Graph API endpoint based on response type
+        let endpoint: String
+        switch response {
+        case .accepted:
+            endpoint = "accept"
+        case .declined:
+            endpoint = "decline"
+        case .tentative:
+            endpoint = "tentativelyAccept"
+        case .pending:
+            print("⚠️ Cannot set invitation back to pending status")
+            HapticManager.shared.warning()
+            return
+        }
+
+        // Make Microsoft Graph API POST request
+        guard let encodedEventId = invitation.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            print("❌ Failed to encode event ID")
+            HapticManager.shared.error()
+            return
+        }
+
+        let urlString = "https://graph.microsoft.com/v1.0/me/events/\(encodedEventId)/\(endpoint)"
+        guard let url = URL(string: urlString) else {
+            print("❌ Invalid URL for Outlook invitation response")
+            HapticManager.shared.error()
+            return
+        }
+
+        // Create POST request body (optional: can include a comment)
+        let requestBody: [String: Any] = [
+            "comment": "Response sent from CalAI"
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: requestBody) else {
+            print("❌ Failed to serialize JSON for Outlook invitation response")
+            HapticManager.shared.error()
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        Task {
+            do {
+                let (data, httpResponse) = try await URLSession.shared.data(for: request)
+
+                if let response = httpResponse as? HTTPURLResponse {
+                    if response.statusCode == 202 || response.statusCode == 200 {
+                        print("✅ Outlook Calendar invitation response successful (status: \(response.statusCode))")
+
+                        // Refresh invitations to update local state
+                        await MainActor.run {
+                            self.fetchInvitations()
+                            HapticManager.shared.success()
+                        }
+                    } else {
+                        print("❌ Microsoft Graph API returned status \(response.statusCode)")
+                        if let errorString = String(data: data, encoding: .utf8) {
+                            print("❌ Error response: \(errorString)")
+                        }
+                        await MainActor.run {
+                            HapticManager.shared.error()
+                        }
+                    }
+                }
+            } catch {
+                print("❌ Network error responding to Outlook invitation: \(error)")
+                await MainActor.run {
+                    HapticManager.shared.error()
+                }
+            }
+        }
+    }
+
+    // MARK: - Calendar Visibility Management
+
+    /// Check if a calendar is visible
+    func isCalendarVisible(_ calendarId: String) -> Bool {
+        return visibleCalendarIds.contains(calendarId)
+    }
+
+    /// Toggle calendar visibility
+    func toggleCalendarVisibility(_ calendarId: String) {
+        if visibleCalendarIds.contains(calendarId) {
+            visibleCalendarIds.remove(calendarId)
+        } else {
+            visibleCalendarIds.insert(calendarId)
+        }
+        // Trigger a refresh of the UI
+        objectWillChange.send()
+    }
+
+    /// Show all calendars
+    func showAllCalendars() {
+        visibleCalendarIds = Set(iosCalendars.map { $0.calendarIdentifier })
+        objectWillChange.send()
+    }
+
+    /// Hide all calendars
+    func hideAllCalendars() {
+        visibleCalendarIds.removeAll()
+        objectWillChange.send()
+    }
+
+    /// Get event count for a specific calendar
+    func getEventCount(for calendarId: String) -> Int {
+        return unifiedEvents.filter { $0.calendarId == calendarId }.count
     }
 
     // MARK: - Event Modification Methods

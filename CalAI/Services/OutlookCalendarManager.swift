@@ -134,6 +134,11 @@ class OutlookCalendarManager: ObservableObject {
     private let scopes = ["https://graph.microsoft.com/Calendars.ReadWrite", "https://graph.microsoft.com/User.Read"]
     private var accessToken: String? // Store access token for API calls
 
+    // Public accessor for access token (needed for invitation responses)
+    var currentAccessToken: String? {
+        return accessToken
+    }
+
     // Track events with pending API updates to prevent overwriting during fetch
     private var pendingUpdates: [String: OutlookEvent] = [:] // eventId -> updated event
     private let pendingUpdatesQueue = DispatchQueue(label: "com.calai.outlook.pendingUpdates")

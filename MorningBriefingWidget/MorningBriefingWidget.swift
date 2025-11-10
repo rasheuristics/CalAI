@@ -8,6 +8,86 @@
 import WidgetKit
 import SwiftUI
 
+// MARK: - Widget Shared Models (Local Copy)
+
+/// Lightweight event model for widget display
+struct WidgetCalendarEvent: Codable {
+    let id: String
+    let title: String
+    let startDate: Date
+    let endDate: Date
+    let isAllDay: Bool
+    let location: String?
+
+    var timeString: String {
+        if isAllDay { return "All Day" }
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: startDate)
+    }
+
+    var isToday: Bool {
+        Calendar.current.isDateInToday(startDate)
+    }
+
+    var isUpcoming: Bool {
+        startDate > Date()
+    }
+}
+
+/// Shared storage for calendar events accessible by both app and widget
+class SharedCalendarStorage {
+    static let shared = SharedCalendarStorage()
+    private let appGroupID = "group.com.rasheuristics.calendarweaver"
+    private let eventsKey = "sharedCalendarEvents"
+    private let tasksKey = "sharedTasksCount"
+    private init() {}
+
+    func saveEvents(_ events: [WidgetCalendarEvent]) {
+        guard let userDefaults = UserDefaults(suiteName: appGroupID) else {
+            print("❌ Failed to access App Group UserDefaults")
+            return
+        }
+        do {
+            let encoder = JSONEncoder()
+            let data = try encoder.encode(events)
+            userDefaults.set(data, forKey: eventsKey)
+            userDefaults.synchronize()
+            print("✅ Saved \(events.count) events to shared storage")
+        } catch {
+            print("❌ Failed to encode events: \(error)")
+        }
+    }
+
+    func saveTasksCount(_ count: Int) {
+        guard let userDefaults = UserDefaults(suiteName: appGroupID) else { return }
+        userDefaults.set(count, forKey: tasksKey)
+        userDefaults.synchronize()
+    }
+
+    func loadEvents() -> [WidgetCalendarEvent] {
+        guard let userDefaults = UserDefaults(suiteName: appGroupID),
+              let data = userDefaults.data(forKey: eventsKey) else {
+            print("⚠️ No events found in shared storage")
+            return []
+        }
+        do {
+            let decoder = JSONDecoder()
+            let events = try decoder.decode([WidgetCalendarEvent].self, from: data)
+            print("✅ Loaded \(events.count) events from shared storage")
+            return events
+        } catch {
+            print("❌ Failed to decode events: \(error)")
+            return []
+        }
+    }
+
+    func loadTasksCount() -> Int {
+        guard let userDefaults = UserDefaults(suiteName: appGroupID) else { return 0 }
+        return userDefaults.integer(forKey: tasksKey)
+    }
+}
+
 struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> MorningBriefingEntry {
         MorningBriefingEntry(
@@ -39,20 +119,45 @@ struct Provider: TimelineProvider {
         // Load weather from shared storage
         let weather = SharedWeatherStorage.shared.loadWeather()
 
+        // Load calendar events and tasks from shared storage
+        let events = SharedCalendarStorage.shared.loadEvents()
+        let tasksCount = SharedCalendarStorage.shared.loadTasksCount()
+
+        // Filter events for today
+        let todayEvents = events.filter { $0.isToday }
+
+        // Find next upcoming event
+        let upcomingEvents = events.filter { $0.isUpcoming }.sorted { $0.startDate < $1.startDate }
+        let nextEvent = upcomingEvents.first
+
+        // Create events summary
+        let eventsSummary: String
+        if todayEvents.isEmpty {
+            eventsSummary = "No events today"
+        } else {
+            eventsSummary = "\(todayEvents.count) event\(todayEvents.count == 1 ? "" : "s") today"
+        }
+
+        // Next event string
+        let nextEventString: String?
+        if let next = nextEvent {
+            nextEventString = "\(next.title) at \(next.timeString)"
+        } else {
+            nextEventString = nil
+        }
+
         // Generate timeline entries for the next 24 hours (update every hour)
         let currentDate = Date()
         for hourOffset in 0 ..< 24 {
             let entryDate = Calendar.current.date(byAdding: .hour, value: hourOffset, to: currentDate)!
 
-            // In a real implementation, fetch actual calendar data here
-            // For now, using placeholder data for events/tasks
             let entry = MorningBriefingEntry(
                 date: entryDate,
                 greeting: getGreeting(for: entryDate),
                 weather: weather,
-                eventsSummary: "Check your calendar",
-                nextEvent: "No upcoming events",
-                tasksCount: 0
+                eventsSummary: eventsSummary,
+                nextEvent: nextEventString,
+                tasksCount: tasksCount
             )
             entries.append(entry)
         }

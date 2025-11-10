@@ -37,6 +37,10 @@ struct CalendarTabView: View {
     @State private var smartSuggestionsData: Any? = nil // Holds [OnDeviceAIService.EventSuggestion] on iOS 26+
     @State private var isLoadingSuggestions = false
 
+    // Calendar management state
+    @State private var showInvitationsInbox = false
+    @State private var showCalendarSelector = false
+
     // Day view swipe gesture state
     @State private var daySwipeDragOffset: CGFloat = 0
     @State private var isDayDragging = false
@@ -313,6 +317,42 @@ struct CalendarTabView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // Leading items - Calendar Selector and Invitations Inbox
+            ToolbarItem(placement: .navigationBarLeading) {
+                HStack(spacing: 16) {
+                    // Calendar Selector Icon
+                    Button(action: {
+                        showCalendarSelector = true
+                    }) {
+                        Image(systemName: "calendar.circle")
+                            .font(.title3)
+                            .foregroundColor(.blue)
+                    }
+
+                    // Invitations Inbox Icon with badge
+                    Button(action: {
+                        showInvitationsInbox = true
+                    }) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "tray.circle")
+                                .font(.title3)
+                                .foregroundColor(.blue)
+
+                            // Badge for new invitations
+                            if calendarManager.newInvitationsCount > 0 {
+                                Text("\(calendarManager.newInvitationsCount)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(4)
+                                    .background(Color.red)
+                                    .clipShape(Circle())
+                                    .offset(x: 8, y: -8)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Quick Insights button - AI-powered conflict/duplicate preview
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: {
@@ -333,6 +373,18 @@ struct CalendarTabView: View {
                         .foregroundColor(.blue)
                 }
             }
+        }
+        .sheet(isPresented: $showInvitationsInbox) {
+            InvitationsInboxView(
+                calendarManager: calendarManager,
+                fontManager: fontManager
+            )
+        }
+        .sheet(isPresented: $showCalendarSelector) {
+            CalendarSelectorView(
+                calendarManager: calendarManager,
+                fontManager: fontManager
+            )
         }
         .onAppear {
             // Always reset to day view showing today
@@ -4718,4 +4770,500 @@ struct ConflictEventRow: View {
         formatter.timeStyle = .short
         return "\(formatter.string(from: event.startDate)) - \(formatter.string(from: event.endDate))"
     }
+}
+//
+//  InvitationsInboxView.swift
+//  CalAI
+//
+//  iOS-style calendar invitations inbox
+//  Created by Claude Code on 11/9/25.
+//
+
+import SwiftUI
+
+struct InvitationsInboxView: View {
+    @ObservedObject var calendarManager: CalendarManager
+    @ObservedObject var fontManager: FontManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedSegment = 0
+
+    private var newInvitations: [CalendarInvitation] {
+        calendarManager.invitations.filter { $0.status == .pending }
+    }
+
+    private var repliedInvitations: [CalendarInvitation] {
+        calendarManager.invitations.filter { $0.status != .pending }
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Segmented control for New/Replied
+                Picker("", selection: $selectedSegment) {
+                    Text("New (\(newInvitations.count))").tag(0)
+                    Text("Replied (\(repliedInvitations.count))").tag(1)
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .padding()
+
+                // Invitations list
+                if selectedSegment == 0 {
+                    if newInvitations.isEmpty {
+                        EmptyInboxView(message: "No new invitations")
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 12) {
+                                ForEach(newInvitations) { invitation in
+                                    InvitationCard(
+                                        invitation: invitation,
+                                        fontManager: fontManager,
+                                        onAccept: {
+                                            calendarManager.respondToInvitation(invitation, response: .accepted)
+                                        },
+                                        onMaybe: {
+                                            calendarManager.respondToInvitation(invitation, response: .tentative)
+                                        },
+                                        onDecline: {
+                                            calendarManager.respondToInvitation(invitation, response: .declined)
+                                        }
+                                    )
+                                }
+                            }
+                            .padding()
+                        }
+                    }
+                } else {
+                    if repliedInvitations.isEmpty {
+                        EmptyInboxView(message: "No replied invitations")
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 12) {
+                                ForEach(repliedInvitations) { invitation in
+                                    RepliedInvitationCard(
+                                        invitation: invitation,
+                                        fontManager: fontManager
+                                    )
+                                }
+                            }
+                            .padding()
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Invitations")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Invitation Card (New)
+
+struct InvitationCard: View {
+    let invitation: CalendarInvitation
+    @ObservedObject var fontManager: FontManager
+    let onAccept: () -> Void
+    let onMaybe: () -> Void
+    let onDecline: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header with calendar source
+            HStack {
+                Image(systemName: invitation.source == .ios ? "calendar" : invitation.source == .google ? "globe" : "envelope")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(invitation.calendarName ?? invitation.source.rawValue.capitalized)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+
+            // Event title
+            Text(invitation.title)
+                .dynamicFont(size: 18, weight: .semibold, fontManager: fontManager)
+                .foregroundColor(.primary)
+
+            // Organizer
+            if let organizer = invitation.organizer {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.circle")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(organizer)
+                        .dynamicFont(size: 14, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            // Date and time
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(formatDateRange(start: invitation.startDate, end: invitation.endDate))
+                    .dynamicFont(size: 14, fontManager: fontManager)
+                    .foregroundColor(.secondary)
+            }
+
+            // Location
+            if let location = invitation.location, !location.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "mappin.circle")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(location)
+                        .dynamicFont(size: 14, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Divider()
+
+            // Action buttons
+            HStack(spacing: 12) {
+                // Decline
+                Button(action: onDecline) {
+                    HStack {
+                        Image(systemName: "xmark")
+                        Text("Decline")
+                            .dynamicFont(size: 14, weight: .medium, fontManager: fontManager)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.red.opacity(0.1))
+                    .foregroundColor(.red)
+                    .cornerRadius(8)
+                }
+
+                // Maybe
+                Button(action: onMaybe) {
+                    HStack {
+                        Image(systemName: "questionmark")
+                        Text("Maybe")
+                            .dynamicFont(size: 14, weight: .medium, fontManager: fontManager)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.orange.opacity(0.1))
+                    .foregroundColor(.orange)
+                    .cornerRadius(8)
+                }
+
+                // Accept
+                Button(action: onAccept) {
+                    HStack {
+                        Image(systemName: "checkmark")
+                        Text("Accept")
+                            .dynamicFont(size: 14, weight: .medium, fontManager: fontManager)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.green.opacity(0.1))
+                    .foregroundColor(.green)
+                    .cornerRadius(8)
+                }
+            }
+        }
+        .padding()
+        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .cornerRadius(12)
+    }
+
+    private func formatDateRange(start: Date, end: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+
+        let calendar = Calendar.current
+        if calendar.isDate(start, inSameDayAs: end) {
+            // Same day
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "MMM d, h:mm a"
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "h:mm a"
+            return "\(dateFormatter.string(from: start)) - \(timeFormatter.string(from: end))"
+        } else {
+            // Different days
+            return "\(formatter.string(from: start)) - \(formatter.string(from: end))"
+        }
+    }
+}
+
+// MARK: - Replied Invitation Card
+
+struct RepliedInvitationCard: View {
+    let invitation: CalendarInvitation
+    @ObservedObject var fontManager: FontManager
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Status icon
+            Image(systemName: invitation.status.icon)
+                .font(.title2)
+                .foregroundColor(statusColor)
+
+            VStack(alignment: .leading, spacing: 4) {
+                // Event title
+                Text(invitation.title)
+                    .dynamicFont(size: 16, weight: .semibold, fontManager: fontManager)
+                    .foregroundColor(.primary)
+
+                // Date
+                Text(formatDate(invitation.startDate))
+                    .dynamicFont(size: 14, fontManager: fontManager)
+                    .foregroundColor(.secondary)
+
+                // Status
+                Text(invitation.status.displayName)
+                    .dynamicFont(size: 13, fontManager: fontManager)
+                    .foregroundColor(statusColor)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .cornerRadius(12)
+    }
+
+    private var statusColor: Color {
+        switch invitation.status {
+        case .accepted: return .green
+        case .declined: return .red
+        case .tentative: return .orange
+        case .pending: return .blue
+        }
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - Empty Inbox View
+
+struct EmptyInboxView: View {
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "tray")
+                .font(.system(size: 60))
+                .foregroundColor(.secondary)
+
+            Text(message)
+                .font(.headline)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+#Preview {
+    InvitationsInboxView(
+        calendarManager: CalendarManager(),
+        fontManager: FontManager()
+    )
+}
+// MARK: - Calendar Selector View
+
+struct CalendarSelectorView: View {
+    @ObservedObject var calendarManager: CalendarManager
+    @ObservedObject var fontManager: FontManager
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            List {
+                // iOS Calendars Section
+                if !calendarManager.iosCalendars.isEmpty {
+                    Section(header: Text("iOS CALENDAR")) {
+                        ForEach(calendarManager.iosCalendars, id: \.calendarIdentifier) { calendar in
+                            CalendarSelectorRow(
+                                name: calendar.title,
+                                color: calendar.cgColor != nil ? Color(calendar.cgColor) : .blue,
+                                isVisible: calendarManager.isCalendarVisible(calendar.calendarIdentifier),
+                                source: .ios,
+                                eventCount: calendarManager.getEventCount(for: calendar.calendarIdentifier),
+                                fontManager: fontManager,
+                                onToggleVisibility: {
+                                    calendarManager.toggleCalendarVisibility(calendar.calendarIdentifier)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                // Google Calendar Section
+                if calendarManager.googleCalendarManager?.isSignedIn == true {
+                    Section(header: Text("GOOGLE CALENDAR")) {
+                        ForEach(calendarManager.googleCalendars) { calendar in
+                            CalendarSelectorRow(
+                                name: calendar.name,
+                                color: .blue, // Google calendars would have their own colors
+                                isVisible: calendarManager.isCalendarVisible(calendar.id),
+                                source: .google,
+                                eventCount: calendarManager.getEventCount(for: calendar.id),
+                                fontManager: fontManager,
+                                onToggleVisibility: {
+                                    calendarManager.toggleCalendarVisibility(calendar.id)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                // Outlook Calendar Section
+                if calendarManager.outlookCalendarManager?.isSignedIn == true,
+                   let outlookCalendar = calendarManager.outlookCalendarManager?.selectedCalendar {
+                    Section(header: Text("OUTLOOK CALENDAR")) {
+                        CalendarSelectorRow(
+                            name: outlookCalendar.displayName,
+                            color: Color(hex: outlookCalendar.color ?? "#0078d4"),
+                            isVisible: calendarManager.isCalendarVisible(outlookCalendar.id),
+                            source: .outlook,
+                            eventCount: calendarManager.getEventCount(for: outlookCalendar.id),
+                            fontManager: fontManager,
+                            onToggleVisibility: {
+                                calendarManager.toggleCalendarVisibility(outlookCalendar.id)
+                            },
+                        )
+                    }
+                }
+
+                // Show All / Hide All
+                Section {
+                    Button(action: {
+                        calendarManager.showAllCalendars()
+                    }) {
+                        HStack {
+                            Image(systemName: "eye")
+                            Text("Show All Calendars")
+                                .dynamicFont(size: 16, fontManager: fontManager)
+                        }
+                        .foregroundColor(.blue)
+                    }
+
+                    Button(action: {
+                        calendarManager.hideAllCalendars()
+                    }) {
+                        HStack {
+                            Image(systemName: "eye.slash")
+                            Text("Hide All Calendars")
+                                .dynamicFont(size: 16, fontManager: fontManager)
+                        }
+                        .foregroundColor(.blue)
+                    }
+                }
+            }
+            .listStyle(InsetGroupedListStyle())
+            .navigationTitle("Calendars")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Calendar Selector Row
+
+struct CalendarSelectorRow: View {
+    let name: String
+    let color: Color
+    let isVisible: Bool
+    let source: CalendarSource
+    let eventCount: Int
+    @ObservedObject var fontManager: FontManager
+    let onToggleVisibility: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Visibility toggle (checkmark)
+            Button(action: onToggleVisibility) {
+                Image(systemName: isVisible ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundColor(isVisible ? color : .gray)
+            }
+            .buttonStyle(PlainButtonStyle())
+
+            // Calendar color indicator
+            Circle()
+                .fill(color)
+                .frame(width: 10, height: 10)
+
+            // Calendar name and event count
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .dynamicFont(size: 16, fontManager: fontManager)
+                    .foregroundColor(.primary)
+
+                if eventCount > 0 {
+                    Text("\(eventCount) event\(eventCount == 1 ? "" : "s")")
+                        .dynamicFont(size: 13, fontManager: fontManager)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Calendar Info Sheet
+
+struct CalendarInfoSheet: View {
+    let calendar: Any // Could be EKCalendar, GoogleCalendar, or OutlookCalendar
+    @ObservedObject var fontManager: FontManager
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section(header: Text("CALENDAR DETAILS")) {
+                    // This would be customized based on calendar type
+                    // For now, showing basic info
+                    LabeledContent("Type", value: "Calendar")
+                    LabeledContent("Source", value: "iOS")
+                }
+            }
+            .listStyle(InsetGroupedListStyle())
+            .navigationTitle("Calendar Info")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+#Preview {
+    CalendarSelectorView(
+        calendarManager: CalendarManager(),
+        fontManager: FontManager()
+    )
 }
