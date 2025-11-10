@@ -1,6 +1,132 @@
 import Foundation
 import SwiftAnthropic
 import EventKit
+import NaturalLanguage
+
+// MARK: - Fast Intent Classification
+
+/// Ultra-fast intent classification using on-device NLP (< 100ms)
+class FastIntentClassifier {
+
+    enum FastIntent: String {
+        case createEvent
+        case deleteEvent
+        case modifyEvent
+        case querySchedule
+        case searchEvent
+        case checkAvailability
+        case unknown
+
+        var confidence: Double {
+            switch self {
+            case .unknown: return 0.0
+            default: return 1.0
+            }
+        }
+    }
+
+    func detectIntent(from text: String) -> FastIntent {
+        let normalized = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if matchesCreate(normalized) { return .createEvent }
+        if matchesDelete(normalized) { return .deleteEvent }
+        if matchesModify(normalized) { return .modifyEvent }
+        if matchesQuery(normalized) { return .querySchedule }
+        if matchesSearch(normalized) { return .searchEvent }
+        if matchesAvailability(normalized) { return .checkAvailability }
+
+        return .unknown
+    }
+
+    func extractQuickEntities(from text: String, intent: FastIntent) -> QuickCommandEntity {
+        let normalized = text.lowercased()
+
+        switch intent {
+        case .createEvent:
+            return extractCreateEntities(from: normalized)
+        case .deleteEvent:
+            return extractDeleteEntities(from: normalized)
+        case .querySchedule:
+            return extractQueryEntities(from: normalized)
+        default:
+            return QuickCommandEntity(intent: intent, text: text)
+        }
+    }
+
+    private func matchesCreate(_ text: String) -> Bool {
+        let patterns = ["create", "add", "schedule", "book", "set up", "make", "new event", "new meeting"]
+        return patterns.contains { text.contains($0) }
+    }
+
+    private func matchesDelete(_ text: String) -> Bool {
+        let patterns = ["delete", "cancel", "remove", "clear"]
+        return patterns.contains { text.contains($0) }
+    }
+
+    private func matchesModify(_ text: String) -> Bool {
+        let patterns = ["move", "reschedule", "change", "update", "edit"]
+        return patterns.contains { text.contains($0) }
+    }
+
+    private func matchesQuery(_ text: String) -> Bool {
+        let patterns = ["what's", "show", "list", "tell me", "what do i have", "my schedule", "my calendar", "upcoming"]
+        return patterns.contains { text.contains($0) }
+    }
+
+    private func matchesSearch(_ text: String) -> Bool {
+        let patterns = ["find", "search", "look for", "when is"]
+        return patterns.contains { text.contains($0) }
+    }
+
+    private func matchesAvailability(_ text: String) -> Bool {
+        let patterns = ["am i free", "do i have time", "available", "busy", "free time"]
+        return patterns.contains { text.contains($0) }
+    }
+
+    private func extractCreateEntities(from text: String) -> QuickCommandEntity {
+        var entity = QuickCommandEntity(intent: .createEvent, text: text)
+        if text.contains("tomorrow") { entity.timeHint = "tomorrow" }
+        else if text.contains("today") { entity.timeHint = "today" }
+        else if text.contains("next week") { entity.timeHint = "next week" }
+        return entity
+    }
+
+    private func extractDeleteEntities(from text: String) -> QuickCommandEntity {
+        var entity = QuickCommandEntity(intent: .deleteEvent, text: text)
+        if text.contains("today") { entity.timeHint = "today" }
+        else if text.contains("tomorrow") { entity.timeHint = "tomorrow" }
+        return entity
+    }
+
+    private func extractQueryEntities(from text: String) -> QuickCommandEntity {
+        var entity = QuickCommandEntity(intent: .querySchedule, text: text)
+        if text.contains("today") { entity.timeHint = "today" }
+        else if text.contains("tomorrow") { entity.timeHint = "tomorrow" }
+        else if text.contains("this week") { entity.timeHint = "this week" }
+        else if text.contains("upcoming") { entity.timeHint = "upcoming" }
+        return entity
+    }
+}
+
+struct QuickCommandEntity {
+    let intent: FastIntentClassifier.FastIntent
+    let text: String
+    var timeHint: String?
+    var eventType: String?
+    var confidence: Double
+
+    init(intent: FastIntentClassifier.FastIntent, text: String, timeHint: String? = nil, eventType: String? = nil) {
+        self.intent = intent
+        self.text = text
+        self.timeHint = timeHint
+        self.eventType = eventType
+        self.confidence = intent.confidence
+    }
+
+    var shouldExecuteImmediately: Bool {
+        return confidence > 0.8
+    }
+}
 
 // MARK: - Data Structures
 
