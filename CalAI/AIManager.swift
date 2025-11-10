@@ -28,12 +28,16 @@ class FastIntentClassifier {
     func detectIntent(from text: String) -> FastIntent {
         let normalized = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if matchesCreate(normalized) { return .createEvent }
-        if matchesDelete(normalized) { return .deleteEvent }
-        if matchesModify(normalized) { return .modifyEvent }
+        // Check query patterns FIRST (what's, show, list) to avoid false positives
+        // "what's my schedule" should be query, not create
         if matchesQuery(normalized) { return .querySchedule }
         if matchesSearch(normalized) { return .searchEvent }
         if matchesAvailability(normalized) { return .checkAvailability }
+
+        // Then check modification patterns
+        if matchesDelete(normalized) { return .deleteEvent }
+        if matchesModify(normalized) { return .modifyEvent }
+        if matchesCreate(normalized) { return .createEvent }
 
         return .unknown
     }
@@ -54,7 +58,12 @@ class FastIntentClassifier {
     }
 
     private func matchesCreate(_ text: String) -> Bool {
-        let patterns = ["create", "add", "schedule", "book", "set up", "make", "new event", "new meeting"]
+        // Don't match if it's a question about schedule
+        if text.contains("what") || text.contains("show") || text.contains("list") || text.contains("tell me") {
+            return false
+        }
+
+        let patterns = ["create", "add", "schedule a", "schedule an", "book", "set up", "make a", "make an", "new event", "new meeting"]
         return patterns.contains { text.contains($0) }
     }
 
