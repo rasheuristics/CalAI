@@ -32,6 +32,13 @@ struct OnboardingView: View {
             type: .info
         ),
         OnboardingPage(
+            icon: "lock.shield.fill",
+            title: "Your Privacy Matters",
+            description: "CalAI is designed with privacy at its core. Your calendar data stays on your device.",
+            gradient: [Color.green, Color.teal],
+            type: .privacy
+        ),
+        OnboardingPage(
             icon: "brain.head.profile",
             title: "AI-Powered Suggestions",
             description: "Get smart event suggestions based on your patterns. Natural language input makes scheduling effortless.",
@@ -113,6 +120,9 @@ struct OnboardingView: View {
                                 onRequestNotification: requestNotificationAccess
                             )
                             .tag(index)
+                        } else if pages[index].type == .privacy {
+                            PrivacyPageView()
+                                .tag(index)
                         } else {
                             OnboardingPageView(page: pages[index])
                                 .tag(index)
@@ -432,10 +442,95 @@ struct PermissionButton: View {
     }
 }
 
+// MARK: - Privacy Page View
+
+struct PrivacyPageView: View {
+    var body: some View {
+        ScrollView {
+            VStack(spacing: DesignSystem.Spacing.lg) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 70))
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.2), radius: 10)
+
+                Text("Your Privacy Matters")
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+
+                Text("CalAI is designed with privacy at its core")
+                    .font(.body)
+                    .foregroundColor(.white.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, DesignSystem.Spacing.xl)
+
+                VStack(alignment: .leading, spacing: 16) {
+                    OnboardingPrivacyPoint(
+                        icon: "checkmark.shield.fill",
+                        text: "Calendar data stays on your device",
+                        color: .white
+                    )
+
+                    OnboardingPrivacyPoint(
+                        icon: "hand.raised.fill",
+                        text: "You control what AI can access",
+                        color: .white
+                    )
+
+                    OnboardingPrivacyPoint(
+                        icon: "xmark.shield.fill",
+                        text: "We never sell your data",
+                        color: .white
+                    )
+
+                    OnboardingPrivacyPoint(
+                        icon: "lock.fill",
+                        text: "Secure encrypted storage",
+                        color: .white
+                    )
+                }
+                .padding(DesignSystem.Spacing.lg)
+                .background(Color.white.opacity(0.2))
+                .cornerRadius(DesignSystem.CornerRadius.md)
+                .padding(.horizontal, DesignSystem.Spacing.xl)
+
+                Text("Swipe to continue")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.top, DesignSystem.Spacing.md)
+            }
+            .padding(.vertical, DesignSystem.Spacing.xl)
+        }
+    }
+}
+
+struct OnboardingPrivacyPoint: View {
+    let icon: String
+    let text: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .font(.system(size: 24))
+                .frame(width: 30)
+
+            Text(text)
+                .font(.body)
+                .foregroundColor(color)
+                .multilineTextAlignment(.leading)
+
+            Spacer()
+        }
+    }
+}
+
 // MARK: - Supporting Types
 
 enum OnboardingPageType {
     case info
+    case privacy
     case permissions
 }
 

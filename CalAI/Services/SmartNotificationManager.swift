@@ -714,6 +714,8 @@ class SmartNotificationManager: NSObject, ObservableObject {
 
         // Customize based on priority
         switch task.priority {
+        case .urgent:
+            content.title = "🚨 URGENT Task Due"
         case .high:
             content.title = "🔴 High Priority Task Due"
         case .medium:

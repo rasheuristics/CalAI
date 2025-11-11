@@ -149,6 +149,7 @@ struct SettingsTabView: View {
                     .ignoresSafeArea(.all)
 
                 Form {
+                Group {
                 Section("Calendar Connections") {
                     CalendarPermissionRow(
                         title: "iOS Calendar",
@@ -412,7 +413,9 @@ struct SettingsTabView: View {
                         }
                     }
                 }
+                }
 
+                Group {
                 Section("Morning Briefing") {
                     NavigationLink(destination: MorningBriefingSettingsView(fontManager: fontManager)) {
                         HStack {
@@ -670,7 +673,9 @@ struct SettingsTabView: View {
                         }
                     }
                 }
+                }
 
+                Group {
                 Section("Sync & Notifications") {
                     NavigationLink(destination: SyncNotificationSettingsView(
                         calendarManager: calendarManager,
@@ -776,6 +781,34 @@ struct SettingsTabView: View {
                     }
                 }
 
+                Section("Legal & Privacy") {
+                    Link(destination: URL(string: "https://rasheuristics.com/calai/privacy")!) {
+                        HStack {
+                            Image(systemName: "hand.raised.fill")
+                                .foregroundColor(.green)
+                            Text("Privacy Policy")
+                                .dynamicFont(size: 16, fontManager: fontManager)
+                            Spacer()
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Link(destination: URL(string: "mailto:privacy@rasheuristics.com")!) {
+                        HStack {
+                            Image(systemName: "envelope.fill")
+                                .foregroundColor(.orange)
+                            Text("Privacy Questions")
+                                .dynamicFont(size: 16, fontManager: fontManager)
+                            Spacer()
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
                 Section("Data Management") {
                     NavigationLink(destination: DataManagementView(
                         calendarManager: calendarManager,
@@ -827,6 +860,7 @@ struct SettingsTabView: View {
                         .background(Color.red.opacity(0.05))
                         .cornerRadius(10)
                     }
+                }
                 }
             }
             .background(Color.clear)
