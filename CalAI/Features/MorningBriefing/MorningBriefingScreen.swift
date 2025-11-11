@@ -13,6 +13,8 @@ struct MorningBriefingScreen: View {
     @State private var greeting: String = ""
     @State private var showAddEvent: Bool = false
     @State private var showAddTask: Bool = false
+    @State private var selectedEvent: UnifiedEvent?
+    @State private var showEventDetail = false
 
     var body: some View {
         ScrollView {
@@ -96,6 +98,10 @@ struct MorningBriefingScreen: View {
 
                         ForEach(todayEvents.prefix(8)) { event in
                             EventBriefingCard(event: event, fontManager: fontManager)
+                                .onTapGesture {
+                                    selectedEvent = event
+                                    showEventDetail = true
+                                }
                         }
                     }
                     .padding(.horizontal)
@@ -175,6 +181,15 @@ struct MorningBriefingScreen: View {
                 editingTask: nil,
                 eventIdForEditing: nil
             )
+        }
+        .sheet(isPresented: $showEventDetail) {
+            if let event = selectedEvent {
+                EventDetailView(
+                    calendarManager: calendarManager,
+                    fontManager: fontManager,
+                    event: event
+                )
+            }
         }
     }
 

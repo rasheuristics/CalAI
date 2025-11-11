@@ -28,6 +28,7 @@
 		501C4B852EBE7CE9006D365B /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 501C4B842EBE7CE9006D365B /* WidgetKit.framework */; };
 		501C4B872EBE7CE9006D365B /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 501C4B862EBE7CE9006D365B /* SwiftUI.framework */; };
 		501C4B962EBE7CEB006D365B /* MorningBriefingWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 501C4B822EBE7CE9006D365B /* MorningBriefingWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		50408B6C2EC2B0DE00946A5D /* PerformanceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50408B6B2EC2B0DE00946A5D /* PerformanceMonitor.swift */; };
 		505F673D2E81C6B900C188F0 /* MSAL in Frameworks */ = {isa = PBXBuildFile; productRef = 505F673C2E81C6B900C188F0 /* MSAL */; };
 		506831F82E9AF7F4007A48F5 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 506831CD2E9AF7F4007A48F5 /* Preview Assets.xcassets */; };
 		506831F92E9AF7F4007A48F5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 506831CF2E9AF7F4007A48F5 /* Assets.xcassets */; };
@@ -220,6 +221,7 @@
 		501C4B862EBE7CE9006D365B /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		50408AE12EBED49A00946A5D /* MorningBriefingWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MorningBriefingWidgetExtension.entitlements; sourceTree = "<group>"; };
 		50408AE62EBED66500946A5D /* SharedWeatherData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedWeatherData.swift; sourceTree = "<group>"; };
+		50408B6B2EC2B0DE00946A5D /* PerformanceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceMonitor.swift; sourceTree = "<group>"; };
 		506831972E9AF7F4007A48F5 /* AITabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AITabView.swift; sourceTree = "<group>"; };
 		506831992E9AF7F4007A48F5 /* VoiceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceManager.swift; sourceTree = "<group>"; };
 		5068319C2E9AF7F4007A48F5 /* CalendarTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarTabView.swift; sourceTree = "<group>"; };
@@ -415,6 +417,7 @@
 		16EC4CC67F14482EAC4A7DAF /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
+				50408B6B2EC2B0DE00946A5D /* PerformanceMonitor.swift */,
 				5422BA7219D24BB9A5A3E4C9 /* QRCodeGenerator.swift */,
 				51D383FDCAED4DE48824B5E1 /* EventICSExporter.swift */,
 			);
@@ -1210,6 +1213,7 @@
 				0894B97DD06B459486C0819F /* VoiceFeedbackService.swift in Sources */,
 				FD7124F3ECC8457199444B58 /* ConversationInterruptionHandler.swift in Sources */,
 				B25EACD2F18143009931BE60 /* DuplicateEventDetector.swift in Sources */,
+				50408B6C2EC2B0DE00946A5D /* PerformanceMonitor.swift in Sources */,
 				482A3188EB534D3EBE8DAC4A /* EventConflict.swift in Sources */,
 				87573FC32D9942008540357648A36DCC /* VideoMeetingDetector.swift in Sources */,
 			);
@@ -1258,7 +1262,7 @@
 				INFOPLIST_FILE = MorningBriefingWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = MorningBriefingWidget;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1290,7 +1294,7 @@
 				INFOPLIST_FILE = MorningBriefingWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = MorningBriefingWidget;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1448,7 +1452,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1482,7 +1486,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

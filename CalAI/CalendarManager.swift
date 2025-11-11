@@ -377,8 +377,8 @@ class CalendarManager: ObservableObject {
         syncManager.calendarManager = self
 
         // Defer heavy initialization to avoid blocking app launch
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+        // Use unowned self since CalendarManager is @StateObject and won't be deallocated
+        DispatchQueue.main.async { [unowned self] in
             // Clean up expired deleted event records on startup
             self.cleanupExpiredDeletedEvents()
             // Setup advanced sync asynchronously to avoid blocking main thread

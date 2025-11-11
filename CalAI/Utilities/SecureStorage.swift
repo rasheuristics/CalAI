@@ -4,6 +4,14 @@ import Security
 /// Secure storage utility for sensitive data using iOS Keychain
 class SecureStorage {
 
+    // MARK: - Configuration
+
+    /// App's bundle identifier (must match Xcode project)
+    private static let bundleIdentifier = "com.rasheuristics.calendarweaver"
+
+    /// Keychain access group for sharing data (must match entitlements)
+    private static let keychainAccessGroup = "com.rasheuristics.calendarweaver"
+
     // MARK: - Error Types
     enum KeychainError: Error {
         case itemNotFound
@@ -20,8 +28,22 @@ class SecureStorage {
             case .unexpectedItemData:
                 return "Unexpected keychain item data"
             case .unhandledError(let status):
-                return "Keychain error with status: \(status)"
+                return "Keychain error with status: \(status) (\(SecureStorage.statusMessage(for: status)))"
             }
+        }
+    }
+
+    /// Get human-readable error message for keychain status code
+    private static func statusMessage(for status: OSStatus) -> String {
+        switch status {
+        case errSecSuccess: return "Success"
+        case errSecItemNotFound: return "Item not found"
+        case errSecDuplicateItem: return "Duplicate item"
+        case errSecAuthFailed: return "Authentication failed"
+        case -34018: return "Missing entitlement or keychain access group"
+        case errSecInteractionNotAllowed: return "User interaction not allowed"
+        case errSecMissingEntitlement: return "Missing entitlement"
+        default: return "Unknown error"
         }
     }
 
@@ -50,17 +72,23 @@ class SecureStorage {
         // First, delete any existing item with the same key
         try? delete(key: key)
 
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
-            kSecAttrService as String: Bundle.main.bundleIdentifier ?? "com.calai.CalAI",
+            kSecAttrService as String: bundleIdentifier,
             kSecValueData as String: valueData,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
         ]
+
+        // Add keychain access group for device (not needed on simulator)
+        #if !targetEnvironment(simulator)
+        query[kSecAttrAccessGroup as String] = keychainAccessGroup
+        #endif
 
         let status = SecItemAdd(query as CFDictionary, nil)
 
         guard status == errSecSuccess else {
+            print("❌ Keychain store failed for key '\(key)': \(Self.statusMessage(for: status)) (\(status))")
             if status == errSecDuplicateItem {
                 throw KeychainError.duplicateItem
             } else {
@@ -76,13 +104,18 @@ class SecureStorage {
     /// - Returns: The stored string value
     /// - Throws: KeychainError if retrieval fails
     static func retrieve(key: String) throws -> String {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
-            kSecAttrService as String: Bundle.main.bundleIdentifier ?? "com.calai.CalAI",
+            kSecAttrService as String: bundleIdentifier,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
+
+        // Add keychain access group for device (not needed on simulator)
+        #if !targetEnvironment(simulator)
+        query[kSecAttrAccessGroup as String] = keychainAccessGroup
+        #endif
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
@@ -91,6 +124,7 @@ class SecureStorage {
             if status == errSecItemNotFound {
                 throw KeychainError.itemNotFound
             } else {
+                print("❌ Keychain retrieve failed for key '\(key)': \(Self.statusMessage(for: status)) (\(status))")
                 throw KeychainError.unhandledError(status: status)
             }
         }
@@ -107,15 +141,21 @@ class SecureStorage {
     /// - Parameter key: The key to delete
     /// - Throws: KeychainError if deletion fails
     static func delete(key: String) throws {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
-            kSecAttrService as String: Bundle.main.bundleIdentifier ?? "com.calai.CalAI"
+            kSecAttrService as String: bundleIdentifier
         ]
+
+        // Add keychain access group for device (not needed on simulator)
+        #if !targetEnvironment(simulator)
+        query[kSecAttrAccessGroup as String] = keychainAccessGroup
+        #endif
 
         let status = SecItemDelete(query as CFDictionary)
 
         guard status == errSecSuccess || status == errSecItemNotFound else {
+            print("❌ Keychain delete failed for key '\(key)': \(Self.statusMessage(for: status)) (\(status))")
             throw KeychainError.unhandledError(status: status)
         }
 
@@ -144,11 +184,16 @@ class SecureStorage {
             throw KeychainError.unexpectedItemData
         }
 
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
-            kSecAttrService as String: Bundle.main.bundleIdentifier ?? "com.calai.CalAI"
+            kSecAttrService as String: bundleIdentifier
         ]
+
+        // Add keychain access group for device (not needed on simulator)
+        #if !targetEnvironment(simulator)
+        query[kSecAttrAccessGroup as String] = keychainAccessGroup
+        #endif
 
         let updateFields: [String: Any] = [
             kSecValueData as String: valueData
@@ -162,6 +207,7 @@ class SecureStorage {
                 try store(key: key, value: value)
                 return
             } else {
+                print("❌ Keychain update failed for key '\(key)': \(Self.statusMessage(for: status)) (\(status))")
                 throw KeychainError.unhandledError(status: status)
             }
         }

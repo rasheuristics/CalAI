@@ -18,12 +18,16 @@ class SharedCalendarStorage {
     private let eventsKey = "sharedCalendarEvents"
     private let tasksKey = "sharedTasksCount"
 
+    private var userDefaults: UserDefaults? {
+        UserDefaults(suiteName: appGroupID)
+    }
+
     private init() {}
 
     // MARK: - Save Data
 
     func saveEvents(_ events: [WidgetCalendarEvent]) {
-        guard let userDefaults = UserDefaults(suiteName: appGroupID) else {
+        guard let userDefaults = userDefaults else {
             print("❌ Failed to access App Group UserDefaults")
             return
         }
@@ -32,7 +36,7 @@ class SharedCalendarStorage {
             let encoder = JSONEncoder()
             let data = try encoder.encode(events)
             userDefaults.set(data, forKey: eventsKey)
-            userDefaults.synchronize()
+            // Note: synchronize() is deprecated and unnecessary - UserDefaults saves automatically
             print("✅ Saved \(events.count) events to shared storage")
         } catch {
             print("❌ Failed to encode events: \(error)")
@@ -40,20 +44,20 @@ class SharedCalendarStorage {
     }
 
     func saveTasksCount(_ count: Int) {
-        guard let userDefaults = UserDefaults(suiteName: appGroupID) else {
+        guard let userDefaults = userDefaults else {
             print("❌ Failed to access App Group UserDefaults")
             return
         }
 
         userDefaults.set(count, forKey: tasksKey)
-        userDefaults.synchronize()
+        // Note: synchronize() is deprecated and unnecessary - UserDefaults saves automatically
         print("✅ Saved tasks count: \(count)")
     }
 
     // MARK: - Load Data
 
     func loadEvents() -> [WidgetCalendarEvent] {
-        guard let userDefaults = UserDefaults(suiteName: appGroupID),
+        guard let userDefaults = userDefaults,
               let data = userDefaults.data(forKey: eventsKey) else {
             print("⚠️ No events found in shared storage")
             return []
@@ -71,7 +75,7 @@ class SharedCalendarStorage {
     }
 
     func loadTasksCount() -> Int {
-        guard let userDefaults = UserDefaults(suiteName: appGroupID) else {
+        guard let userDefaults = userDefaults else {
             print("❌ Failed to access App Group UserDefaults")
             return 0
         }
@@ -81,6 +85,12 @@ class SharedCalendarStorage {
 }
 
 // MARK: - Widget Calendar Event Model
+//
+// NOTE: WeatherData and SharedWeatherStorage are defined in:
+// CalAI/Features/MorningBriefing/MorningBriefing.swift
+//
+// This file contains only calendar-related shared models until it's properly
+// added to both the main app and widget extension targets in Xcode.
 
 /// Lightweight event model for widget display
 struct WidgetCalendarEvent: Codable {

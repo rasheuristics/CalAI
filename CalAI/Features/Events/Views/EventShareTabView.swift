@@ -525,14 +525,27 @@ class AddToCalendarActivity: UIActivity {
 
     override func perform() {
         // Request calendar access and add event
-        eventStore.requestFullAccessToEvents { granted, error in
-            if granted {
-                DispatchQueue.main.async {
-                    self.addEventToCalendar()
+        if #available(iOS 17.0, *) {
+            eventStore.requestFullAccessToEvents { granted, error in
+                if granted {
+                    DispatchQueue.main.async {
+                        self.addEventToCalendar()
+                    }
+                } else {
+                    print("❌ Calendar access not granted: \(error?.localizedDescription ?? "Unknown error")")
+                    self.activityDidFinish(false)
                 }
-            } else {
-                print("❌ Calendar access not granted: \(error?.localizedDescription ?? "Unknown error")")
-                self.activityDidFinish(false)
+            }
+        } else {
+            eventStore.requestAccess(to: .event) { granted, error in
+                if granted {
+                    DispatchQueue.main.async {
+                        self.addEventToCalendar()
+                    }
+                } else {
+                    print("❌ Calendar access not granted: \(error?.localizedDescription ?? "Unknown error")")
+                    self.activityDidFinish(false)
+                }
             }
         }
     }

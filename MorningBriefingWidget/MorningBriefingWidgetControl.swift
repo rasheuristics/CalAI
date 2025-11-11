@@ -9,6 +9,7 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
+@available(iOSApplicationExtension 18.0, *)
 struct MorningBriefingWidgetControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(
@@ -28,6 +29,7 @@ struct MorningBriefingWidgetControl: ControlWidget {
     }
 }
 
+@available(iOSApplicationExtension 18.0, *)
 extension MorningBriefingWidgetControl {
     struct Provider: ControlValueProvider {
         var previewValue: Bool {

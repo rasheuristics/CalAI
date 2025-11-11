@@ -868,7 +868,14 @@ struct SettingsTabView: View {
                 OutlookCredentialInputView(outlookCalendarManager: outlookCalendarManager)
             }
             .onAppear {
-                checkPermissions()
+                PerformanceMonitor.shared.startMeasuring("Settings Tab Load")
+
+                // Defer permission checks to avoid blocking UI
+                DispatchQueue.main.async {
+                    checkPermissions()
+                    PerformanceMonitor.shared.stopMeasuring("Settings Tab Load")
+                    MemoryMonitor.logMemoryUsage(context: "Settings Tab Loaded")
+                }
             }
         }
         .navigationViewStyle(.stack)
@@ -877,8 +884,22 @@ struct SettingsTabView: View {
     // MARK: - Permission Methods
 
     private func checkPermissions() {
-        // Refresh calendar access status (this checks current status without prompting)
-        calendarManager.requestCalendarAccess()
+        // Check permissions asynchronously to avoid blocking UI
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Check location permission (synchronous but fast)
+            DispatchQueue.main.async {
+                self.checkLocationPermission()
+            }
+
+            // Check notification permission (already async)
+            self.checkNotificationPermission()
+        }
+
+        // Defer calendar access check to avoid blocking
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            // Refresh calendar access status (this checks current status without prompting)
+            self.calendarManager.requestCalendarAccess()
+        }
 
         // Initialize connection timestamps for already connected services
         initializeConnectionTimestamps()
@@ -888,12 +909,6 @@ struct SettingsTabView: View {
 
         // VoiceManager's hasRecordingPermission is already @Published and updates automatically
         // It's checked in the init() method
-
-        // Check location permission
-        checkLocationPermission()
-
-        // Check notification permission
-        checkNotificationPermission()
     }
 
     private func initializeConnectionTimestamps() {

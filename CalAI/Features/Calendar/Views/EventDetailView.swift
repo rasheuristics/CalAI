@@ -334,7 +334,9 @@ struct EventDetailView: View {
         .background(Color(.secondarySystemGroupedBackground))
         .cornerRadius(10)
         .onAppear {
-            geocodeLocation(location)
+            PerformanceMonitor.shared.measure("Event Detail Map Geocoding") {
+                geocodeLocation(location)
+            }
         }
     }
 

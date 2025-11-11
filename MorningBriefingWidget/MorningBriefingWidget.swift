@@ -8,9 +8,10 @@
 import WidgetKit
 import SwiftUI
 
-// MARK: - Widget Shared Models (Local Copy)
+// MARK: - Shared Models
+// NOTE: These are temporary duplicates until WidgetSharedModels.swift is added to widget target
+// The canonical versions are in CalAI/Models/WidgetSharedModels.swift
 
-/// Lightweight event model for widget display
 struct WidgetCalendarEvent: Codable {
     let id: String
     let title: String
@@ -35,56 +36,85 @@ struct WidgetCalendarEvent: Codable {
     }
 }
 
-/// Shared storage for calendar events accessible by both app and widget
+// MARK: - Widget Weather Data
+// NOTE: This is a widget-specific copy to avoid module conflicts
+// The main app has its own WeatherData in MorningBriefing.swift
+struct WidgetWeatherData: Codable {
+    let temperature: Double
+    let feelsLike: Double
+    let condition: String
+    let conditionDescription: String
+    let high: Double
+    let low: Double
+    let precipitationChance: Int
+    let humidity: Int
+    let windSpeed: Double
+    let icon: String
+
+    var temperatureFormatted: String {
+        return String(format: "%.0f°", temperature)
+    }
+
+    var highLowFormatted: String {
+        return String(format: "H:%.0f° L:%.0f°", high, low)
+    }
+}
+
 class SharedCalendarStorage {
     static let shared = SharedCalendarStorage()
     private let appGroupID = "group.com.rasheuristics.calendarweaver"
     private let eventsKey = "sharedCalendarEvents"
     private let tasksKey = "sharedTasksCount"
+
+    private var userDefaults: UserDefaults? {
+        UserDefaults(suiteName: appGroupID)
+    }
+
     private init() {}
 
-    func saveEvents(_ events: [WidgetCalendarEvent]) {
-        guard let userDefaults = UserDefaults(suiteName: appGroupID) else {
-            print("❌ Failed to access App Group UserDefaults")
-            return
-        }
-        do {
-            let encoder = JSONEncoder()
-            let data = try encoder.encode(events)
-            userDefaults.set(data, forKey: eventsKey)
-            userDefaults.synchronize()
-            print("✅ Saved \(events.count) events to shared storage")
-        } catch {
-            print("❌ Failed to encode events: \(error)")
-        }
-    }
-
-    func saveTasksCount(_ count: Int) {
-        guard let userDefaults = UserDefaults(suiteName: appGroupID) else { return }
-        userDefaults.set(count, forKey: tasksKey)
-        userDefaults.synchronize()
-    }
-
     func loadEvents() -> [WidgetCalendarEvent] {
-        guard let userDefaults = UserDefaults(suiteName: appGroupID),
+        guard let userDefaults = userDefaults,
               let data = userDefaults.data(forKey: eventsKey) else {
-            print("⚠️ No events found in shared storage")
             return []
         }
         do {
             let decoder = JSONDecoder()
             let events = try decoder.decode([WidgetCalendarEvent].self, from: data)
-            print("✅ Loaded \(events.count) events from shared storage")
             return events
         } catch {
-            print("❌ Failed to decode events: \(error)")
             return []
         }
     }
 
     func loadTasksCount() -> Int {
-        guard let userDefaults = UserDefaults(suiteName: appGroupID) else { return 0 }
+        guard let userDefaults = userDefaults else { return 0 }
         return userDefaults.integer(forKey: tasksKey)
+    }
+}
+
+class SharedWeatherStorage {
+    static let shared = SharedWeatherStorage()
+    private let groupIdentifier = "group.com.rasheuristics.calendarweaver"
+    private let weatherKey = "shared.weather.data"
+
+    private var userDefaults: UserDefaults? {
+        UserDefaults(suiteName: groupIdentifier)
+    }
+
+    private init() {}
+
+    func loadWeather() -> WidgetWeatherData? {
+        guard let userDefaults = userDefaults,
+              let data = userDefaults.data(forKey: weatherKey) else {
+            return nil
+        }
+        do {
+            let decoder = JSONDecoder()
+            let weatherData = try decoder.decode(WidgetWeatherData.self, from: data)
+            return weatherData
+        } catch {
+            return nil
+        }
     }
 }
 
@@ -185,7 +215,7 @@ struct Provider: TimelineProvider {
 struct MorningBriefingEntry: TimelineEntry {
     let date: Date
     let greeting: String
-    let weather: WeatherData?
+    let weather: WidgetWeatherData?
     let eventsSummary: String
     let nextEvent: String?
     let tasksCount: Int
@@ -315,13 +345,14 @@ struct MorningBriefingWidget: Widget {
     }
 }
 
+@available(iOSApplicationExtension 17.0, *)
 #Preview(as: .systemSmall) {
     MorningBriefingWidget()
 } timeline: {
     MorningBriefingEntry(
         date: .now,
         greeting: "Good Morning",
-        weather: WeatherData(
+        weather: WidgetWeatherData(
             temperature: 72,
             feelsLike: 70,
             condition: "Partly Cloudy",
@@ -340,7 +371,7 @@ struct MorningBriefingWidget: Widget {
     MorningBriefingEntry(
         date: .now,
         greeting: "Good Afternoon",
-        weather: WeatherData(
+        weather: WidgetWeatherData(
             temperature: 75,
             feelsLike: 73,
             condition: "Sunny",

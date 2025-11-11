@@ -387,12 +387,17 @@ struct CalendarTabView: View {
             )
         }
         .onAppear {
+            PerformanceMonitor.shared.startMeasuring("Calendar Tab Load")
+
             // Always reset to day view showing today
             currentViewType = .day
             selectedDate = Date()
 
             // Configure InsightsViewModel
             insightsViewModel.configure(calendarManager: calendarManager)
+
+            PerformanceMonitor.shared.stopMeasuring("Calendar Tab Load")
+            MemoryMonitor.logMemoryUsage(context: "Calendar Tab Loaded")
         }
         }
     }

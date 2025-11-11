@@ -206,6 +206,8 @@ class ConversationalAIService {
         5. For "cancel the second one", refer to the second event in the last list
         6. Always confirm destructive actions (delete, modify)
         7. Ask clarifying questions when ambiguous
+        8. IMPORTANT: Weather queries (containing "weather", "temperature", "forecast", "temp", "hot", "cold", etc.) should use "weather" intent, NOT "query" intent
+        9. IMPORTANT: "What's the weather" is asking for weather forecast, NOT schedule/calendar information
 
         RESPONSE FORMAT:
         Respond with JSON in this exact format:
@@ -236,6 +238,13 @@ class ConversationalAIService {
         - Include "referencedEventIds" when discussing specific events
         - Use ISO8601 format for all dates/times
         - For ambiguous requests, set "needsClarification" to true
+
+        EXAMPLES:
+        User: "What's the weather today?" → intent: "weather" (NOT "query")
+        User: "What's my schedule today?" → intent: "query"
+        User: "How's the temperature?" → intent: "weather" (NOT "query")
+        User: "What do I have today?" → intent: "query"
+        User: "Is it going to rain?" → intent: "weather"
         """
     }
 

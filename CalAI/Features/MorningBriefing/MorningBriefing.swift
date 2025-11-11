@@ -246,6 +246,9 @@ struct DayAnalyzer {
 }
 
 // MARK: - Shared Weather Storage
+//
+// NOTE: WeatherData struct is defined at the top of this file (line 7)
+// to avoid duplication
 
 /// Shared storage for weather data between app and widget
 class SharedWeatherStorage {
@@ -273,7 +276,7 @@ class SharedWeatherStorage {
             let data = try encoder.encode(weatherData)
             userDefaults.set(data, forKey: weatherKey)
             userDefaults.set(Date(), forKey: lastUpdateKey)
-            userDefaults.synchronize()
+            // Note: synchronize() removed - deprecated and causes CFPreferences errors
             print("✅ SharedWeatherStorage: Weather data saved successfully")
         } catch {
             print("❌ SharedWeatherStorage: Failed to encode weather data: \(error)")
@@ -301,5 +304,13 @@ class SharedWeatherStorage {
             print("❌ SharedWeatherStorage: Failed to decode weather data: \(error)")
             return nil
         }
+    }
+
+    /// Get the last update time for weather data
+    func lastUpdateDate() -> Date? {
+        guard let userDefaults = userDefaults else {
+            return nil
+        }
+        return userDefaults.object(forKey: lastUpdateKey) as? Date
     }
 }

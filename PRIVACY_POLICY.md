@@ -1,166 +1,120 @@
 # Privacy Policy for CalAI
 
-**Last Updated:** January 2025
+**Effective Date:** November 10, 2025  
+**Last Updated:** November 10, 2025
 
 ## Introduction
 
-CalAI ("we", "our", or "us") respects your privacy and is committed to protecting your personal data. This privacy policy explains how we collect, use, and safeguard your information when you use the CalAI mobile application.
+CalAI ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and protect your information when you use the CalAI mobile application (the "App").
+
+**Key Principle:** We minimize data collection and prioritize your privacy. Most data processing happens on your device.
 
 ## Information We Collect
 
-### Calendar Data
-- **What we collect:** CalAI accesses your calendar events from connected accounts (Google Calendar, Outlook Calendar, Apple Calendar)
-- **How we use it:** To display, manage, and provide intelligent features for your calendar events
-- **Storage:** Calendar data is cached locally on your device and synchronized with your calendar providers. We do NOT store your calendar data on our servers.
+### 1. Calendar Data (Local Storage Only)
 
-### Location Data
-- **What we collect:** Your current location (only when you grant permission)
-- **How we use it:** To calculate travel time to meeting locations and provide smart departure notifications
-- **Storage:** Location data is used in real-time and not stored permanently. We do NOT track or log your location history.
+**What We Collect:**
+- Calendar events (titles, dates, times, locations, descriptions)
+- Event participants and attendees
+- Calendar source information (Google Calendar, Outlook, Apple Calendar)
 
-### Authentication Data
-- **What we collect:** OAuth tokens for calendar service authentication (Google, Microsoft)
-- **How we use it:** To securely access your calendar data from third-party providers
-- **Storage:** Tokens are stored securely in your device's Keychain using industry-standard encryption
+**How We Use It:**
+- Display your calendar within the App
+- Provide AI-powered scheduling assistance
+- Generate morning briefings and insights
+- Detect scheduling conflicts
 
-### Crash and Error Reports (Optional)
-- **What we collect:** App crash logs, error messages, device model, OS version, app version
-- **How we use it:** To diagnose and fix bugs, improve app stability
-- **Storage:** Crash reports are stored locally on your device. You can opt-in to share these with us to help improve the app.
-- **Control:** You can enable/disable crash reporting in Settings → Advanced Settings → Crash Reporting
+**Important:**
+- ✅ Calendar data stays on YOUR device
+- ✅ We do NOT upload calendar events to our servers
+- ✅ We do NOT sell or share your calendar data
+- ❌ We never access calendar data without your explicit permission
 
-### Usage Analytics (Future - Not Yet Implemented)
-- **What we may collect:** Anonymous usage statistics (feature usage, app performance metrics)
-- **How we will use it:** To understand which features are most valuable and improve user experience
-- **Control:** This feature will be entirely opt-in when implemented
+### 2. AI Processing Data (Cloud Services)
 
-## What We DON'T Collect
+When you use AI features (voice commands, smart suggestions), we send LIMITED data to third-party AI providers:
 
-We want to be clear about what we DO NOT collect:
+**Data Sent to AI Providers (OpenAI or Anthropic):**
+- Your voice command transcript (e.g., "Schedule a meeting tomorrow at 2pm")
+- Minimal calendar context needed to fulfill your request
+- Example: "User has 3 events on Tuesday"
 
-- ❌ **Calendar event content:** We don't read, analyze, or store the details of your calendar events
-- ❌ **Personal messages:** We don't access emails, messages, or communications
-- ❌ **Contacts:** We don't access your contact list beyond what you explicitly choose to share
-- ❌ **Photos or media:** We don't access your photos, videos, or media library
-- ❌ **Browsing history:** We don't track your web browsing
-- ❌ **Financial information:** We don't collect payment or financial data
-- ❌ **Biometric data:** We don't collect fingerprints, Face ID data, or other biometrics
-- ❌ **Background location tracking:** We only use location when you're actively using the app
+**Data NOT Sent:**
+- Full calendar event details
+- Personal identifying information
+- Complete calendar contents
+- Participant names or email addresses
 
-## How We Use Your Information
+**AI Providers We Use:**
+- **OpenAI** (GPT-4) - https://openai.com/privacy
+- **Anthropic** (Claude) - https://anthropic.com/privacy
 
-1. **Calendar Management:** Display and manage your calendar events across multiple accounts
-2. **Smart Notifications:** Send time-sensitive reminders and travel departure alerts
-3. **AI Features:** Provide intelligent scheduling suggestions and event analysis (processed locally on your device)
-4. **Voice Commands:** Process voice input for calendar operations (processed locally, not sent to servers)
-5. **App Improvement:** Use crash reports and analytics (if you opt-in) to fix bugs and improve features
+**Your Control:**
+- You can disable AI features in Settings → AI Settings
+- You can choose "Pattern-Based" mode for fully local processing
+- You provide your own API key (we don't see it)
 
-## Data Storage and Security
+### 3. Authentication Tokens (Secure Storage)
 
-### Local Storage
-- Calendar data is cached locally on your device for offline access
-- Cached data is encrypted using iOS data protection
-- Authentication tokens are stored in the iOS Keychain with secure encryption
+**What We Store:**
+- OAuth tokens for Google Calendar access
+- OAuth tokens for Microsoft Outlook access
+- API keys for AI services
 
-### Cloud Storage
-- We do NOT maintain our own servers or databases for your calendar data
-- All calendar data remains with your calendar providers (Google, Microsoft, Apple)
-- We only access data through official APIs with your explicit permission
+**How We Protect It:**
+- Stored in iOS Keychain (encrypted by iOS)
+- Never transmitted except to authorized services
+- Automatically deleted when you disconnect a calendar source
 
-### Security Measures
-- End-to-end encryption for authentication tokens
-- Secure HTTPS connections for all network requests
-- Regular security audits and updates
-- No third-party advertising or tracking SDKs
+### 4. Weather Data (Location Services)
 
-## Third-Party Services
+**What We Collect:**
+- Approximate location (city level) for weather forecasts
+- Only when you request weather information
 
-CalAI integrates with the following third-party services:
+**How We Use It:**
+- Fetch weather data from Apple WeatherKit
+- Display weather in morning briefings
+- Provide weather context for event planning
 
-### Google Calendar
-- **Purpose:** Access and manage your Google Calendar events
-- **Privacy Policy:** [Google Privacy Policy](https://policies.google.com/privacy)
-- **Data Sharing:** We use Google's official Calendar API. Your data is subject to Google's privacy practices.
+**Your Control:**
+- Location permission required (you grant in iOS Settings)
+- Weather features disabled if permission denied
+- Can be disabled in Settings → Morning Briefing
 
-### Microsoft Outlook Calendar
-- **Purpose:** Access and manage your Outlook Calendar events
-- **Privacy Policy:** [Microsoft Privacy Policy](https://privacy.microsoft.com/privacystatement)
-- **Data Sharing:** We use Microsoft's official Graph API. Your data is subject to Microsoft's privacy practices.
+### 5. Crash and Performance Data (Optional)
 
-### Apple Calendar (EventKit)
-- **Purpose:** Access and manage your Apple Calendar events
-- **Privacy Policy:** [Apple Privacy Policy](https://www.apple.com/legal/privacy/)
-- **Data Sharing:** Calendar data remains on your device and in iCloud (if enabled)
+**What We Collect (if crash reporting enabled):**
+- Crash stack traces and error logs
+- Device model and iOS version
+- App version and build number
+- Anonymous usage patterns
+- Network connectivity status
 
-## Your Privacy Rights
+**What We Do NOT Collect:**
+- Calendar event details
+- Personal information
+- Exact location data
+- API keys or credentials
+
+**Your Control:**
+- Crash reporting is OPT-IN (you must enable it)
+- Can be disabled anytime in Settings → Advanced → Crash Reporting
+
+## Your Rights and Choices
 
 You have the right to:
-
-1. **Access:** View what data we collect about you
-2. **Delete:** Request deletion of your data (simply delete the app and all local data is removed)
-3. **Opt-Out:** Disable crash reporting or analytics at any time
-4. **Revoke Access:** Disconnect calendar accounts at any time through app settings
-5. **Export:** Export your crash logs and local data
-
-### How to Exercise Your Rights
-
-- **Delete local data:** Delete the CalAI app from your device
-- **Revoke calendar access:** Settings → Calendar Accounts → Disconnect
-- **Disable crash reporting:** Settings → Advanced Settings → Crash Reporting → Toggle Off
-- **Export crash logs:** Settings → Advanced Settings → Crash Reporting → Share Logs
-
-## Children's Privacy
-
-CalAI is not directed to children under the age of 13. We do not knowingly collect personal information from children under 13. If you believe we have collected information from a child under 13, please contact us immediately.
-
-## Changes to This Privacy Policy
-
-We may update this privacy policy from time to time. We will notify you of any changes by:
-- Posting the new privacy policy in the app
-- Updating the "Last Updated" date at the top of this policy
-- Sending an in-app notification for material changes
-
-Your continued use of CalAI after changes indicates acceptance of the updated policy.
-
-## Data Retention
-
-- **Calendar cache:** Stored locally until you disconnect the calendar account or delete the app
-- **Authentication tokens:** Stored until you disconnect the account or delete the app
-- **Crash reports:** Stored locally indefinitely; you can delete them manually or by deleting the app
-- **Settings and preferences:** Stored until you delete the app
-
-## International Data Transfers
-
-CalAI is designed to work with your existing calendar providers. Any international data transfers are handled by those providers (Google, Microsoft, Apple) according to their privacy policies.
+- ✅ Access your data (stored locally on your device)
+- ✅ Delete your data anytime
+- ✅ Opt-out of crash reporting
+- ✅ Opt-out of analytics
+- ✅ Revoke calendar permissions
+- ✅ Disable AI features
 
 ## Contact Us
 
-If you have questions about this Privacy Policy or our privacy practices, please contact us:
+**Questions about privacy?**
+- Email: privacy@rasheuristics.com
+- Website: https://rasheuristics.com/calai/privacy
 
-- **Email:** support@calai.app
-- **GitHub:** [github.com/rasheuristics/CalAI](https://github.com/rasheuristics/CalAI)
-
-## Legal Basis for Processing (GDPR)
-
-For users in the European Economic Area (EEA):
-
-- **Consent:** We process calendar and location data based on your explicit consent
-- **Contract Performance:** We process data necessary to provide the calendar management service you requested
-- **Legitimate Interests:** We process crash reports (with consent) to improve app stability
-
-You may withdraw consent at any time by disconnecting calendar accounts or disabling features in settings.
-
-## California Privacy Rights (CCPA)
-
-California residents have additional rights:
-
-- **Right to Know:** What personal information we collect and how it's used
-- **Right to Delete:** Request deletion of your personal information
-- **Right to Opt-Out:** Opt-out of the "sale" of personal information (Note: We do NOT sell your personal information)
-- **Right to Non-Discrimination:** We will not discriminate against you for exercising your privacy rights
-
-To exercise these rights, contact us at support@calai.app.
-
----
-
-**Summary:** CalAI is privacy-first. Your calendar data stays with your calendar providers. We process data locally on your device whenever possible. We don't sell your data, and we don't use invasive tracking. You're in control.
+**Last Updated:** November 10, 2025

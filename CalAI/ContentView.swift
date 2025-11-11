@@ -12,8 +12,7 @@ struct ContentView: View {
     @StateObject private var morningBriefingService = MorningBriefingService.shared
     @StateObject private var taskManager = EventTaskManager.shared
     @StateObject private var insightsViewModel = InsightsViewModel()
-    // PHASE 12 DISABLED
-    // @StateObject private var postMeetingService = PostMeetingService.shared
+    @StateObject private var postMeetingService = PostMeetingService.shared
     @State private var selectedTab: Int = 0
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("hasCompletedInitialization") private var hasCompletedInitialization = false
@@ -76,23 +75,33 @@ struct ContentView: View {
                     .tag(3)
                     .badge(activeTaskCount)
 
-                // PHASE 12 DISABLED - Actions Tab
-                // ActionItemsView(postMeetingService: postMeetingService, fontManager: fontManager, calendarManager: calendarManager)
-                //     .tabItem {
-                //         Image(systemName: "checkmark.circle")
-                //         Text("Actions")
-                //     }
-                //     .tag(3)
-                //     .badge(postMeetingService.pendingActionItems.filter { !$0.isCompleted }.count)
+                ActionItemsView(postMeetingService: postMeetingService, fontManager: fontManager, calendarManager: calendarManager)
+                    .tabItem {
+                        Image(systemName: "checkmark.circle")
+                        Text("Actions")
+                    }
+                    .tag(4)
+                    .badge(postMeetingService.pendingActionItems.filter { !$0.isCompleted }.count)
 
                 SettingsTabView(calendarManager: calendarManager, voiceManager: voiceManager, fontManager: fontManager, googleCalendarManager: googleCalendarManager, outlookCalendarManager: outlookCalendarManager, appearanceManager: appearanceManager)
                     .tabItem {
                         Image(systemName: "gearshape")
                         Text("Settings")
                     }
-                    .tag(4)
+                    .tag(5)
             }
             .background(Color.clear)
+            .onChange(of: selectedTab) { newTab in
+                let tabName = ["Calendar", "Insights", "AI", "Tasks", "Actions", "Settings"][newTab]
+                PerformanceMonitor.shared.measure("Tab Switch to \(tabName)") {
+                    MemoryMonitor.logMemoryUsage(context: "Tab: \(tabName)")
+                }
+            }
+
+            // Performance overlay - shows FPS in debug builds
+            #if DEBUG
+            PerformanceOverlay()
+            #endif
         }
         .preferredColorScheme(appearanceManager.currentMode.colorScheme)
         .fullScreenCover(isPresented: $showOnboarding) {
@@ -110,6 +119,12 @@ struct ContentView: View {
                 outlookCalendarManager: outlookCalendarManager,
                 isInitialized: $hasCompletedInitialization
             )
+        }
+        .onChange(of: hasCompletedInitialization) { completed in
+            if completed {
+                // Dismiss initialization view when completed
+                showInitialization = false
+            }
         }
         .sheet(isPresented: $showMorningBriefing) {
             NavigationView {
@@ -162,8 +177,8 @@ struct ContentView: View {
                 morningBriefingService.configure(calendarManager: calendarManager)
                 print("🔴 MorningBriefingService configuration completed")
 
-                // PHASE 12 DISABLED - PostMeetingService Configuration
-                // postMeetingService.configure(calendarManager: calendarManager, aiManager: aiManager)
+                // Configure PostMeetingService
+                postMeetingService.configure(calendarManager: calendarManager)
 
                 // Only request calendar access if onboarding is completed
                 if hasCompletedOnboarding {
@@ -171,17 +186,16 @@ struct ContentView: View {
                 }
             }
         }
-        // PHASE 12 DISABLED - Post-Meeting Summary Sheet
-        // .sheet(isPresented: $postMeetingService.showPostMeetingSummary) {
-        //     if let summary = postMeetingService.currentMeetingSummary {
-        //         PostMeetingSummaryView(
-        //             followUp: summary,
-        //             postMeetingService: postMeetingService,
-        //             fontManager: fontManager,
-        //             calendarManager: calendarManager
-        //         )
-        //     }
-        // }
+        .sheet(isPresented: $postMeetingService.showPostMeetingSummary) {
+            if let summary = postMeetingService.currentMeetingSummary {
+                PostMeetingSummaryView(
+                    followUp: summary,
+                    postMeetingService: postMeetingService,
+                    fontManager: fontManager,
+                    calendarManager: calendarManager
+                )
+            }
+        }
     }
 
     private func handleDeepLink(_ url: URL) {
