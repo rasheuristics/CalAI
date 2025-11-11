@@ -81,6 +81,20 @@ struct EventTask: Identifiable, Codable, Hashable {
     /// Auto-schedule flag
     var autoSchedule: Bool?
 
+    // MARK: - Action Items Integration (Post-Meeting System)
+
+    /// Source of the task (manual, AI extracted, meeting, template)
+    var sourceType: TaskSource?
+
+    /// Meeting ID if extracted from a meeting
+    var sourceMeetingId: String?
+
+    /// Person assigned to this task
+    var assignee: String?
+
+    /// Original text from meeting notes
+    var sourceText: String?
+
     init(
         id: UUID = UUID(),
         title: String,
@@ -102,7 +116,11 @@ struct EventTask: Identifiable, Codable, Hashable {
         scheduledTime: Date? = nil,
         recurrence: TaskRecurrence? = nil,
         templateId: UUID? = nil,
-        autoSchedule: Bool? = nil
+        autoSchedule: Bool? = nil,
+        sourceType: TaskSource? = nil,
+        sourceMeetingId: String? = nil,
+        assignee: String? = nil,
+        sourceText: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -125,6 +143,36 @@ struct EventTask: Identifiable, Codable, Hashable {
         self.recurrence = recurrence
         self.templateId = templateId
         self.autoSchedule = autoSchedule
+        self.sourceType = sourceType
+        self.sourceMeetingId = sourceMeetingId
+        self.assignee = assignee
+        self.sourceText = sourceText
+    }
+}
+
+/// Source of task creation for unified system
+enum TaskSource: String, Codable, CaseIterable {
+    case manual = "Manual"
+    case aiExtracted = "AI Extracted"
+    case meeting = "Meeting"
+    case template = "Template"
+
+    var icon: String {
+        switch self {
+        case .manual: return "hand.point.up"
+        case .aiExtracted: return "brain"
+        case .meeting: return "person.2"
+        case .template: return "doc.text"
+        }
+    }
+
+    var color: String {
+        switch self {
+        case .manual: return "blue"
+        case .aiExtracted: return "purple"
+        case .meeting: return "green"
+        case .template: return "orange"
+        }
     }
 }
 
@@ -133,6 +181,7 @@ enum TaskPriority: String, Codable, CaseIterable {
     case low = "Low"
     case medium = "Medium"
     case high = "High"
+    case urgent = "Urgent"
 
     var color: String {
         switch self {
@@ -140,6 +189,7 @@ enum TaskPriority: String, Codable, CaseIterable {
         case .low: return "green"
         case .medium: return "orange"
         case .high: return "red"
+        case .urgent: return "red"
         }
     }
 
@@ -149,6 +199,7 @@ enum TaskPriority: String, Codable, CaseIterable {
         case .low: return "circle"
         case .medium: return "exclamationmark.circle"
         case .high: return "exclamationmark.circle.fill"
+        case .urgent: return "exclamationmark.triangle.fill"
         }
     }
 }
@@ -718,6 +769,41 @@ class EventTaskManager: ObservableObject {
                 if !updatedTask.isCompleted, updatedTask.dueDate != nil {
                     scheduleTaskNotification(for: updatedTask, eventId: eventId)
                 }
+            }
+        }
+    }
+
+    /// Mark a task as completed by ID (searches across all events)
+    func markTaskCompleted(_ taskId: UUID) {
+        for (eventId, var tasks) in eventTasks {
+            if let index = tasks.tasks.firstIndex(where: { $0.id == taskId }) {
+                tasks.tasks[index].isCompleted = true
+                tasks.tasks[index].completedAt = Date()
+                eventTasks[eventId] = tasks
+                saveToStorage()
+
+                // Cancel notification when task is completed
+                if settings.enableNotifications {
+                    cancelTaskNotification(for: taskId)
+                }
+                break
+            }
+        }
+    }
+
+    /// Delete a task by ID (searches across all events)
+    func deleteTaskById(_ taskId: UUID) {
+        for (eventId, var tasks) in eventTasks {
+            if tasks.tasks.contains(where: { $0.id == taskId }) {
+                tasks.tasks.removeAll { $0.id == taskId }
+                eventTasks[eventId] = tasks
+                saveToStorage()
+
+                // Cancel notification when task is deleted
+                if settings.enableNotifications {
+                    cancelTaskNotification(for: taskId)
+                }
+                break
             }
         }
     }
@@ -1489,6 +1575,7 @@ struct EventTasksTabView: View {
         case .low: return "exclamationmark"
         case .medium: return "exclamationmark.2"
         case .high: return "exclamationmark.3"
+        case .urgent: return "exclamationmark.triangle.fill"
         }
     }
 
@@ -1498,6 +1585,7 @@ struct EventTasksTabView: View {
         case .low: return .green
         case .medium: return .orange
         case .high: return .red
+        case .urgent: return .red
         }
     }
 
@@ -1620,6 +1708,7 @@ struct TaskRow: View {
         case .low: return .green
         case .medium: return .orange
         case .high: return .red
+        case .urgent: return .red
         }
     }
 }
@@ -3095,6 +3184,7 @@ struct SuggestionRow: View {
         case .low: return .green
         case .medium: return .orange
         case .high: return .red
+        case .urgent: return .red
         }
     }
 }
@@ -5072,6 +5162,8 @@ struct TaskDetailView: View {
             PriorityOption.medium.iconView(size: 22)  // Yellow with 2 exclamation marks
         case .high:
             PriorityOption.high.iconView(size: 22)  // Red with 3 exclamation marks
+        case .urgent:
+            PriorityOption.high.iconView(size: 22)  // Red with 3 exclamation marks (same as high)
         }
     }
 

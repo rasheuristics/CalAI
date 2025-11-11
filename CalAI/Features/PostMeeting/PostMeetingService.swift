@@ -7,7 +7,6 @@ class PostMeetingService: ObservableObject {
     static let shared = PostMeetingService()
 
     @Published var recentlyCompletedMeetings: [MeetingFollowUp] = []
-    @Published var pendingActionItems: [ActionItem] = []
     @Published var showPostMeetingSummary: Bool = false
     @Published var currentMeetingSummary: MeetingFollowUp?
 
@@ -57,10 +56,13 @@ class PostMeetingService: ObservableObject {
 
         Task {
             let followUp = await extractFollowUpWithAI(for: event, notes: notes)
-            
+
             await MainActor.run {
                 self.recentlyCompletedMeetings.insert(followUp, at: 0)
-                self.pendingActionItems.append(contentsOf: followUp.actionItems.filter { !$0.isCompleted })
+
+                // Directly create EventTasks for each action item
+                self.createEventTasksFromActionItems(followUp.actionItems, for: event)
+
                 self.currentMeetingSummary = followUp
                 self.showPostMeetingSummary = true
                 self.persistData()
@@ -131,25 +133,84 @@ class PostMeetingService: ObservableObject {
     }
 
     func completeActionItem(_ itemId: UUID) {
-        if let index = pendingActionItems.firstIndex(where: { $0.id == itemId }) {
-            pendingActionItems[index].isCompleted = true
-            pendingActionItems[index].completedDate = Date()
-        }
+        // Update in meeting follow-up data
         for i in 0..<recentlyCompletedMeetings.count {
             if let itemIndex = recentlyCompletedMeetings[i].actionItems.firstIndex(where: { $0.id == itemId }) {
                 recentlyCompletedMeetings[i].actionItems[itemIndex].isCompleted = true
                 recentlyCompletedMeetings[i].actionItems[itemIndex].completedDate = Date()
             }
         }
+
+        // Update the corresponding EventTask
+        EventTaskManager.shared.markTaskCompleted(itemId)
         persistData()
     }
 
     func deleteActionItem(_ itemId: UUID) {
-        pendingActionItems.removeAll { $0.id == itemId }
+        // Remove from meeting follow-up data
         for i in 0..<recentlyCompletedMeetings.count {
             recentlyCompletedMeetings[i].actionItems.removeAll { $0.id == itemId }
         }
+
+        // Remove the corresponding EventTask
+        EventTaskManager.shared.deleteTaskById(itemId)
         persistData()
+    }
+
+    /// Create EventTasks directly from ActionItems when meeting is processed
+    private func createEventTasksFromActionItems(_ actionItems: [ActionItem], for event: UnifiedEvent) {
+        for actionItem in actionItems {
+            let eventTask = EventTask(
+                id: actionItem.id,
+                title: actionItem.title,
+                description: actionItem.description,
+                isCompleted: actionItem.isCompleted,
+                priority: mapActionPriorityToTaskPriority(actionItem.priority),
+                category: mapActionCategoryToTaskCategory(actionItem.category),
+                timing: .before(hours: 24), // Default timing for meeting tasks
+                estimatedMinutes: nil,
+                createdAt: Date(),
+                completedAt: actionItem.completedDate,
+                dueDate: actionItem.dueDate,
+                subtasks: [],
+                project: nil,
+                tags: [],
+                linkedEventId: event.id, // Link to the original calendar event
+                duration: nil,
+                taskList: .inbox, // Default to inbox for meeting tasks
+                scheduledTime: nil,
+                recurrence: nil,
+                templateId: nil,
+                autoSchedule: false,
+                sourceType: .meeting,
+                sourceMeetingId: recentlyCompletedMeetings.first { $0.eventId == event.id }?.id,
+                assignee: actionItem.assignee,
+                sourceText: actionItem.sourceText
+            )
+
+            // Add to EventTaskManager with the event ID as the key
+            EventTaskManager.shared.addTask(eventTask, to: event.id)
+        }
+    }
+
+    private func mapActionPriorityToTaskPriority(_ priority: ActionItem.ActionPriority) -> TaskPriority {
+        switch priority {
+        case .urgent: return .urgent
+        case .high: return .high
+        case .medium: return .medium
+        case .low: return .low
+        }
+    }
+
+    private func mapActionCategoryToTaskCategory(_ category: ActionItem.ActionCategory) -> TaskCategory {
+        switch category {
+        case .task: return .preparation
+        case .followUp: return .followUp
+        case .research: return .materials
+        case .decision: return .preparation
+        case .communication: return .logistics
+        case .other: return .preparation
+        }
     }
 
     func scheduleFollowUpMeeting(_ followUpMeeting: FollowUpMeeting, for meetingFollowUp: MeetingFollowUp) {
@@ -166,9 +227,6 @@ class PostMeetingService: ObservableObject {
         if let encodedMeetings = try? encoder.encode(recentlyCompletedMeetings) {
             UserDefaults.standard.set(encodedMeetings, forKey: "recentlyCompletedMeetings")
         }
-        if let encodedItems = try? encoder.encode(pendingActionItems) {
-            UserDefaults.standard.set(encodedItems, forKey: "pendingActionItems")
-        }
         UserDefaults.standard.set(Array(processedEventIds), forKey: "processedEventIds")
     }
 
@@ -176,9 +234,6 @@ class PostMeetingService: ObservableObject {
         let decoder = JSONDecoder()
         if let meetingsData = UserDefaults.standard.data(forKey: "recentlyCompletedMeetings"), let meetings = try? decoder.decode([MeetingFollowUp].self, from: meetingsData) {
             recentlyCompletedMeetings = meetings
-        }
-        if let itemsData = UserDefaults.standard.data(forKey: "pendingActionItems"), let items = try? decoder.decode([ActionItem].self, from: itemsData) {
-            pendingActionItems = items
         }
         if let processedIds = UserDefaults.standard.array(forKey: "processedEventIds") as? [String] {
             processedEventIds = Set(processedIds)
@@ -326,4 +381,5 @@ class PostMeetingService: ObservableObject {
         return calendar.nextDate(after: date, matching: components, matchingPolicy: .nextTime)
     }
     #endif
+
 }

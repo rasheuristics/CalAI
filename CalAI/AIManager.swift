@@ -26,7 +26,7 @@ class FastIntentClassifier {
     }
 
     func detectIntent(from text: String) -> FastIntent {
-        let normalized = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = text.lowercased().trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
 
         // Check query patterns FIRST (what's, show, list) to avoid false positives
         // "what's my schedule" should be query, not create
@@ -514,6 +514,7 @@ class AIManager: ObservableObject {
     func processConversationalCommand(
         _ transcript: String,
         calendarEvents: [UnifiedEvent],
+        selectedEventId: String? = nil,
         completion: @escaping (AICalendarResponse) -> Void
     ) {
         // Prevent concurrent AI requests
@@ -524,7 +525,7 @@ class AIManager: ObservableObject {
 
         guard let enhancedAI = enhancedConversationalAI else {
             // Fall back to standard processing
-            processVoiceCommand(transcript, calendarEvents: calendarEvents, completion: completion)
+            processVoiceCommand(transcript, calendarEvents: calendarEvents, selectedEventId: selectedEventId, completion: completion)
             return
         }
 
@@ -672,6 +673,7 @@ class AIManager: ObservableObject {
                         type: response.intent,
                         parameters: response.parameters,
                         originalTranscript: transcript,
+                        selectedEventId: selectedEventId,
                         response: calendarResponse
                     )
                 }
@@ -698,6 +700,7 @@ class AIManager: ObservableObject {
         type: String,
         parameters: [String: ConversationalAIService.AnyCodableValue],
         originalTranscript: String,
+        selectedEventId: String? = nil,
         response: AICalendarResponse
     ) async -> AICalendarResponse {
         print("🎬 Executing action: \(type)")
@@ -809,13 +812,13 @@ class AIManager: ObservableObject {
                 }
 
                 // If title is empty, skip
-                if title.trimmingCharacters(in: .whitespaces).isEmpty {
+                if title.trimmingCharacters(in: CharacterSet.whitespaces).isEmpty {
                     print("⚠️ Title is empty for task \(index + 1), skipping")
                     continue
                 }
 
                 // Skip incomplete tasks (ending with prepositions or articles)
-                let trimmedTitle = title.trimmingCharacters(in: .whitespaces).lowercased()
+                let trimmedTitle = title.trimmingCharacters(in: CharacterSet.whitespaces).lowercased()
                 let incompleteEndings = ["to", "for", "with", "about", "from", "by", "at", "in", "on", "an", "a", "the"]
                 let lastWord = trimmedTitle.components(separatedBy: " ").last ?? ""
 
@@ -1216,7 +1219,7 @@ class AIManager: ObservableObject {
 
     /// Fast command processing with parallel execution (< 1 second)
     /// Detects intent immediately → executes command + generates AI response in parallel
-    func processVoiceCommandFast(_ transcript: String, conversationHistory: [ConversationItem] = [], calendarEvents: [UnifiedEvent] = [], calendarManager: CalendarManager? = nil, completion: @escaping (AICalendarResponse) -> Void) {
+    func processVoiceCommandFast(_ transcript: String, conversationHistory: [ConversationItem] = [], calendarEvents: [UnifiedEvent] = [], selectedEventId: String? = nil, calendarManager: CalendarManager? = nil, completion: @escaping (AICalendarResponse) -> Void) {
         print("⚡ FAST MODE: Processing transcript: \"\(transcript)\"")
 
         let startTime = Date()
@@ -1252,11 +1255,11 @@ class AIManager: ObservableObject {
         } else {
             // Fall back to full processing if confidence is low
             print("⚡ LOW CONFIDENCE - Falling back to full processing")
-            processVoiceCommand(transcript, conversationHistory: conversationHistory, calendarEvents: calendarEvents, calendarManager: calendarManager, completion: completion)
+            processVoiceCommand(transcript, conversationHistory: conversationHistory, calendarEvents: calendarEvents, selectedEventId: selectedEventId, calendarManager: calendarManager, completion: completion)
         }
     }
 
-    func processVoiceCommand(_ transcript: String, conversationHistory: [ConversationItem] = [], calendarEvents: [UnifiedEvent] = [], calendarManager: CalendarManager? = nil, completion: @escaping (AICalendarResponse) -> Void) {
+    func processVoiceCommand(_ transcript: String, conversationHistory: [ConversationItem] = [], calendarEvents: [UnifiedEvent] = [], selectedEventId: String? = nil, calendarManager: CalendarManager? = nil, completion: @escaping (AICalendarResponse) -> Void) {
         // Prevent concurrent AI requests
         guard !isProcessing else {
             print("⚠️ AI is already processing a request - ignoring duplicate")
@@ -1283,7 +1286,7 @@ class AIManager: ObservableObject {
 
         print("🆕 Starting new command processing")
 
-        let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanTranscript = transcript.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
         guard !cleanTranscript.isEmpty else {
             let response = AICalendarResponse(message: "I didn't catch that. Please try again.")
             DispatchQueue.main.async {
@@ -1382,7 +1385,7 @@ class AIManager: ObservableObject {
 
                 case .createTask:
                     // Handle task creation
-                    await handleCreateTask(transcript: cleanTranscript, calendarEvents: calendarEvents, completion: completion)
+                    await handleCreateTask(transcript: cleanTranscript, calendarEvents: calendarEvents, selectedEventId: selectedEventId, completion: completion)
 
                 case .listTasks:
                     // Handle listing tasks
@@ -1781,19 +1784,19 @@ class AIManager: ObservableObject {
             var taskTitles: [String] = []
 
             for (index, taskParams) in allTaskParams.enumerated() {
-                // Try to get title from extracted params first, then fallback to action parameters
+                // Try to get title from extracted params first, then fallback to parameters
                 guard let title = taskParams["title"] ?? action.parameters["title"]?.stringValue else {
                     print("⚠️ No title found for task \(index + 1), skipping")
                     continue
                 }
 
-                if title.trimmingCharacters(in: .whitespaces).isEmpty {
+                if title.trimmingCharacters(in: CharacterSet.whitespaces).isEmpty {
                     print("⚠️ Title is empty for task \(index + 1), skipping")
                     continue
                 }
 
                 // Skip incomplete tasks (ending with prepositions or articles)
-                let trimmedTitle = title.trimmingCharacters(in: .whitespaces).lowercased()
+                let trimmedTitle = title.trimmingCharacters(in: CharacterSet.whitespaces).lowercased()
                 let incompleteEndings = ["to", "for", "with", "about", "from", "by", "at", "in", "on", "an", "a", "the"]
                 let lastWord = trimmedTitle.components(separatedBy: " ").last ?? ""
 
@@ -1804,7 +1807,7 @@ class AIManager: ObservableObject {
 
                 print("\n📝 Creating task \(index + 1): \(title)")
 
-                // Extract task parameters (prefer extracted, fallback to action params)
+                // Extract task parameters (prefer extracted, fallback to function params)
                 let description = taskParams["description"] ?? action.parameters["description"]?.stringValue
                 let priorityStr = taskParams["priority"] ?? action.parameters["priority"]?.stringValue ?? "medium"
                 let priority = TaskPriority(rawValue: priorityStr.capitalized) ?? .medium
@@ -1832,6 +1835,7 @@ class AIManager: ObservableObject {
                 }
 
                 // Extract event ID if this is an event-related task
+                // Priority: selectedEventId (from calendar context) over action parameters
                 let eventId = action.parameters["event_id"]?.stringValue
 
                 // If task has scheduled time but no duration, set a default duration of 30 minutes
@@ -1850,6 +1854,7 @@ class AIManager: ObservableObject {
                     dueDate: dueDate,
                     project: project,
                     tags: tags,
+                    linkedEventId: eventId,
                     duration: duration,
                     scheduledTime: scheduledTime
                 )
@@ -2898,7 +2903,7 @@ class AIManager: ObservableObject {
 
         // Clean up extra spaces
         result = result.replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
-        result = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        result = result.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
 
         print("🧹 After date stripping: \(result)")
         return result
@@ -2913,7 +2918,7 @@ class AIManager: ObservableObject {
         var foundListSection = false
 
         for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let trimmed = line.trimmingCharacters(in: CharacterSet.whitespaces)
 
             // Skip lines that are bulleted or numbered lists
             // Patterns: "- Event", "• Event", "* Event", "1. Event", "2) Event", "**Event**"
@@ -2943,7 +2948,7 @@ class AIManager: ObservableObject {
         // Join back and clean up extra whitespace
         let result = cleanedLines.joined(separator: "\n")
             .replacingOccurrences(of: "\n\n\n+", with: "\n\n", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
 
         print("📤 Output from stripListsFromResponse: \(result)")
         return result
@@ -3438,9 +3443,9 @@ class AIManager: ObservableObject {
         }
 
         // Look for event title match
-        let words = lowercased.components(separatedBy: .whitespacesAndNewlines)
+        let words = lowercased.components(separatedBy: CharacterSet.whitespacesAndNewlines)
         for event in events {
-            let eventTitleWords = event.title.lowercased().components(separatedBy: .whitespacesAndNewlines)
+            let eventTitleWords = event.title.lowercased().components(separatedBy: CharacterSet.whitespacesAndNewlines)
             let matchingWords = words.filter { word in
                 eventTitleWords.contains(where: { $0.contains(word) && word.count > 3 })
             }
@@ -3469,7 +3474,7 @@ class AIManager: ObservableObject {
         }
 
         // Clean up
-        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        cleaned = cleaned.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
         cleaned = cleaned.replacingOccurrences(of: "  ", with: " ")
 
         // Remove common filler words
@@ -3983,7 +3988,7 @@ class AIManager: ObservableObject {
                match.numberOfRanges > 1,
                let locationRange = Range(match.range(at: 1), in: text) {
                 let location = String(text[locationRange])
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                     .trimmingCharacters(in: CharacterSet(charactersIn: ".,!?"))
 
                 // Filter out common non-location words
@@ -4003,7 +4008,7 @@ class AIManager: ObservableObject {
 
     // MARK: - Task Handling
 
-    private func handleCreateTask(transcript: String, calendarEvents: [UnifiedEvent], completion: @escaping (AICalendarResponse) -> Void) async {
+    private func handleCreateTask(transcript: String, calendarEvents: [UnifiedEvent], selectedEventId: String? = nil, completion: @escaping (AICalendarResponse) -> Void) async {
         print("✅ Handling create task: \(transcript)")
 
         // Extract task details from transcript
@@ -4014,7 +4019,7 @@ class AIManager: ObservableObject {
         let prefixes = ["create task", "add task", "new task", "create a task", "add a task", "make a task"]
         for prefix in prefixes {
             if let range = lowercased.range(of: prefix) {
-                title = String(transcript[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                title = String(transcript[range.upperBound...]).trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                 break
             }
         }
@@ -4030,11 +4035,19 @@ class AIManager: ObservableObject {
         // Create the task
         let task = EventTask(
             title: title,
-            priority: priority
+            priority: priority,
+            linkedEventId: selectedEventId
         )
 
-        // Add to standalone tasks
-        EventTaskManager.shared.addTask(task, to: "standalone_tasks")
+        // Add task to appropriate location
+        if let eventId = selectedEventId {
+            EventTaskManager.shared.addTask(task, to: eventId)
+            print("   ✅ Task linked to event \(eventId)")
+        } else {
+            // For standalone tasks, use a special "standalone" event ID
+            EventTaskManager.shared.addTask(task, to: "standalone_tasks")
+            print("   ✅ Task added to standalone_tasks")
+        }
 
         let message = "I've created a \(priority.rawValue.lowercased()) priority task: \(title)"
         let response = AICalendarResponse(message: message, shouldContinueListening: false)
@@ -4354,13 +4367,13 @@ class AIManager: ObservableObject {
 
         // Clean up each item
         items = items.map { item in
-            var cleaned = item.trimmingCharacters(in: .whitespaces)
+            var cleaned = item.trimmingCharacters(in: CharacterSet.whitespaces)
 
             // Remove leading conjunctions/connectors
             let leadingWords = ["and", "also", "then", "plus", "as well"]
             for word in leadingWords {
                 if cleaned.lowercased().hasPrefix("\(word) ") {
-                    cleaned = String(cleaned.dropFirst(word.count + 1)).trimmingCharacters(in: .whitespaces)
+                    cleaned = String(cleaned.dropFirst(word.count + 1)).trimmingCharacters(in: CharacterSet.whitespaces)
                 }
             }
 
@@ -4500,7 +4513,7 @@ class AIManager: ObservableObject {
 
         for prefix in taskPrefixes {
             if lowercased.hasPrefix(prefix) {
-                title = String(transcript.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+                title = String(transcript.dropFirst(prefix.count)).trimmingCharacters(in: CharacterSet.whitespaces)
                 break
             }
         }
@@ -4542,7 +4555,7 @@ class AIManager: ObservableObject {
         // Smart title condensing - make titles concise and action-oriented
         cleanTitle = condenseTitle(cleanTitle)
 
-        params["title"] = cleanTitle.trimmingCharacters(in: .whitespaces)
+        params["title"] = cleanTitle.trimmingCharacters(in: CharacterSet.whitespaces)
         print("📝 Extracted title: \(params["title"] ?? "")")
 
         // Extract scheduled time using SmartEventParser's time extraction
@@ -4578,7 +4591,7 @@ class AIManager: ObservableObject {
     ///   "Send an email out to Sarah" -> "Email Sarah"
     ///   "grocery shopping" -> "Grocery shopping"
     private func condenseTitle(_ title: String) -> String {
-        var condensed = title.trimmingCharacters(in: .whitespaces)
+        var condensed = title.trimmingCharacters(in: CharacterSet.whitespaces)
         let lowercased = condensed.lowercased()
 
         // Define action patterns with their condensed forms
@@ -4641,7 +4654,7 @@ class AIManager: ObservableObject {
                     let capitalizedRemaining = remaining.prefix(1).uppercased() + remaining.dropFirst()
                     condensed = replacement + capitalizedRemaining
                 } else {
-                    condensed = replacement.trimmingCharacters(in: .whitespaces)
+                    condensed = replacement.trimmingCharacters(in: CharacterSet.whitespaces)
                 }
                 break
             }
@@ -4652,7 +4665,7 @@ class AIManager: ObservableObject {
             condensed = condensed.prefix(1).uppercased() + condensed.dropFirst()
         }
 
-        return condensed.trimmingCharacters(in: .whitespaces)
+        return condensed.trimmingCharacters(in: CharacterSet.whitespaces)
     }
 
     // MARK: - Fast Execution Helpers

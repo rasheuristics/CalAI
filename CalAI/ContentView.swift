@@ -20,12 +20,14 @@ struct ContentView: View {
     @State private var showInitialization = false
     @State private var showMorningBriefing = false
 
-    // Computed property for active task count
-    private var activeTaskCount: Int {
+    // Computed property for unified task count (includes both tasks and action items)
+    private var unifiedTaskCount: Int {
         var count = 0
+        // Count existing tasks
         for eventTasks in taskManager.eventTasks.values {
             count += eventTasks.tasks.filter { !$0.isCompleted }.count
         }
+        // Meeting-sourced tasks are now included in EventTaskManager count above
         return count
     }
 
@@ -67,41 +69,34 @@ struct ContentView: View {
                     }
                     .tag(2)
 
-                InboxView(fontManager: fontManager, appearanceManager: appearanceManager, calendarManager: calendarManager)
+                InboxView(fontManager: fontManager, appearanceManager: appearanceManager, calendarManager: calendarManager, postMeetingService: postMeetingService)
                     .tabItem {
-                        Image(systemName: "tray.fill")
+                        Image(systemName: "checklist")
                         Text("Tasks")
                     }
                     .tag(3)
-                    .badge(activeTaskCount)
-
-                ActionItemsView(postMeetingService: postMeetingService, fontManager: fontManager, calendarManager: calendarManager)
-                    .tabItem {
-                        Image(systemName: "checkmark.circle")
-                        Text("Actions")
-                    }
-                    .tag(4)
-                    .badge(postMeetingService.pendingActionItems.filter { !$0.isCompleted }.count)
+                    .badge(unifiedTaskCount)
 
                 SettingsTabView(calendarManager: calendarManager, voiceManager: voiceManager, fontManager: fontManager, googleCalendarManager: googleCalendarManager, outlookCalendarManager: outlookCalendarManager, appearanceManager: appearanceManager)
                     .tabItem {
                         Image(systemName: "gearshape")
                         Text("Settings")
                     }
-                    .tag(5)
+                    .tag(4)
             }
             .background(Color.clear)
             .onChange(of: selectedTab) { newTab in
-                let tabName = ["Calendar", "Insights", "AI", "Tasks", "Actions", "Settings"][newTab]
+                let tabName = ["Calendar", "Insights", "AI", "Tasks", "Settings"][newTab]
                 PerformanceMonitor.shared.measure("Tab Switch to \(tabName)") {
                     MemoryMonitor.logMemoryUsage(context: "Tab: \(tabName)")
                 }
             }
 
             // Performance overlay - shows FPS in debug builds
-            #if DEBUG
-            PerformanceOverlay()
-            #endif
+            // Commented out to reduce build noise - uncomment for performance debugging
+            // #if DEBUG
+            // PerformanceOverlay()
+            // #endif
         }
         .preferredColorScheme(appearanceManager.currentMode.colorScheme)
         .fullScreenCover(isPresented: $showOnboarding) {
@@ -296,6 +291,7 @@ struct VoiceInputButton: View {
     @ObservedObject var calendarManager: CalendarManager
     @ObservedObject var fontManager: FontManager
     @ObservedObject var appearanceManager: AppearanceManager
+    var selectedEventId: String? = nil
     var onTranscript: ((String) -> Void)? = nil
     var onResponse: ((AICalendarResponse) -> Void)? = nil
 
@@ -309,7 +305,11 @@ struct VoiceInputButton: View {
                 voiceManager.startListening { transcript in
                     print("📝 Transcript received in VoiceInputButton: \(transcript)")
                     onTranscript?(transcript)
-                    aiManager.processVoiceCommand(transcript) { result in
+                    aiManager.processVoiceCommand(
+                        transcript,
+                        calendarEvents: calendarManager.unifiedEvents,
+                        selectedEventId: selectedEventId
+                    ) { result in
                         print("🎯 AI processing completed with result: \(result.message)")
                         calendarManager.handleAICalendarResponse(result)
                         onResponse?(result)

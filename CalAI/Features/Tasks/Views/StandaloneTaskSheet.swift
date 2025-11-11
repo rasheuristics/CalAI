@@ -283,6 +283,7 @@ struct StandaloneTaskSheet: View {
         case .medium: return .yellow
         case .low: return .green
         case .none: return .black
+        case .urgent: return .red
         }
     }
 
@@ -349,6 +350,16 @@ struct StandaloneTaskSheet: View {
                 }
                 .stroke(color, lineWidth: 2)
                 .frame(width: size, height: size)
+            }
+            .foregroundColor(color)
+        case .urgent:
+            // Same as high priority but with triangle
+            ZStack {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(color, lineWidth: 2)
+                    .frame(width: size, height: size)
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: size * 0.6, weight: .bold))
             }
             .foregroundColor(color)
         }

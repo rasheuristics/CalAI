@@ -5,6 +5,7 @@ struct InboxView: View {
     @ObservedObject var fontManager: FontManager
     @ObservedObject var appearanceManager: AppearanceManager
     @ObservedObject var calendarManager: CalendarManager
+    @ObservedObject var postMeetingService: PostMeetingService
     @StateObject private var insightsViewModel = InsightsViewModel()
 
     @State private var selectedList: TaskList = .today
@@ -163,7 +164,7 @@ struct InboxView: View {
     }
 
     private var taskListView: some View {
-        let tasks = taskManager.getTasksForList(selectedList)
+        let allTasks = taskManager.getTasksForList(selectedList)
 
         return VStack(spacing: 0) {
             // Collapsible calendar for Today view only
@@ -176,11 +177,11 @@ struct InboxView: View {
 
             // Task list
             Group {
-                if tasks.isEmpty {
+                if allTasks.isEmpty {
                     emptyStateView
                 } else {
                     List {
-                        ForEach(tasks) { task in
+                        ForEach(allTasks) { task in
                             InboxTaskRow(
                                 task: task,
                                 taskManager: taskManager,
@@ -206,7 +207,7 @@ struct InboxView: View {
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                         }
                         .onDelete { indexSet in
-                            deleteTask(at: indexSet, from: tasks)
+                            deleteTask(at: indexSet, from: allTasks)
                         }
                     }
                     .listStyle(PlainListStyle())
@@ -272,8 +273,15 @@ struct InboxView: View {
     private func deleteTask(at indexSet: IndexSet, from tasks: [EventTask]) {
         for index in indexSet {
             let task = tasks[index]
+
+            // All tasks are now stored in EventTaskManager
             if let linkedEventId = task.linkedEventId {
                 taskManager.deleteTask(task.id, from: linkedEventId)
+            }
+
+            // If it's a meeting-sourced task, also clean up in PostMeetingService
+            if task.sourceType == .meeting {
+                postMeetingService.deleteActionItem(task.id)
             }
         }
     }
