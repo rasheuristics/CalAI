@@ -31,26 +31,51 @@ class VoiceManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        // Don't request permissions automatically - will be requested from onboarding
-        checkExistingPermissions()
+        checkAndRequestPermissions()
     }
 
-    private func checkExistingPermissions() {
-        // Check if permissions were already granted without requesting
+    private func checkAndRequestPermissions() {
+        // Check current permission status
         let speechStatus = SFSpeechRecognizer.authorizationStatus()
 
         // Use modern iOS 17+ APIs when available, fallback to deprecated APIs for older versions
         if #available(iOS 17.0, *) {
             // Use the new AVAudioApplication API
             let micStatus = AVAudioApplication.shared.recordPermission
-            DispatchQueue.main.async {
-                self.hasRecordingPermission = (speechStatus == .authorized && micStatus == .granted)
+
+            // If permissions are already granted, set the state
+            if speechStatus == .authorized && micStatus == .granted {
+                DispatchQueue.main.async {
+                    self.hasRecordingPermission = true
+                }
+            } else if speechStatus == .notDetermined || micStatus == .undetermined {
+                // Automatically request permissions if not determined
+                print("🎤 Requesting permissions automatically on VoiceManager init")
+                requestPermissions()
+            } else {
+                // Permissions denied or restricted
+                DispatchQueue.main.async {
+                    self.hasRecordingPermission = false
+                }
             }
         } else {
             // Fallback to deprecated API for iOS < 17
             let micStatus = AVAudioSession.sharedInstance().recordPermission
-            DispatchQueue.main.async {
-                self.hasRecordingPermission = (speechStatus == .authorized && micStatus == .granted)
+
+            // If permissions are already granted, set the state
+            if speechStatus == .authorized && micStatus == .granted {
+                DispatchQueue.main.async {
+                    self.hasRecordingPermission = true
+                }
+            } else if speechStatus == .notDetermined || micStatus == .undetermined {
+                // Automatically request permissions if not determined
+                print("🎤 Requesting permissions automatically on VoiceManager init (iOS < 17)")
+                requestPermissions()
+            } else {
+                // Permissions denied or restricted
+                DispatchQueue.main.async {
+                    self.hasRecordingPermission = false
+                }
             }
         }
     }
