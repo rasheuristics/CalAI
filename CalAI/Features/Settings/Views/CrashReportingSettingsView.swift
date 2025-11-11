@@ -98,7 +98,11 @@ struct CrashReportingSettingsView: View {
         .alert("Test Fatal Crash?", isPresented: $showingTestCrashAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Crash App", role: .destructive) {
+                #if DEBUG
                 CrashReporter.shared.testCrash()
+                #else
+                CrashReporter.shared.logFatal("Test crash triggered in release mode")
+                #endif
             }
         } message: {
             Text("This will intentionally crash the app to test crash reporting. The app will close immediately.")
@@ -106,7 +110,14 @@ struct CrashReportingSettingsView: View {
         .alert("Test Non-Fatal Error?", isPresented: $showingTestErrorAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Log Error", role: .destructive) {
+                #if DEBUG
                 CrashReporter.shared.testNonFatalError()
+                #else
+                let testError = NSError(domain: "TestError", code: 999, userInfo: [
+                    NSLocalizedDescriptionKey: "This is a test non-fatal error for release mode"
+                ])
+                CrashReporter.shared.logError(testError, context: "Testing crash reporting in release mode")
+                #endif
             }
         } message: {
             Text("This will log a test error without crashing the app.")

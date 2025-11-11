@@ -26,6 +26,98 @@ struct SettingsTabView: View {
     @State private var hasLocationPermission: Bool = false
     @State private var hasNotificationPermission: Bool = false
 
+    // Calendar connection status tracking
+    @State private var iOSCalendarLastRequested: Date? = UserDefaults.standard.object(forKey: "iOSCalendarLastRequested") as? Date
+    @State private var iOSCalendarConnectedAt: Date? = UserDefaults.standard.object(forKey: "iOSCalendarConnectedAt") as? Date
+    @State private var googleCalendarLastRequested: Date? = UserDefaults.standard.object(forKey: "googleCalendarLastRequested") as? Date
+    @State private var googleCalendarConnectedAt: Date? = UserDefaults.standard.object(forKey: "googleCalendarConnectedAt") as? Date
+    @State private var outlookCalendarLastRequested: Date? = UserDefaults.standard.object(forKey: "outlookCalendarLastRequested") as? Date
+    @State private var outlookCalendarConnectedAt: Date? = UserDefaults.standard.object(forKey: "outlookCalendarConnectedAt") as? Date
+
+    /// Check if FoundationModels framework is available for Apple Intelligence
+    private func checkFoundationModels() -> Bool {
+        #if canImport(FoundationModels)
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    /// Format date for connection status display
+    private func formatConnectionDate(_ date: Date?) -> String {
+        guard let date = date else { return "Never" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.string(from: date)
+    }
+
+    private func formatCalendarName(_ calendar: String) -> String {
+        switch calendar {
+        case "iOS":
+            return "iOS"
+        case "Google":
+            return "Google"
+        case "Outlook":
+            return "Outlook"
+        default:
+            return "iOS"
+        }
+    }
+
+    private func getLanguageDisplayName(_ languageCode: String) -> String {
+        switch languageCode {
+        case "en-US":
+            return "English (US)"
+        case "en-GB":
+            return "English (UK)"
+        case "es-ES":
+            return "Spanish"
+        case "fr-FR":
+            return "French"
+        case "de-DE":
+            return "German"
+        default:
+            return "English (US)"
+        }
+    }
+
+    /// Update connection status timestamps
+    private func updateConnectionStatus(for service: String, requested: Bool = true, connected: Bool = false) {
+        let now = Date()
+
+        switch service {
+        case "iOS":
+            if requested {
+                iOSCalendarLastRequested = now
+                UserDefaults.standard.set(now, forKey: "iOSCalendarLastRequested")
+            }
+            if connected {
+                iOSCalendarConnectedAt = now
+                UserDefaults.standard.set(now, forKey: "iOSCalendarConnectedAt")
+            }
+        case "Google":
+            if requested {
+                googleCalendarLastRequested = now
+                UserDefaults.standard.set(now, forKey: "googleCalendarLastRequested")
+            }
+            if connected {
+                googleCalendarConnectedAt = now
+                UserDefaults.standard.set(now, forKey: "googleCalendarConnectedAt")
+            }
+        case "Outlook":
+            if requested {
+                outlookCalendarLastRequested = now
+                UserDefaults.standard.set(now, forKey: "outlookCalendarLastRequested")
+            }
+            if connected {
+                outlookCalendarConnectedAt = now
+                UserDefaults.standard.set(now, forKey: "outlookCalendarConnectedAt")
+            }
+        default:
+            break
+        }
+    }
+
     private var sizeCategory: ContentSizeCategory {
         switch fontManager.currentFontSize {
         case .small:
@@ -58,46 +150,96 @@ struct SettingsTabView: View {
 
                 Form {
                 Section("Calendar Connections") {
-                    PermissionRow(
+                    CalendarPermissionRow(
                         title: "iOS Calendar",
                         systemImage: "calendar",
                         status: calendarManager.hasCalendarAccess ? .granted : .notGranted,
+                        lastRequested: calendarManager.hasCalendarAccess ? (iOSCalendarLastRequested ?? iOSCalendarConnectedAt) : iOSCalendarLastRequested,
+                        connectedAt: calendarManager.hasCalendarAccess ? iOSCalendarConnectedAt : nil,
                         action: {
-                            calendarManager.requestCalendarAccess()
-                        }
+                            // Always update the last requested timestamp
+                            updateConnectionStatus(for: "iOS", requested: true)
+
+                            if calendarManager.hasCalendarAccess {
+                                // Already granted - just update connected timestamp if missing
+                                if iOSCalendarConnectedAt == nil {
+                                    updateConnectionStatus(for: "iOS", requested: false, connected: true)
+                                }
+                            } else {
+                                // Request permission
+                                calendarManager.requestCalendarAccess()
+
+                                // Check connection status after a delay
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                    if calendarManager.hasCalendarAccess {
+                                        updateConnectionStatus(for: "iOS", requested: false, connected: true)
+                                    }
+                                }
+                            }
+                        },
+                        showSettingsButton: true
                     )
 
-                    PermissionRow(
+                    CalendarPermissionRow(
                         title: "Google Calendar",
                         systemImage: "globe",
                         status: googleCalendarManager.isSignedIn ? .granted : .notGranted,
+                        lastRequested: googleCalendarManager.isSignedIn ? (googleCalendarLastRequested ?? googleCalendarConnectedAt) : googleCalendarLastRequested,
+                        connectedAt: googleCalendarManager.isSignedIn ? googleCalendarConnectedAt : nil,
                         action: {
                             if googleCalendarManager.isSignedIn {
                                 googleCalendarManager.signOut()
+                                // Clear connected timestamp when signing out
+                                googleCalendarConnectedAt = nil
+                                UserDefaults.standard.removeObject(forKey: "googleCalendarConnectedAt")
                             } else {
+                                updateConnectionStatus(for: "Google", requested: true)
                                 googleCalendarManager.signIn()
+
+                                // Check connection status after a delay
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                                    if googleCalendarManager.isSignedIn {
+                                        updateConnectionStatus(for: "Google", requested: false, connected: true)
+                                    }
+                                }
                             }
-                        }
+                        },
+                        showSettingsButton: false
                     )
 
-                    PermissionRow(
+                    CalendarPermissionRow(
                         title: "Outlook Calendar",
                         systemImage: "envelope",
                         status: outlookCalendarStatus,
+                        lastRequested: outlookCalendarStatus == .granted ? (outlookCalendarLastRequested ?? outlookCalendarConnectedAt) : outlookCalendarLastRequested,
+                        connectedAt: outlookCalendarStatus == .granted ? outlookCalendarConnectedAt : nil,
                         action: {
                             if outlookCalendarManager.isSignedIn {
                                 if outlookCalendarManager.selectedCalendar == nil {
                                     // If signed in but no calendar selected, show calendar selection
+                                    updateConnectionStatus(for: "Outlook", requested: true)
                                     outlookCalendarManager.showCalendarSelectionSheet()
                                 } else {
                                     // If fully configured, sign out
                                     outlookCalendarManager.signOut()
+                                    // Clear connected timestamp when signing out
+                                    outlookCalendarConnectedAt = nil
+                                    UserDefaults.standard.removeObject(forKey: "outlookCalendarConnectedAt")
                                 }
                             } else {
                                 // If not signed in, start sign in process
+                                updateConnectionStatus(for: "Outlook", requested: true)
                                 outlookCalendarManager.signIn()
+
+                                // Check connection status after a delay
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                                    if outlookCalendarStatus == .granted {
+                                        updateConnectionStatus(for: "Outlook", requested: false, connected: true)
+                                    }
+                                }
                             }
-                        }
+                        },
+                        showSettingsButton: false
                     )
 
                     // Outlook Account & Calendar Management
@@ -187,44 +329,66 @@ struct SettingsTabView: View {
                         }
                         .padding(.vertical, 8)
                     }
-
-                    NavigationLink(destination: AISettingsView()) {
-                        HStack {
-                            Image(systemName: "waveform.circle")
-                                .foregroundColor(.purple)
-                            Text("Voice & Output Settings")
-                                .dynamicFont(size: 16, fontManager: fontManager)
-                        }
-                    }
                 }
 
                 Section("App Permissions") {
-                    PermissionRow(
-                        title: "Microphone Access",
-                        systemImage: "mic",
-                        status: voiceManager.hasRecordingPermission ? .granted : .notGranted,
-                        action: {
-                            // Voice manager handles this automatically
-                        }
-                    )
+                    NavigationLink(destination: AppPermissionsView(voiceManager: voiceManager, fontManager: fontManager)) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "key.fill")
+                                    .foregroundColor(.blue)
+                                Text("App Permissions")
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
 
-                    PermissionRow(
-                        title: "Location Access",
-                        systemImage: "location.fill",
-                        status: hasLocationPermission ? .granted : .notGranted,
-                        action: {
-                            requestLocationPermission()
-                        }
-                    )
+                            // Status icons row (content display area)
+                            HStack(spacing: 16) {
+                                // Microphone status
+                                HStack(spacing: 4) {
+                                    Image(systemName: "mic.fill")
+                                        .foregroundColor(voiceManager.hasRecordingPermission ? .green : .red)
+                                        .font(.caption)
+                                    Text("Mic")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
 
-                    PermissionRow(
-                        title: "Notification Access",
-                        systemImage: "bell.badge.fill",
-                        status: hasNotificationPermission ? .granted : .notGranted,
-                        action: {
-                            requestNotificationPermission()
+                                // Location status
+                                HStack(spacing: 4) {
+                                    Image(systemName: "location.fill")
+                                        .foregroundColor(hasLocationPermission ? .green : .red)
+                                        .font(.caption)
+                                    Text("Location")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                // Notification status
+                                HStack(spacing: 4) {
+                                    Image(systemName: "bell.fill")
+                                        .foregroundColor(hasNotificationPermission ? .green : .red)
+                                        .font(.caption)
+                                    Text("Notifications")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Spacer()
+                            }
+                            .padding(.leading, 24)
+                            .padding(.vertical, 4)
+                            .background(Color(UIColor.systemGray6))
+                            .cornerRadius(6)
                         }
-                    )
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(Color.blue.opacity(0.05))
+                        .cornerRadius(10)
+                    }
                 }
 
                 Section("Smart Notifications") {
@@ -269,309 +433,233 @@ struct SettingsTabView: View {
                     }
                 }
 
-                Section(header: Text("Calendar Auto-Routing"),
-                       footer: Text("Events are automatically routed to the appropriate calendar based on keywords. Work events (meetings, standups, etc.) go to your work calendar, while personal events (gym, doctor, etc.) go to your personal calendar.")) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // Work Calendar Preference
+                Section("Calendar Auto-Routing") {
+                    NavigationLink(destination: CalendarAutoRoutingView(fontManager: fontManager)) {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Image(systemName: "briefcase.fill")
+                                Image(systemName: "arrow.triangle.branch")
                                     .foregroundColor(.blue)
-                                Text("Work Events Calendar")
+                                Text("Calendar Auto-Routing")
                                     .dynamicFont(size: 16, fontManager: fontManager)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
                             }
 
-                            Picker("Work Calendar", selection: $defaultWorkCalendar) {
-                                Text("iOS Calendar").tag("iOS")
-                                Text("Google Calendar").tag("Google")
-                                Text("Outlook Calendar").tag("Outlook")
-                            }
-                            .pickerStyle(SegmentedPickerStyle())
-                            .onChange(of: defaultWorkCalendar) { newValue in
-                                UserDefaults.standard.set(newValue, forKey: "defaultWorkCalendar")
-                            }
+                            // Status indicators row (content display area)
+                            VStack(alignment: .leading, spacing: 6) {
+                                // Work calendar status
+                                HStack(spacing: 8) {
+                                    Image(systemName: "briefcase.fill")
+                                        .foregroundColor(.blue)
+                                        .font(.caption2)
+                                    Text("Work:")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Text(formatCalendarName(defaultWorkCalendar))
+                                        .font(.caption2)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                }
 
-                            Text("For meetings, standups, reviews, clients, presentations")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .padding(.leading, 24)
+                                // Personal calendar status
+                                HStack(spacing: 8) {
+                                    Image(systemName: "person.fill")
+                                        .foregroundColor(.green)
+                                        .font(.caption2)
+                                    Text("Personal:")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Text(formatCalendarName(defaultPersonalCalendar))
+                                        .font(.caption2)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                }
+
+                                // Default calendar status
+                                HStack(spacing: 8) {
+                                    Image(systemName: "questionmark.circle.fill")
+                                        .foregroundColor(.orange)
+                                        .font(.caption2)
+                                    Text("Default:")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Text(formatCalendarName(defaultFallbackCalendar))
+                                        .font(.caption2)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                }
+                            }
+                            .padding(.leading, 24)
+                            .padding(.vertical, 6)
+                            .background(Color(UIColor.systemGray6))
+                            .cornerRadius(6)
                         }
-
-                        Divider()
-
-                        // Personal Calendar Preference
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "person.fill")
-                                    .foregroundColor(.green)
-                                Text("Personal Events Calendar")
-                                    .dynamicFont(size: 16, fontManager: fontManager)
-                            }
-
-                            Picker("Personal Calendar", selection: $defaultPersonalCalendar) {
-                                Text("iOS Calendar").tag("iOS")
-                                Text("Google Calendar").tag("Google")
-                                Text("Outlook Calendar").tag("Outlook")
-                            }
-                            .pickerStyle(SegmentedPickerStyle())
-                            .onChange(of: defaultPersonalCalendar) { newValue in
-                                UserDefaults.standard.set(newValue, forKey: "defaultPersonalCalendar")
-                            }
-
-                            Text("For gym, doctor, dentist, birthdays, personal appointments")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .padding(.leading, 24)
-                        }
-
-                        Divider()
-
-                        // Fallback Calendar Preference
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "questionmark.circle.fill")
-                                    .foregroundColor(.orange)
-                                Text("Default Calendar (Ambiguous)")
-                                    .dynamicFont(size: 16, fontManager: fontManager)
-                            }
-
-                            Picker("Default Calendar", selection: $defaultFallbackCalendar) {
-                                Text("iOS Calendar").tag("iOS")
-                                Text("Google Calendar").tag("Google")
-                                Text("Outlook Calendar").tag("Outlook")
-                            }
-                            .pickerStyle(SegmentedPickerStyle())
-                            .onChange(of: defaultFallbackCalendar) { newValue in
-                                UserDefaults.standard.set(newValue, forKey: "defaultFallbackCalendar")
-                            }
-
-                            Text("Used when event context is unclear")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .padding(.leading, 24)
-                        }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(Color.green.opacity(0.05))
+                        .cornerRadius(10)
                     }
-                    .padding(.vertical, 8)
                 }
 
                 Section("Display Settings") {
-                    HStack {
-                        Image(systemName: "textformat.size")
-                            .foregroundColor(.blue)
-                        Text("Font Size")
-                            .dynamicFont(size: 16, fontManager: fontManager)
-                        Spacer()
-                        Picker("Font Size", selection: $fontManager.currentFontSize) {
-                            Text("Small").tag(FontSize.small)
-                            Text("Medium").tag(FontSize.medium)
-                            Text("Large").tag(FontSize.large)
-                            Text("Extra Large").tag(FontSize.extraLarge)
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
-                        .frame(width: 200)
-                    }
-
-                    HStack {
-                        Image(systemName: appearanceManager.currentMode.icon)
-                            .foregroundColor(.blue)
-                        Text("Appearance")
-                            .dynamicFont(size: 16, fontManager: fontManager)
-                        Spacer()
-                        Picker("Appearance", selection: $appearanceManager.currentMode) {
-                            ForEach(AppearanceMode.allCases) { mode in
-                                Text(mode.displayName).tag(mode)
+                    NavigationLink(destination: DisplaySettingsView(fontManager: fontManager, appearanceManager: appearanceManager, selectedLanguage: $selectedLanguage)) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "paintbrush.fill")
+                                    .foregroundColor(.blue)
+                                Text("Display Settings")
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
                             }
+
+                            // Status indicators row (content display area)
+                            VStack(alignment: .leading, spacing: 6) {
+                                // Font size status
+                                HStack(spacing: 8) {
+                                    Image(systemName: "textformat.size")
+                                        .foregroundColor(.blue)
+                                        .font(.caption2)
+                                    Text("Font:")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Text(fontManager.currentFontSize.rawValue)
+                                        .font(.caption2)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                }
+
+                                // Appearance status
+                                HStack(spacing: 8) {
+                                    Image(systemName: appearanceManager.currentMode.icon)
+                                        .foregroundColor(.purple)
+                                        .font(.caption2)
+                                    Text("Theme:")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Text(appearanceManager.currentMode.displayName)
+                                        .font(.caption2)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                }
+
+                                // Language status
+                                HStack(spacing: 8) {
+                                    Image(systemName: "globe")
+                                        .foregroundColor(.green)
+                                        .font(.caption2)
+                                    Text("Language:")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Text(getLanguageDisplayName(selectedLanguage))
+                                        .font(.caption2)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                }
+                            }
+                            .padding(.leading, 24)
+                            .padding(.vertical, 6)
+                            .background(Color(UIColor.systemGray6))
+                            .cornerRadius(6)
                         }
-                        .pickerStyle(SegmentedPickerStyle())
-                        .frame(width: 180)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(Color.purple.opacity(0.05))
+                        .cornerRadius(10)
                     }
                 }
 
                 Section("AI Integration") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        // AI Provider Selection
-                        HStack {
-                            Image(systemName: "brain.head.profile")
-                                .foregroundColor(.blue)
-                            Text("AI Provider")
-                                .dynamicFont(size: 16, fontManager: fontManager)
-                            Spacer()
-                            Picker("AI Provider", selection: $selectedAIProvider) {
-                                ForEach(AIProvider.allCases, id: \.self) { provider in
-                                    Text(provider.displayName).tag(provider)
-                                }
-                            }
-                            .pickerStyle(SegmentedPickerStyle())
-                            .frame(width: 150)
-                            .onChange(of: selectedAIProvider) { newValue in
-                                Config.aiProvider = newValue
-                            }
-                        }
-
-                        Divider()
-                            .padding(.vertical, 8)
-
-                        // AI Processing Mode Selection
+                    NavigationLink(destination: AIIntegrationSettingsView(
+                        fontManager: fontManager,
+                        selectedAIProvider: $selectedAIProvider,
+                        selectedProcessingMode: $selectedProcessingMode,
+                        anthropicAPIKey: $anthropicAPIKey,
+                        openaiAPIKey: $openaiAPIKey,
+                        isAnthropicKeyVisible: $isAnthropicKeyVisible,
+                        isOpenAIKeyVisible: $isOpenAIKeyVisible,
+                        showingAPIKeyAlert: $showingAPIKeyAlert
+                    )) {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Image(systemName: "cpu")
-                                    .foregroundColor(.purple)
-                                Text("Processing Mode")
+                                Image(systemName: "brain.head.profile")
+                                    .foregroundColor(.blue)
+                                Text("AI Integration")
                                     .dynamicFont(size: 16, fontManager: fontManager)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
                             }
 
-                            Picker("Processing Mode", selection: $selectedProcessingMode) {
-                                ForEach(AIProcessingMode.allCases, id: \.self) { mode in
-                                    Text(mode.displayName).tag(mode)
-                                }
-                            }
-                            .pickerStyle(MenuPickerStyle())
-                            .onChange(of: selectedProcessingMode) { newValue in
-                                Config.aiProcessingMode = newValue
-                            }
-
-                            Text(selectedProcessingMode.description)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        // Anthropic API Key Section
-                        if selectedAIProvider == .anthropic {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
+                            // Status indicators row (content display area)
+                            VStack(alignment: .leading, spacing: 6) {
+                                // AI Provider status
+                                HStack(spacing: 8) {
                                     Image(systemName: "brain.head.profile")
                                         .foregroundColor(.blue)
-                                    Text("Anthropic API Key")
-                                        .dynamicFont(size: 16, fontManager: fontManager)
+                                        .font(.caption2)
+                                    Text("Provider:")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Text(selectedAIProvider.displayName)
+                                        .font(.caption2)
+                                        .foregroundColor(.primary)
                                     Spacer()
+                                }
+
+                                // Processing mode status
+                                HStack(spacing: 8) {
+                                    Image(systemName: "cpu")
+                                        .foregroundColor(.purple)
+                                        .font(.caption2)
+                                    Text("Mode:")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Text(selectedProcessingMode.displayName)
+                                        .font(.caption2)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                }
+
+                                // API Key status
+                                HStack(spacing: 8) {
                                     Image(systemName: Config.hasValidAPIKey ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                                         .foregroundColor(Config.hasValidAPIKey ? .green : .orange)
-                                }
-
-                                HStack {
-                                    if isAnthropicKeyVisible {
-                                        TextField("Enter your Anthropic API key", text: $anthropicAPIKey)
-                                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                                            .autocapitalization(.none)
-                                            .disableAutocorrection(true)
-                                            .onChange(of: anthropicAPIKey) { newValue in
-                                                Config.anthropicAPIKey = newValue
-                                            }
-                                    } else {
-                                        SecureField("Enter your Anthropic API key", text: $anthropicAPIKey)
-                                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                                            .autocapitalization(.none)
-                                            .disableAutocorrection(true)
-                                            .onChange(of: anthropicAPIKey) { newValue in
-                                                Config.anthropicAPIKey = newValue
-                                            }
-                                    }
-
-                                    Button(action: {
-                                        isAnthropicKeyVisible.toggle()
-                                    }) {
-                                        Image(systemName: isAnthropicKeyVisible ? "eye.slash" : "eye")
-                                            .foregroundColor(.blue)
-                                    }
-                                }
-
-                                if !Config.hasValidAPIKey && !anthropicAPIKey.isEmpty && selectedAIProvider == .anthropic {
-                                    Text("Invalid API key format. Should start with 'sk-ant-'")
-                                        .font(.caption)
-                                        .foregroundColor(.red)
-                                }
-                            }
-                        }
-
-                        // OpenAI API Key Section
-                        if selectedAIProvider == .openai {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Image(systemName: "brain.head.profile")
-                                        .foregroundColor(.blue)
-                                    Text("OpenAI API Key")
-                                        .dynamicFont(size: 16, fontManager: fontManager)
-                                    Spacer()
-                                    Image(systemName: Config.hasValidAPIKey ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                        .font(.caption2)
+                                    Text("API Key:")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Text(Config.hasValidAPIKey ? "Configured" : "Required")
+                                        .font(.caption2)
                                         .foregroundColor(Config.hasValidAPIKey ? .green : .orange)
-                                }
-
-                                HStack {
-                                    if isOpenAIKeyVisible {
-                                        TextField("Enter your OpenAI API key", text: $openaiAPIKey)
-                                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                                            .autocapitalization(.none)
-                                            .disableAutocorrection(true)
-                                            .onChange(of: openaiAPIKey) { newValue in
-                                                Config.openaiAPIKey = newValue
-                                            }
-                                    } else {
-                                        SecureField("Enter your OpenAI API key", text: $openaiAPIKey)
-                                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                                            .autocapitalization(.none)
-                                            .disableAutocorrection(true)
-                                            .onChange(of: openaiAPIKey) { newValue in
-                                                Config.openaiAPIKey = newValue
-                                            }
-                                    }
-
-                                    Button(action: {
-                                        isOpenAIKeyVisible.toggle()
-                                    }) {
-                                        Image(systemName: isOpenAIKeyVisible ? "eye.slash" : "eye")
-                                            .foregroundColor(.blue)
-                                    }
-                                }
-
-                                if !Config.hasValidAPIKey && !openaiAPIKey.isEmpty && selectedAIProvider == .openai {
-                                    Text("Invalid API key format. Should start with 'sk-'")
-                                        .font(.caption)
-                                        .foregroundColor(.red)
+                                    Spacer()
                                 }
                             }
+                            .padding(.leading, 24)
+                            .padding(.vertical, 6)
+                            .background(Color(UIColor.systemGray6))
+                            .cornerRadius(6)
                         }
-
-                        // Status and Help
-                        if Config.hasValidAPIKey {
-                            Text("✓ API key configured - AI features enabled")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                        } else {
-                            Text("Add your \(selectedAIProvider.displayName) API key to enable AI-powered calendar features")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        Button(action: {
-                            showingAPIKeyAlert = true
-                        }) {
-                            HStack {
-                                Image(systemName: "questionmark.circle")
-                                    .foregroundColor(.blue)
-                                Text("How to get \(selectedAIProvider.displayName) API key")
-                                    .foregroundColor(.blue)
-                                    .dynamicFont(size: 14, fontManager: fontManager)
-                            }
-                        }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(Color.orange.opacity(0.05))
+                        .cornerRadius(10)
                     }
-                    .padding(.vertical, 4)
                 }
 
                 Section("Voice Settings") {
-                    HStack {
-                        Image(systemName: "globe")
-                            .foregroundColor(.blue)
-                        Text("Language")
-                        Spacer()
-                        Picker("Language", selection: $selectedLanguage) {
-                            Text("English (US)").tag("en-US")
-                            Text("English (UK)").tag("en-GB")
-                            Text("Spanish").tag("es-ES")
-                            Text("French").tag("fr-FR")
-                            Text("German").tag("de-DE")
+                    NavigationLink(destination: AISettingsView()) {
+                        HStack {
+                            Image(systemName: "waveform.circle")
+                                .foregroundColor(.purple)
+                            Text("Voice & Output Settings")
+                                .dynamicFont(size: 16, fontManager: fontManager)
                         }
-                        .pickerStyle(MenuPickerStyle())
                     }
 
                     Toggle(isOn: $voiceActivationEnabled) {
@@ -584,86 +672,160 @@ struct SettingsTabView: View {
                 }
 
                 Section("Sync & Notifications") {
-                    Toggle(isOn: $notificationsEnabled) {
-                        HStack {
-                            Image(systemName: "bell")
-                                .foregroundColor(.blue)
-                            Text("Event Notifications")
-                        }
-                    }
+                    NavigationLink(destination: SyncNotificationSettingsView(
+                        calendarManager: calendarManager,
+                        fontManager: fontManager,
+                        notificationsEnabled: $notificationsEnabled,
+                        autoSyncEnabled: $autoSyncEnabled
+                    )) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .foregroundColor(.blue)
+                                Text("Sync & Notifications")
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
 
-                    Toggle(isOn: $autoSyncEnabled) {
-                        HStack {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .foregroundColor(.blue)
-                            Text("Auto Sync Calendar")
-                        }
-                    }
+                            // Status indicators row (content display area)
+                            HStack(spacing: 16) {
+                                // Auto sync status
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.triangle.2.circlepath")
+                                        .foregroundColor(autoSyncEnabled ? .green : .orange)
+                                        .font(.caption)
+                                    Text("Auto Sync")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
 
-                    Button(action: {
-                        calendarManager.loadEvents()
-                    }) {
-                        HStack {
-                            Image(systemName: "arrow.clockwise")
-                                .foregroundColor(.blue)
-                            Text("Sync Now")
-                                .foregroundColor(.blue)
+                                // Notifications status
+                                HStack(spacing: 4) {
+                                    Image(systemName: "bell.fill")
+                                        .foregroundColor(notificationsEnabled ? .green : .orange)
+                                        .font(.caption)
+                                    Text("Notifications")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Spacer()
+                            }
+                            .padding(.leading, 24)
+                            .padding(.vertical, 4)
+                            .background(Color(UIColor.systemGray6))
+                            .cornerRadius(6)
                         }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(Color.cyan.opacity(0.05))
+                        .cornerRadius(10)
                     }
                 }
 
-                Section("About") {
-                    HStack {
-                        Image(systemName: "info.circle")
-                            .foregroundColor(.blue)
-                        Text("Version")
-                        Spacer()
-                        Text("1.0.0")
-                            .foregroundColor(.secondary)
-                    }
+                Section("About App") {
+                    NavigationLink(destination: AboutAppView(fontManager: fontManager)) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "info.circle")
+                                    .foregroundColor(.blue)
+                                Text("About CalAI")
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
 
-                    HStack {
-                        Image(systemName: "person.circle")
-                            .foregroundColor(.blue)
-                        Text("Developer")
-                        Spacer()
-                        Text("CalAI Team")
-                            .foregroundColor(.secondary)
-                    }
+                            // Status indicators row (content display area)
+                            HStack(spacing: 16) {
+                                // Version info
+                                HStack(spacing: 4) {
+                                    Image(systemName: "gear")
+                                        .foregroundColor(.gray)
+                                        .font(.caption)
+                                    Text("v1.0.0")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
 
-                    Button(action: {
-                        // Open privacy policy
-                    }) {
-                        HStack {
-                            Image(systemName: "hand.raised")
-                                .foregroundColor(.blue)
-                            Text("Privacy Policy")
-                                .foregroundColor(.blue)
+                                // Developer info
+                                HStack(spacing: 4) {
+                                    Image(systemName: "person.circle")
+                                        .foregroundColor(.blue)
+                                        .font(.caption)
+                                    Text("CalAI Team")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Spacer()
+                            }
+                            .padding(.leading, 24)
+                            .padding(.vertical, 4)
+                            .background(Color(UIColor.systemGray6))
+                            .cornerRadius(6)
                         }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(Color.indigo.opacity(0.05))
+                        .cornerRadius(10)
                     }
                 }
 
-                Section("Data") {
-                    Button(action: {
-                        // Clear cache
-                    }) {
-                        HStack {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                            Text("Clear Cache")
-                                .foregroundColor(.red)
-                        }
-                    }
+                Section("Data Management") {
+                    NavigationLink(destination: DataManagementView(
+                        calendarManager: calendarManager,
+                        fontManager: fontManager
+                    )) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "internaldrive")
+                                    .foregroundColor(.blue)
+                                Text("Data Management")
+                                    .dynamicFont(size: 16, fontManager: fontManager)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
 
-                    Button(action: {
-                        // Reset all settings
-                    }) {
-                        HStack {
-                            Image(systemName: "arrow.counterclockwise")
-                                .foregroundColor(.red)
-                            Text("Reset Settings")
-                                .foregroundColor(.red)
+                            // Status indicators row (content display area)
+                            HStack(spacing: 16) {
+                                // Sync status
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.clockwise")
+                                        .foregroundColor(.green)
+                                        .font(.caption)
+                                    Text("Sync")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                // Cache status
+                                HStack(spacing: 4) {
+                                    Image(systemName: "trash")
+                                        .foregroundColor(.orange)
+                                        .font(.caption)
+                                    Text("Cache: 3.3 MB")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Spacer()
+                            }
+                            .padding(.leading, 24)
+                            .padding(.vertical, 4)
+                            .background(Color(UIColor.systemGray6))
+                            .cornerRadius(6)
                         }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(Color.red.opacity(0.05))
+                        .cornerRadius(10)
                     }
                 }
             }
@@ -718,6 +880,9 @@ struct SettingsTabView: View {
         // Refresh calendar access status (this checks current status without prompting)
         calendarManager.requestCalendarAccess()
 
+        // Initialize connection timestamps for already connected services
+        initializeConnectionTimestamps()
+
         // Google and Outlook managers' isSignedIn properties are already @Published
         // and will automatically update the UI when they change
 
@@ -729,6 +894,52 @@ struct SettingsTabView: View {
 
         // Check notification permission
         checkNotificationPermission()
+    }
+
+    private func initializeConnectionTimestamps() {
+        let now = Date()
+
+        // iOS Calendar - if already connected but no timestamps, set both to now
+        if calendarManager.hasCalendarAccess {
+            if iOSCalendarConnectedAt == nil {
+                iOSCalendarConnectedAt = now
+                UserDefaults.standard.set(now, forKey: "iOSCalendarConnectedAt")
+            }
+            // If connected but no request timestamp, set it to the connected time
+            if iOSCalendarLastRequested == nil {
+                let requestTime = iOSCalendarConnectedAt ?? now
+                iOSCalendarLastRequested = requestTime
+                UserDefaults.standard.set(requestTime, forKey: "iOSCalendarLastRequested")
+            }
+        }
+
+        // Google Calendar - if already signed in but no timestamps, set both to now
+        if googleCalendarManager.isSignedIn {
+            if googleCalendarConnectedAt == nil {
+                googleCalendarConnectedAt = now
+                UserDefaults.standard.set(now, forKey: "googleCalendarConnectedAt")
+            }
+            // If connected but no request timestamp, set it to the connected time
+            if googleCalendarLastRequested == nil {
+                let requestTime = googleCalendarConnectedAt ?? now
+                googleCalendarLastRequested = requestTime
+                UserDefaults.standard.set(requestTime, forKey: "googleCalendarLastRequested")
+            }
+        }
+
+        // Outlook Calendar - if already connected but no timestamps, set both to now
+        if outlookCalendarStatus == .granted {
+            if outlookCalendarConnectedAt == nil {
+                outlookCalendarConnectedAt = now
+                UserDefaults.standard.set(now, forKey: "outlookCalendarConnectedAt")
+            }
+            // If connected but no request timestamp, set it to the connected time
+            if outlookCalendarLastRequested == nil {
+                let requestTime = outlookCalendarConnectedAt ?? now
+                outlookCalendarLastRequested = requestTime
+                UserDefaults.standard.set(requestTime, forKey: "outlookCalendarLastRequested")
+            }
+        }
     }
 
     private func checkLocationPermission() {
@@ -1105,6 +1316,92 @@ struct PermissionRow: View {
     }
 }
 
+struct CalendarPermissionRow: View {
+    let title: String
+    let systemImage: String
+    let status: PermissionStatus
+    let lastRequested: Date?
+    let connectedAt: Date?
+    let action: () -> Void
+    let showSettingsButton: Bool
+
+    private func formatDate(_ date: Date?) -> String {
+        guard let date = date else { return "Never" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.string(from: date)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: systemImage)
+                    .foregroundColor(.blue)
+                Text(title)
+                Spacer()
+
+                Button(action: action) {
+                    HStack {
+                        Image(systemName: status.iconName)
+                            .foregroundColor(status.color)
+                        Text(status.text)
+                            .foregroundColor(status.color)
+                            .font(.caption)
+                    }
+                }
+                .disabled(status == .granted)
+            }
+
+            // Sub-status rows
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Last requested:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(formatDate(lastRequested))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.leading, 24)
+
+                HStack {
+                    Text("Connected at:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(formatDate(connectedAt))
+                        .font(.caption)
+                        .foregroundColor(connectedAt != nil ? .green : .secondary)
+                }
+                .padding(.leading, 24)
+
+                // Show Settings button only when permission is denied, last requested is not nil, AND showSettingsButton is true
+                if status == .notGranted && lastRequested != nil && showSettingsButton {
+                    HStack {
+                        Text("Need access?")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button("Open Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(6)
+                    }
+                    .padding(.leading, 24)
+                }
+            }
+        }
+    }
+}
+
 enum FontSize: String, CaseIterable {
     case small = "Small"
     case medium = "Medium"
@@ -1146,7 +1443,7 @@ enum PermissionStatus {
         case .granted:
             return .green
         case .notGranted:
-            return .red
+            return .yellow
         case .unknown:
             return .orange
         }
@@ -1157,7 +1454,7 @@ enum PermissionStatus {
         case .granted:
             return "Connected"
         case .notGranted:
-            return "Connect"
+            return "Click here to connect"
         case .unknown:
             return "Setup"
         }

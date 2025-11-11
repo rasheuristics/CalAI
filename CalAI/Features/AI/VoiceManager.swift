@@ -38,10 +38,20 @@ class VoiceManager: NSObject, ObservableObject {
     private func checkExistingPermissions() {
         // Check if permissions were already granted without requesting
         let speechStatus = SFSpeechRecognizer.authorizationStatus()
-        let micStatus = AVAudioSession.sharedInstance().recordPermission
 
-        DispatchQueue.main.async {
-            self.hasRecordingPermission = (speechStatus == .authorized && micStatus == .granted)
+        // Use modern iOS 17+ APIs when available, fallback to deprecated APIs for older versions
+        if #available(iOS 17.0, *) {
+            // Use the new AVAudioApplication API
+            let micStatus = AVAudioApplication.shared.recordPermission
+            DispatchQueue.main.async {
+                self.hasRecordingPermission = (speechStatus == .authorized && micStatus == .granted)
+            }
+        } else {
+            // Fallback to deprecated API for iOS < 17
+            let micStatus = AVAudioSession.sharedInstance().recordPermission
+            DispatchQueue.main.async {
+                self.hasRecordingPermission = (speechStatus == .authorized && micStatus == .granted)
+            }
         }
     }
 
@@ -72,14 +82,32 @@ class VoiceManager: NSObject, ObservableObject {
 
     private func requestRecordingPermission() {
         print("🎤 Requesting microphone permissions...")
-        AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
-            DispatchQueue.main.async {
-                if granted {
-                    print("✅ Microphone permission granted")
-                    self?.hasRecordingPermission = true
-                } else {
-                    print("❌ Microphone permission denied")
-                    self?.hasRecordingPermission = false
+
+        // Use modern iOS 17+ APIs when available, fallback to deprecated APIs for older versions
+        if #available(iOS 17.0, *) {
+            // Use the new AVAudioApplication API
+            AVAudioApplication.requestRecordPermission { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        print("✅ Microphone permission granted (iOS 17+)")
+                        self?.hasRecordingPermission = true
+                    } else {
+                        print("❌ Microphone permission denied (iOS 17+)")
+                        self?.hasRecordingPermission = false
+                    }
+                }
+            }
+        } else {
+            // Fallback to deprecated API for iOS < 17
+            AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        print("✅ Microphone permission granted (iOS < 17)")
+                        self?.hasRecordingPermission = true
+                    } else {
+                        print("❌ Microphone permission denied (iOS < 17)")
+                        self?.hasRecordingPermission = false
+                    }
                 }
             }
         }

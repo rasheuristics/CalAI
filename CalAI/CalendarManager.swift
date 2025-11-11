@@ -788,10 +788,14 @@ class CalendarManager: ObservableObject {
                 hasCalendarAccess = true
                 loadEvents()
                 return
-            case .denied, .restricted:
-                print("❌ Calendar access denied or restricted")
+            case .denied:
+                print("❌ Calendar access denied - attempting request anyway")
                 hasCalendarAccess = false
-                return
+                // Don't return here - try to request permission first
+            case .restricted:
+                print("⚠️ Calendar access restricted - attempting request anyway")
+                hasCalendarAccess = false
+                // Don't return here - continue to request access
             case .notDetermined:
                 print("📅 Authorization not determined, requesting access...")
             case .writeOnly:
@@ -810,7 +814,8 @@ class CalendarManager: ObservableObject {
                     if granted {
                         self?.loadEvents()
                     } else {
-                        print("❌ Calendar access denied")
+                        print("❌ Calendar access denied after request")
+                        // Don't automatically redirect to Settings - let user choose
                     }
                 }
             }
@@ -824,10 +829,14 @@ class CalendarManager: ObservableObject {
                 hasCalendarAccess = true
                 loadEvents()
                 return
-            case .denied, .restricted:
-                print("❌ Calendar access denied or restricted")
+            case .denied:
+                print("❌ Calendar access denied - attempting request anyway")
                 hasCalendarAccess = false
-                return
+                // Don't return here - try to request permission first
+            case .restricted:
+                print("⚠️ Calendar access restricted - attempting request anyway")
+                hasCalendarAccess = false
+                // Don't return here - continue to request access
             case .notDetermined:
                 print("📅 Authorization not determined, requesting access...")
             default:
@@ -844,7 +853,8 @@ class CalendarManager: ObservableObject {
                     if granted {
                         self?.loadEvents()
                     } else {
-                        print("❌ Calendar access denied")
+                        print("❌ Calendar access denied after request")
+                        // Don't automatically redirect to Settings - let user choose
                     }
                 }
             }
