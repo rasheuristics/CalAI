@@ -3,32 +3,32 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo.apps.googleusercontent.com</string>
+	<string>11336654779-aoaksvj4o8cle0vhca7cmq8ej6vdeujh.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo</string>
+	<string>com.googleusercontent.apps.11336654779-aoaksvj4o8cle0vhca7cmq8ej6vdeujh</string>
 	<key>API_KEY</key>
-	<string>AIzaSyBJfEXBJF8nKIgKHJwUQ5I9b5vZxCRWQvQ</string>
+	<string>AIzaSyADap_jNv89wjBLHRbzcx7Q7DvnChibja0</string>
 	<key>GCM_SENDER_ID</key>
-	<string>43431862733</string>
+	<string>11336654779</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.calai.CalAI</string>
+	<string>ai.heucalendar.app</string>
 	<key>PROJECT_ID</key>
-	<string>calai-calendar</string>
+	<string>heu-calendar-ai</string>
 	<key>STORAGE_BUCKET</key>
-	<string>calai-calendar.appspot.com</string>
+	<string>heu-calendar-ai.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
-	<false/>
+	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
-	<false/>
+	<false></false>
 	<key>IS_APPINVITE_ENABLED</key>
-	<true/>
+	<true></true>
 	<key>IS_GCM_ENABLED</key>
-	<true/>
+	<true></true>
 	<key>IS_SIGNIN_ENABLED</key>
-	<true/>
+	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:43431862733:ios:a8b7c6d5e4f3a2b1c9d8e7f6</string>
+	<string>1:11336654779:ios:3e6979484aadbc35e82e9e</string>
 </dict>
 </plist>

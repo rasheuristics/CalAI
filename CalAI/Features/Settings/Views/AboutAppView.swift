@@ -18,7 +18,7 @@ struct AboutAppView: View {
                         )
 
                     VStack(spacing: 6) {
-                        Text("CalAI")
+                        Text("Heu Calendar AI")
                             .dynamicFont(size: 24, weight: .bold, fontManager: fontManager)
                             .foregroundColor(.primary)
 
@@ -84,7 +84,7 @@ struct AboutAppView: View {
                     Text("Developer")
                         .dynamicFont(size: 16, fontManager: fontManager)
                     Spacer()
-                    Text("CalAI Team")
+                    Text("Heu Calendar AI Team")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

@@ -21,7 +21,7 @@ class CacheManager {
 
         // Setup disk cache
         let cacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        diskCacheURL = cacheDir.appendingPathComponent("CalAICache")
+        diskCacheURL = cacheDir.appendingPathComponent("HeuCalendarAICache")
 
         createDiskCacheIfNeeded()
         cleanExpiredCache()

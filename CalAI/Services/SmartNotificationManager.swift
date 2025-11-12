@@ -724,6 +724,8 @@ class SmartNotificationManager: NSObject, ObservableObject {
             content.title = "🟢 Task Reminder"
         case .none:
             content.title = "Task Due: \(task.title)"
+        case .urgent:
+            content.title = "🚨 Urgent Task Due"
         }
 
         if task.priority != .none {

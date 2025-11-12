@@ -20,10 +20,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>CalAI</string>
+			<string>Heu Calendar AI</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>calai</string>
+				<string>ai.heucalendar.app</string>
 			</array>
 		</dict>
 		<dict>
@@ -31,7 +31,7 @@
 			<string>GoogleSignIn</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo</string>
+				<string>com.googleusercontent.apps.11336654779-aoaksvj4o8cle0vhca7cmq8ej6vdeujh</string>
 			</array>
 		</dict>
 		<dict>
@@ -39,14 +39,14 @@
 			<string>MSALRedirect</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>msauth.com.rasheuristics.calendarweaver</string>
+				<string>msauth.ai.heucalendar.app</string>
 			</array>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>GIDClientID</key>
-	<string>43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo.apps.googleusercontent.com</string>
+	<string>11336654779-aoaksvj4o8cle0vhca7cmq8ej6vdeujh.apps.googleusercontent.com</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>msauthv2</string>
@@ -57,15 +57,15 @@
 	<key>MSALClientID</key>
 	<string>1caae4b2-4f30-49d9-b486-5229dc148c3f</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>CalAI needs access to your calendar to help you manage your schedule with voice commands.</string>
+	<string>Heu Calendar AI needs access to your calendar to help you manage your schedule with voice commands.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>CalAI needs your location to monitor travel time and notify you when to leave for meetings, even when the app is in the background.</string>
+	<string>Heu Calendar AI needs your location to monitor travel time and notify you when to leave for meetings, even when the app is in the background.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>CalAI needs your location to calculate travel time to meeting locations and send timely departure notifications.</string>
+	<string>Heu Calendar AI needs your location to calculate travel time to meeting locations and send timely departure notifications.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>CalAI needs microphone access to process your voice commands for calendar management.</string>
+	<string>Heu Calendar AI needs microphone access to process your voice commands for calendar management.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>CalAI uses speech recognition to understand your calendar management requests.</string>
+	<string>Heu Calendar AI uses speech recognition to understand your calendar management requests.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

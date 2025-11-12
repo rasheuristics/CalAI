@@ -172,13 +172,13 @@ extension Tutorial {
     /// Main app tutorial for first-time users
     static let mainTutorial = Tutorial(
         id: "main",
-        title: "Getting Started with CalAI",
-        description: "Learn the basics of using CalAI",
+        title: "Getting Started with Heu Calendar AI",
+        description: "Learn the basics of using Heu Calendar AI",
         steps: [
             TutorialStep(
                 id: "welcome",
                 icon: "hand.wave.fill",
-                title: "Welcome to CalAI",
+                title: "Welcome to Heu Calendar AI",
                 message: "Let's take a quick tour of the main features. You can skip this anytime.",
                 targetViewId: "mainTabView"
             ),

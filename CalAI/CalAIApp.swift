@@ -6,7 +6,7 @@ import CoreLocation
 import UIKit
 
 @main
-struct CalAIApp: App {
+struct HeuCalendarAIApp: App {
     init() {
         // Initialize crash reporting first
         setupCrashReporting()
@@ -52,7 +52,7 @@ struct CalAIApp: App {
                     print("🔵 URL scheme: \(url.scheme ?? "none")")
 
                     // Handle Google Sign-In callback
-                    if url.scheme == "com.googleusercontent.apps.43431862733-2ath0e407kaj4m8n8faj5nt6orhf6vlo" {
+                    if url.scheme == "com.googleusercontent.apps.11336654779-aoaksvj4o8cle0vhca7cmq8ej6vdeujh" {
                         print("🔵 Handling Google Sign-In callback")
                         GIDSignIn.sharedInstance.handle(url)
                     }

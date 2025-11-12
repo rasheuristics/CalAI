@@ -1,9 +1,7 @@
 import Foundation
 import GoogleSignIn
-// GoogleAPIClientForRESTCore and GoogleAPIClientForREST_Calendar temporarily commented out
-// until packages are added to project
-// import GoogleAPIClientForRESTCore
-// import GoogleAPIClientForREST_Calendar
+import GoogleAPIClientForRESTCore
+import GoogleAPIClientForREST_Calendar
 
 struct GoogleEvent: Identifiable, Codable {
     let id: String
@@ -297,39 +295,47 @@ class GoogleCalendarManager: ObservableObject {
     // }
 
     func fetchCalendars() {
-        guard GIDSignIn.sharedInstance.currentUser != nil else {
+        guard let user = GIDSignIn.sharedInstance.currentUser else {
             print("❌ No Google user signed in for calendar fetching")
             return
         }
 
         print("🔵 Fetching Google Calendars...")
 
-        // Simulate fetching Google calendars
-        // In real implementation: GET https://www.googleapis.com/calendar/v3/users/me/calendarList
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            let calendars = [
-                GoogleCalendarItem(
-                    id: "primary",
-                    name: "Primary",
-                    backgroundColor: "#4285F4",
-                    isPrimary: true
-                ),
-                GoogleCalendarItem(
-                    id: "work_calendar",
-                    name: "Work",
-                    backgroundColor: "#FF9800",
-                    isPrimary: false
-                ),
-                GoogleCalendarItem(
-                    id: "personal_calendar",
-                    name: "Personal",
-                    backgroundColor: "#4CAF50",
-                    isPrimary: false
-                )
-            ]
+        // Real Google Calendar API implementation
+        let service = GTLRCalendarService()
+        service.authorizer = user.fetcherAuthorizer
 
-            self.availableCalendars = calendars
-            print("✅ Loaded \(calendars.count) Google calendars")
+        let query = GTLRCalendarQuery_CalendarListList.query()
+
+        service.executeQuery(query) { [weak self] (ticket, result, error) in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ Failed to fetch Google calendars: \(error.localizedDescription)")
+                    return
+                }
+
+                guard let calendarList = result as? GTLRCalendar_CalendarList,
+                      let items = calendarList.items else {
+                    print("❌ No calendars found in response")
+                    return
+                }
+
+                let calendars = items.compactMap { calendar -> GoogleCalendarItem? in
+                    guard let id = calendar.identifier,
+                          let summary = calendar.summary else { return nil }
+
+                    return GoogleCalendarItem(
+                        id: id,
+                        name: summary,
+                        backgroundColor: calendar.backgroundColor ?? "#4285F4",
+                        isPrimary: calendar.primary?.boolValue ?? false
+                    )
+                }
+
+                self?.availableCalendars = calendars
+                print("✅ Fetched \(calendars.count) Google calendars")
+            }
         }
     }
 

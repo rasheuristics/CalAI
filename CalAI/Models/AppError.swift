@@ -41,7 +41,7 @@ enum AppError: Identifiable, Equatable {
     var message: String {
         switch self {
         case .calendarAccessDenied:
-            return "Grant calendar permissions in Settings → CalAI → Calendars to view your events."
+            return "Grant calendar permissions in Settings → Heu Calendar AI → Calendars to view your events."
         case .failedToLoadEvents(let error):
             let description = error.localizedDescription
             return "Unable to load calendar events. Try refreshing or check your calendar permissions.\n\nDetails: \(description)"

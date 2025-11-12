@@ -19,7 +19,7 @@ class CrossDeviceSyncManager: ObservableObject {
     private let monitor = NWPathMonitor()
 
     private init() {
-        container = CKContainer(identifier: "iCloud.com.calai.CalAI")
+        container = CKContainer(identifier: "iCloud.ai.heucalendar.app")
         database = container.privateCloudDatabase
 
         setupNetworkMonitoring()

@@ -234,7 +234,7 @@ class SyncManager: ObservableObject {
     private func setupBackgroundSync() {
         if #available(iOS 13.0, *) {
             BGTaskScheduler.shared.register(
-                forTaskWithIdentifier: "com.calai.CalAI.sync",
+                forTaskWithIdentifier: "ai.heucalendar.app.sync",
                 using: nil
             ) { task in
                 self.handleBackgroundSync(task: task as! BGAppRefreshTask)
@@ -261,7 +261,7 @@ class SyncManager: ObservableObject {
     func scheduleBackgroundSync() {
         guard #available(iOS 13.0, *) else { return }
 
-        let request = BGAppRefreshTaskRequest(identifier: "com.calai.CalAI.sync")
+        let request = BGAppRefreshTaskRequest(identifier: "ai.heucalendar.app.sync")
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 minutes
 
         do {

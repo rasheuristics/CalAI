@@ -171,11 +171,14 @@ class FrameRateMonitor: ObservableObject {
                     self.droppedFrames += Int(60.0 - self.currentFPS)
                 }
 
-                // Log if performance is poor
-                if self.currentFPS < 30.0 {
-                    print("🔴 CRITICAL: Low FPS detected: \(String(format: "%.1f", self.currentFPS))")
-                } else if self.currentFPS < 55.0 {
-                    print("🟡 WARNING: Dropped frames detected: \(String(format: "%.1f", self.currentFPS)) FPS")
+                // Log if performance is poor (disabled during build/inactive states)
+                // Only log if FPS is actually measurable (> 1.0) to avoid build-time noise
+                if self.currentFPS > 1.0 {
+                    if self.currentFPS < 30.0 {
+                        print("🔴 CRITICAL: Low FPS detected: \(String(format: "%.1f", self.currentFPS))")
+                    } else if self.currentFPS < 55.0 {
+                        print("🟡 WARNING: Dropped frames detected: \(String(format: "%.1f", self.currentFPS)) FPS")
+                    }
                 }
             }
 

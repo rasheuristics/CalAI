@@ -8,8 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		02E6A551281A4CE8B1556794 /* AppPermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0403161B5F491DB219743C /* AppPermissionsView.swift */; };
-		05AA06D92EC4D061003B45B8 /* GoogleAPIClientForRESTCore in Frameworks */ = {isa = PBXBuildFile; productRef = 05AA06D82EC4D061003B45B8 /* GoogleAPIClientForRESTCore */; };
-		05AA06DB2EC4D061003B45B8 /* GoogleAPIClientForREST_Calendar in Frameworks */ = {isa = PBXBuildFile; productRef = 05AA06DA2EC4D061003B45B8 /* GoogleAPIClientForREST_Calendar */; };
 		0894B97DD06B459486C0819F /* VoiceFeedbackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DA53EBB1DEF4F5CA96CF9E2 /* VoiceFeedbackService.swift */; };
 		0B4318950F3D26CF74B88743 /* Services/SmartNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83CFAD08A20B4CCE575C9CE /* Services/SmartNotificationManager.swift */; };
 		0E61B88DACBD42699153344E /* ClickableTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E8CA8B34B91456AA7D1EC57 /* ClickableTextView.swift */; };
@@ -324,7 +322,7 @@
 		60E6A6B4B5B8486A8B8170C4E535435A /* EventManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventManagementView.swift; sourceTree = "<group>"; };
 		65F12736271A4D84B7976475 /* TaskGenerationPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskGenerationPreviewSheet.swift; sourceTree = "<group>"; };
 		65F1AB00CAB948989A4D5701 /* CalAI/Models/MeetingFollowUp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalAI/Models/MeetingFollowUp.swift; sourceTree = "<group>"; };
-		6658A4CEB41F4B9DB52EDFBB /* HeuCalendarAIDataModel.xcdatamodeld */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = HeuCalendarAIDataModel.xcdatamodeld; sourceTree = "<group>"; };
+		6658A4CEB41F4B9DB52EDFBB /* CalAIDataModel.xcdatamodeld */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = CalAIDataModel.xcdatamodeld; sourceTree = "<group>"; };
 		67B46C131EC34468921A482E /* CachedEvent+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CachedEvent+CoreDataClass.swift"; sourceTree = "<group>"; };
 		6F8F3DFCD60D445B946398BB /* SmartEventParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartEventParserTests.swift; sourceTree = "<group>"; };
 		70F55B4EC8D646578F615C78 /* TaskTemplatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskTemplatesView.swift; sourceTree = "<group>"; };
@@ -402,8 +400,6 @@
 				50745D0E2E80D8D5004D0243 /* GoogleAPIRuntime in Frameworks */,
 				50745D072E80D877004D0243 /* GoogleSignIn in Frameworks */,
 				505F673D2E81C6B900C188F0 /* MSAL in Frameworks */,
-				05AA06D92EC4D061003B45B8 /* GoogleAPIClientForRESTCore in Frameworks */,
-				05AA06DB2EC4D061003B45B8 /* GoogleAPIClientForREST_Calendar in Frameworks */,
 				50745D092E80D877004D0243 /* GoogleSignInSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -826,7 +822,7 @@
 				CD0F1CE4910EF893F2C790B2 /* Services/MeetingAnalyzer.swift */,
 				9DE36C50958BBC6F3E7ED6F2 /* Services/TravelTimeManager.swift */,
 				C83CFAD08A20B4CCE575C9CE /* Services/SmartNotificationManager.swift */,
-				6658A4CEB41F4B9DB52EDFBB /* HeuCalendarAIDataModel.xcdatamodeld */,
+				6658A4CEB41F4B9DB52EDFBB /* CalAIDataModel.xcdatamodeld */,
 				67B46C131EC34468921A482E /* CachedEvent+CoreDataClass.swift */,
 				99F2FB17F466422F96CDA475 /* CachedEvent+CoreDataProperties.swift */,
 				4D51096E4254421FB0650F02 /* CalendarSyncStatus+CoreDataClass.swift */,
@@ -967,8 +963,6 @@
 				50745D0B2E80D8D5004D0243 /* Discovery */,
 				50745D0D2E80D8D5004D0243 /* GoogleAPIRuntime */,
 				505F673C2E81C6B900C188F0 /* MSAL */,
-				05AA06D82EC4D061003B45B8 /* GoogleAPIClientForRESTCore */,
-				05AA06DA2EC4D061003B45B8 /* GoogleAPIClientForREST_Calendar */,
 			);
 			productName = CalAI;
 			productReference = 50745C922E7CA7C9004D0243 /* CalAI.app */;
@@ -1034,7 +1028,6 @@
 				50745D052E80D877004D0243 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 				50745D0A2E80D8D5004D0243 /* XCRemoteSwiftPackageReference "google-api-swift-client" */,
 				505F673B2E81C6B900C188F0 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */,
-				05AA06D72EC4D061003B45B8 /* XCRemoteSwiftPackageReference "google-api-objectivec-client-for-rest" */,
 			);
 			productRefGroup = 50745C932E7CA7C9004D0243 /* Products */;
 			projectDirPath = "";
@@ -1593,14 +1586,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		05AA06D72EC4D061003B45B8 /* XCRemoteSwiftPackageReference "google-api-objectivec-client-for-rest" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/google/google-api-objectivec-client-for-rest.git";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
 		505F673B2E81C6B900C188F0 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/AzureAD/microsoft-authentication-library-for-objc";
@@ -1644,16 +1629,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		05AA06D82EC4D061003B45B8 /* GoogleAPIClientForRESTCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 05AA06D72EC4D061003B45B8 /* XCRemoteSwiftPackageReference "google-api-objectivec-client-for-rest" */;
-			productName = GoogleAPIClientForRESTCore;
-		};
-		05AA06DA2EC4D061003B45B8 /* GoogleAPIClientForREST_Calendar */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 05AA06D72EC4D061003B45B8 /* XCRemoteSwiftPackageReference "google-api-objectivec-client-for-rest" */;
-			productName = GoogleAPIClientForREST_Calendar;
-		};
 		505F673C2E81C6B900C188F0 /* MSAL */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 505F673B2E81C6B900C188F0 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */;

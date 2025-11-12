@@ -7,10 +7,10 @@ class SecureStorage {
     // MARK: - Configuration
 
     /// App's bundle identifier (must match Xcode project)
-    private static let bundleIdentifier = "com.rasheuristics.calendarweaver"
+    private static let bundleIdentifier = "ai.heucalendar.app"
 
     /// Keychain access group for sharing data (must match entitlements)
-    private static let keychainAccessGroup = "com.rasheuristics.calendarweaver"
+    private static let keychainAccessGroup = "ai.heucalendar.app"
 
     // MARK: - Error Types
     enum KeychainError: Error {

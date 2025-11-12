@@ -39,7 +39,7 @@ class CoreDataManager: ObservableObject {
 
     lazy var persistentContainer: NSPersistentContainer = {
         let model = CoreDataManager.createManagedObjectModel()
-        let container = NSPersistentContainer(name: "CalAIDataModel", managedObjectModel: model)
+        let container = NSPersistentContainer(name: "HeuCalendarAIDataModel", managedObjectModel: model)
 
         let description = container.persistentStoreDescriptions.first
         description?.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)

@@ -196,7 +196,7 @@ struct ContentView: View {
     private func handleDeepLink(_ url: URL) {
         print("🔗 Deep link received: \(url)")
 
-        guard url.scheme == "calai" else {
+        guard url.scheme == "ai.heucalendar.ios" else {
             print("⚠️ Invalid URL scheme: \(url.scheme ?? "nil")")
             return
         }

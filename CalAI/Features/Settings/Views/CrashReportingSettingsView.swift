@@ -19,7 +19,7 @@ struct CrashReportingSettingsView: View {
                     }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Help improve CalAI by automatically sending crash reports.")
+                    Text("Help improve Heu Calendar AI by automatically sending crash reports.")
                         .font(.caption)
                         .foregroundColor(.secondary)
 
