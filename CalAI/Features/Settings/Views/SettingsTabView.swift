@@ -901,6 +901,15 @@ struct SettingsTabView: View {
             .sheet(isPresented: $outlookCalendarManager.showCredentialInput) {
                 OutlookCredentialInputView(outlookCalendarManager: outlookCalendarManager)
             }
+            .alert("Outlook Sign-In Error", isPresented: $outlookCalendarManager.showErrorAlert) {
+                Button("OK", role: .cancel) {
+                    outlookCalendarManager.showErrorAlert = false
+                }
+            } message: {
+                if let error = outlookCalendarManager.signInError {
+                    Text(error)
+                }
+            }
             .onAppear {
                 PerformanceMonitor.shared.startMeasuring("Settings Tab Load")
 

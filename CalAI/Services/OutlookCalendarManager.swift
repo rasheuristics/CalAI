@@ -124,6 +124,7 @@ class OutlookCalendarManager: ObservableObject {
     @Published var showAccountManagement = false
     @Published var showCredentialInput = false
     @Published var signInError: String?
+    @Published var showErrorAlert = false
     @Published var outlookEvents: [OutlookEvent] = []
 
     private let selectedCalendarKey = "selectedOutlookCalendarId"
@@ -168,12 +169,15 @@ class OutlookCalendarManager: ObservableObject {
 
     private func setupMSAL() {
         print("🔍 Debug - Setting up MSAL...")
+        print("🔍 Bundle ID: \(Bundle.main.bundleIdentifier ?? "unknown")")
+        print("🔍 App version: \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "unknown")")
 
         guard let clientId = Bundle.main.object(forInfoDictionaryKey: "MSALClientID") as? String else {
             print("❌ MSAL Client ID not found in Info.plist")
+            print("❌ This is required for Outlook authentication")
             return
         }
-        print("🔍 Debug - MSAL Client ID found: \(clientId)")
+        print("✅ MSAL Client ID found: \(clientId)")
 
         // First, try to delete any existing MSAL keychain items manually
         deleteAllMSALKeychainItems()
@@ -328,7 +332,20 @@ class OutlookCalendarManager: ObservableObject {
 
         if msalApplication == nil {
             print("❌ FATAL: MSAL failed to initialize - cannot proceed with sign-in")
-            signInError = "MSAL initialization failed. Check console for keychain errors."
+
+            // Show user-friendly error with actionable steps
+            DispatchQueue.main.async {
+                self.signInError = """
+                Outlook sign-in is currently unavailable.
+
+                Possible causes:
+                • Keychain access is not configured
+                • App needs to be reinstalled with proper certificates
+
+                Technical details: MSAL initialization failed (check Xcode console for error -34018)
+                """
+                self.showErrorAlert = true
+            }
             return
         }
 
