@@ -179,8 +179,28 @@ class OutlookCalendarManager: ObservableObject {
         }
         print("✅ MSAL Client ID found: \(clientId)")
 
+        // Enable verbose MSAL logging
+        MSALGlobalConfig.loggerConfig.logLevel = .verbose
+        MSALGlobalConfig.loggerConfig.setLogCallback { (level, message, containsPII) in
+            if !containsPII {
+                let levelStr: String
+                switch level {
+                case .nothing: levelStr = "NONE"
+                case .error: levelStr = "ERROR"
+                case .warning: levelStr = "WARN"
+                case .info: levelStr = "INFO"
+                case .verbose: levelStr = "VERBOSE"
+                @unknown default: levelStr = "UNKNOWN"
+                }
+                print("[MSAL-\(levelStr)] \(message ?? "nil")")
+            }
+        }
+
         // First, try to delete any existing MSAL keychain items manually
         deleteAllMSALKeychainItems()
+
+        // Test keychain access before initializing MSAL
+        testKeychainAccess()
 
         do {
             // Use minimal configuration to avoid any keychain conflicts
@@ -211,6 +231,48 @@ class OutlookCalendarManager: ObservableObject {
             }
 
             msalApplication = nil
+        }
+    }
+
+    private func testKeychainAccess() {
+        print("🧪 Testing keychain access for MSAL...")
+
+        // Test 1: Write to MSAL keychain group
+        let testQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "com.calai.test",
+            kSecAttrAccount as String: "test-account",
+            kSecValueData as String: "test".data(using: .utf8)!,
+            kSecAttrAccessGroup as String: "com.microsoft.adalcache"
+        ]
+
+        // Clean up any previous test
+        SecItemDelete(testQuery as CFDictionary)
+
+        let addStatus = SecItemAdd(testQuery as CFDictionary, nil)
+
+        switch addStatus {
+        case errSecSuccess:
+            print("✅ Keychain write SUCCESS - MSAL keychain group is accessible")
+            SecItemDelete(testQuery as CFDictionary) // Clean up
+        case errSecMissingEntitlement, -34018:
+            print("❌ CRITICAL: Keychain error -34018 (errSecMissingEntitlement)")
+            print("❌ The MSAL keychain group 'com.microsoft.adalcache' is NOT accessible")
+            print("❌ This means:")
+            print("   1. Keychain Sharing capability is not enabled in Xcode, OR")
+            print("   2. The entitlements file is not being applied, OR")
+            print("   3. The provisioning profile doesn't include keychain groups")
+            print("❌ MSAL WILL FAIL TO INITIALIZE")
+        default:
+            print("⚠️ Keychain test returned status: \(addStatus)")
+            print("⚠️ This may or may not affect MSAL")
+        }
+
+        // Test 2: Check if entitlements file is being loaded
+        if let entitlements = Bundle.main.object(forInfoDictionaryKey: "Entitlements") {
+            print("✅ Entitlements found in bundle: \(entitlements)")
+        } else {
+            print("⚠️ No entitlements found in bundle - this could be the problem")
         }
     }
 
